@@ -115,7 +115,7 @@ int main(void) {
         ".interact-row{display:flex;align-items:center;gap:2;margin-bottom:1;}"
         ".interact-row span{color:#53a8b6;min-width:14;}"
         "table{color:#e0e0e0;width:40;border-style:solid;border-color:#53a8b6;text-align:center;}"
-        "td,th{padding:1;border-style:solid;border-color:#0f3460;}"
+        "td,th{padding:0 0;border:1;border-style:solid;border-color:#0f3460;}"
         "th{font-weight:bold;}"
         "hr{color:#53a8b6;}"
         "strong{color:#e94560;font-weight:bold;}"

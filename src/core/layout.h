@@ -1017,15 +1017,17 @@ static void layout_table_children(LayoutNode* parent, int content_w) {
             if (cw < 1) cw = 1;
 
             cell->x = cx + cell->border_left + cell->padding_left;
-            cell->y = cell->border_top + cell->padding_top;
+            /* Cell content starts 1 cell below row top (for the grid line) */
+            cell->y = cell->padding_top + 1;
             cell->width = cw - cell->padding_left - cell->padding_right -
                           cell->border_left - cell->border_right;
             if (cell->width < 0) cell->width = 0;
 
             compute_child_layouts(cell, cell->width);
 
-            int ch = cell->height + cell->padding_top + cell->padding_bottom +
-                     cell->border_top + cell->border_bottom;
+            /* Row height = content only (borders handled by table grid);
+               +1 for the grid line at row top */
+            int ch = cell->height + cell->padding_top + cell->padding_bottom;
             if (ch > max_h) max_h = ch;
             cx += cw;
             c++;
@@ -1034,12 +1036,13 @@ static void layout_table_children(LayoutNode* parent, int content_w) {
         for (size_t j = 0; j < row->num_children; j++) {
             LayoutNode* cell = row->children[j];
             if (cell->display == DISPLAY_NONE) continue;
-            int target = max_h - cell->padding_top - cell->padding_bottom -
-                         cell->border_top - cell->border_bottom;
+            int target = max_h - cell->padding_top - cell->padding_bottom;
             if (target > cell->height) cell->height = target;
+            /* Zero out cell vertical borders — table grid handles them */
+            cell->border_top = cell->border_bottom = 0;
         }
-        row->height = max_h;
-        y_cursor += max_h;
+        row->height = max_h + 1;  /* +1 for the grid separator line */
+        y_cursor += max_h + 1;
     }
 
     parent->height = y_cursor;

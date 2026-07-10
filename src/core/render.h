@@ -323,12 +323,12 @@ static void add_unique(int** arr, size_t* n, size_t* cap, int val) {
     (*arr)[(*n)++] = val;
 }
 
-/* Collect grid line positions from table cells */
+/* Collect grid line positions from table cells (X from td/th, Y from tr rows) */
 static void collect_grid_from_table(LayoutNode* node, int scroll_x, int scroll_y,
                                      int** xs, size_t* nx, size_t* cap_x,
                                      int** ys, size_t* ny, size_t* cap_y) {
     if (!node || node->display == DISPLAY_NONE) return;
-    /* td/th: add their box edges */
+    /* td/th: add their X box edges */
     if (node->styled && node->styled->node &&
         node->styled->node->type == GUMBO_NODE_ELEMENT) {
         GumboTag t = node->styled->node->v.element.tag;
@@ -337,10 +337,18 @@ static void collect_grid_from_table(LayoutNode* node, int scroll_x, int scroll_y
             node_abs_box(node, scroll_x, scroll_y, &bx, &by, &bw, &bh);
             add_unique(xs, nx, cap_x, bx);
             add_unique(xs, nx, cap_x, bx + bw);
-            add_unique(ys, ny, cap_y, by);
-            add_unique(ys, ny, cap_y, by + bh);
             return;
         }
+    }
+    /* tr: add Y row edges (rows define grid line positions, not cells) */
+    if (node->styled && node->styled->node &&
+        node->styled->node->type == GUMBO_NODE_ELEMENT &&
+        node->styled->node->v.element.tag == GUMBO_TAG_TR) {
+        int bx, by, bw, bh;
+        node_abs_box(node, scroll_x, scroll_y, &bx, &by, &bw, &bh);
+        add_unique(ys, ny, cap_y, by);
+        add_unique(ys, ny, cap_y, by + bh);
+        /* Don't return — continue to collect X from td/th children */
     }
     for (size_t i = 0; i < node->num_children; i++)
         collect_grid_from_table(node->children[i], scroll_x, scroll_y, xs, nx, cap_x, ys, ny, cap_y);

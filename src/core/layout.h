@@ -891,24 +891,25 @@ static void layout_flex_children(LayoutNode* parent, int content_w, int content_
 
     free(natural_mains);
 
-    /* set parent height (for row) or width (for column) */
+    /* set parent height (for row) or width+height (for column) */
     if (visible > 0) {
-        int max_cross = 0;
+        int max_bottom = 0;
+        int max_right = 0;
         for (size_t i = 0; i < parent->num_children; i++) {
             LayoutNode* child = parent->children[i];
             if (child->display == DISPLAY_NONE) continue;
-            if (is_row) {
-                int bottom = child->y + child->height + child->padding_bottom +
-                             child->border_bottom + child->margin_bottom;
-                if (bottom > max_cross) max_cross = bottom;
-            } else {
-                int right = child->x + child->width + child->padding_right +
-                            child->border_right + child->margin_right;
-                if (right > max_cross) max_cross = right;
-            }
+            int bottom = child->y + child->height + child->padding_bottom +
+                         child->border_bottom + child->margin_bottom;
+            int right = child->x + child->width + child->padding_right +
+                        child->border_right + child->margin_right;
+            if (bottom > max_bottom) max_bottom = bottom;
+            if (right > max_right) max_right = right;
         }
         if (is_row) {
-            parent->height = max_cross;
+            parent->height = max_bottom;
+        } else {
+            parent->width = max_right;
+            parent->height = max_bottom;
         }
     }
 }

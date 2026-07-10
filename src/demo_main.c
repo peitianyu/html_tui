@@ -1,13 +1,15 @@
 /*
  * demo_main.c - Interactive TUI browser: HTML+CSS → Layout → Termbox2
  *
- * This is a thin entry point. Edit demo_page.h to change page content.
+ * Usage: tcc src/demo_main.c -I src -run [page.html]
+ *   If no page is given, loads doc/test_pages/00-menu.html
  *
- * Build: tcc src/demo_main.c -I src -run
+ * Each .html file contains both HTML structure and inline <style> CSS.
  */
 
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 #define UC_IMPLEMENTATION
 #include "core/uc.h"
@@ -28,7 +30,8 @@
 #define INTERACT_IMPLEMENTATION
 #include "demo_page.h"
 
-int main(void) {
-    demo_run();
+int main(int argc, char** argv) {
+    const char* filepath = argc > 1 ? argv[1] : "doc/test_pages/00-menu.html";
+    demo_run(filepath);
     return 0;
 }

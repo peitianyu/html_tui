@@ -1,0 +1,166 @@
+<html>
+<head>
+<style>
+/* ===========================
+   Main Menu Page
+   =========================== */
+body {
+  background-color: #444444;
+  color: #7fb069;
+  padding: 1;
+}
+
+h1 {
+  color: #f9e069;
+  text-align: center;
+  font-weight: bold;
+  margin: 2;
+}
+
+h2 {
+  color: #7fb069;
+  font-weight: bold;
+  text-align: center;
+  margin: 1;
+}
+
+.menu-card {
+  background-color: #444444;
+  padding: 2;
+  margin: 1;
+  border: 1;
+  border-style: solid;
+  border-color: #7fb069;
+}
+
+.menu-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1;
+  margin: 1;
+  background-color: #444444;
+  border: 1;
+  border-style: dotted;
+  border-color: #7fb069;
+}
+
+.menu-item:first-child {
+  border-style: solid;
+  border-color: #f9e069;
+}
+
+.menu-item:hover {
+  background-color: #444444;
+}
+
+.menu-label {
+  color: #7fb069;
+  font-weight: bold;
+}
+
+.menu-label .num {
+  color: #f9e069;
+}
+
+.menu-label .desc {
+  color: #7fb069;
+}
+
+.menu-btn {
+  background-color: #f9e069;
+  color: #444444;
+  font-weight: bold;
+}
+
+.menu-btn:hover {
+  background-color: #f9e069;
+}
+
+.menu-btn:active {
+  background-color: #7fb069;
+  color: #444444;
+}
+
+.info-bar {
+  display: flex;
+  justify-content: center;
+  gap: 4;
+  background-color: #444444;
+  padding: 1;
+  margin: 2;
+}
+
+.info-bar span {
+  color: #7fb069;
+  font-weight: bold;
+}
+
+.footer {
+  text-align: center;
+  color: #7fb069;
+  margin-top: 2;
+}
+
+.controls {
+  text-align: center;
+  color: #7fb069;
+  margin: 1;
+}
+</style>
+</head>
+<body>
+
+<h1>🌐 Mini Browser Test Suite</h1>
+<h2>Select a Test Page</h2>
+
+<div class="menu-card">
+  <div class="menu-item">
+    <span class="menu-label">
+      <span class="num">[01]</span>
+      Complex Form Demo
+      <span class="desc">— inputs, buttons, selectors, borders</span>
+    </span>
+    <button id="btn-page-01" class="menu-btn">Open →</button>
+  </div>
+  <div class="menu-item">
+    <span class="menu-label">
+      <span class="num">[02]</span>
+      Flex Layout Showcase
+      <span class="desc">— flexbox, align, justify, gap</span>
+    </span>
+    <button id="btn-page-02" class="menu-btn">Open →</button>
+  </div>
+  <div class="menu-item">
+    <span class="menu-label">
+      <span class="num">[03]</span>
+      CSS Selectors & Elements
+      <span class="desc">— pseudo-classes, tables, lists</span>
+    </span>
+    <button id="btn-page-03" class="menu-btn">Open →</button>
+  </div>
+</div>
+
+<div class="info-bar">
+  <span>HTML</span>
+  <span>+</span>
+  <span>CSS</span>
+  <span>+</span>
+  <span>Layout</span>
+  <span>+</span>
+  <span>Termbox2</span>
+</div>
+
+<div class="controls">
+  <p>Tab: Focus / Enter: Open / Arrow Keys: Scroll</p>
+  <p>q: Quit / ESC: Back to Menu</p>
+</div>
+
+<hr>
+
+<div class="footer">
+  <p>Mini Browser Demo — HTML+CSS → Layout → TUI Rendering</p>
+</div>
+
+</body>
+</html>

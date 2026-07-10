@@ -72,6 +72,13 @@ struct InteractCallbacks {
     /** Set to true from on_button_click or on_key to exit the interactive loop. */
     bool quit_flag;
 
+    /**
+     * Set to a file path to switch to a new page.
+     * The main loop will read this file, parse HTML/CSS, and rebuild everything.
+     * Cleared automatically after switching.
+     */
+    char switch_page[256];
+
     /* ─── Text overrides (persist across layout rebuilds) ───
      * Use node_override_text() to register a change; interact_run
      * re-applies it automatically after every rebuild.

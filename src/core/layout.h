@@ -106,6 +106,9 @@ typedef struct LayoutNode {
     /* list item index (1-based, for ordered lists) */
     int list_index;
 
+    /* overflow hidden */
+    bool overflow_hidden;
+
     /* children */
     struct LayoutNode** children;
     size_t num_children;
@@ -345,6 +348,8 @@ static DisplayType get_default_display(const char* tagname) {
     if (strcmp(tagname, "small") == 0)  return DISPLAY_INLINE;
     if (strcmp(tagname, "br") == 0)     return DISPLAY_INLINE;
     if (strcmp(tagname, "img") == 0)    return DISPLAY_INLINE;
+    if (strcmp(tagname, "input") == 0)  return DISPLAY_INLINE;
+    if (strcmp(tagname, "button") == 0) return DISPLAY_INLINE;
 
     return DISPLAY_BLOCK; /* default */
 }
@@ -455,6 +460,10 @@ static void apply_styles(LayoutNode* ln) {
     const char* mar = get_style(sn, "margin");
     if (mar) parse_box_shorthand(mar, &ln->margin_top, &ln->margin_right,
                                   &ln->margin_bottom, &ln->margin_left);
+
+    /* overflow */
+    const char* ov = get_style(sn, "overflow");
+    if (ov && strcmp(ov, "hidden") == 0) ln->overflow_hidden = true;
 
     /* border */
     const char* bord = get_style(sn, "border");
@@ -1195,10 +1204,37 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
         ln->font_underline = true;
         if (!ln->color.valid ||
             (ln->color.r == 255 && ln->color.g == 255 && ln->color.b == 255)) {
-            /* Default link blue #0000EE -> actually visible: #53a8b6-like */
             ln->color.r = 83; ln->color.g = 168; ln->color.b = 182;
             ln->color.valid = true;
         }
+    }
+
+    /* <input>: render as [value] box */
+    if (snode->node->type == GUMBO_NODE_ELEMENT &&
+        snode->node->v.element.tag == GUMBO_TAG_INPUT) {
+        const char* val = NULL;
+        GumboAttribute* attr = gumbo_get_attribute(&snode->node->v.element.attributes, "value");
+        if (attr && attr->value) val = attr->value;
+        char buf[128];
+        if (val && *val) {
+            snprintf(buf, sizeof(buf), "[%s]", val);
+        } else {
+            strcpy(buf, "[  ]");
+        }
+        if (ln->text_content) free(ln->text_content);
+        ln->text_content = strdup(buf);
+        ln->color.r = 180; ln->color.g = 180; ln->color.b = 180;
+        ln->color.valid = true;
+    }
+
+    /* <button>: background + bold text */
+    if (snode->node->type == GUMBO_NODE_ELEMENT &&
+        snode->node->v.element.tag == GUMBO_TAG_BUTTON) {
+        if (!ln->bg_color.valid) {
+            ln->bg_color.r = 60; ln->bg_color.g = 60; ln->bg_color.b = 80;
+            ln->bg_color.valid = true;
+        }
+        ln->font_bold = true;
     }
 
     /* set default text color to white */

@@ -59,7 +59,7 @@ int main(void) {
         "    <ul><li>苹果</li><li>香蕉</li><li>橙子</li></ul>"
         "    <ol><li>第一步</li><li>第二步</li><li>第三步</li></ol>"
         "    <p>访问 <a href='https://baidu.com'>Example</a> 了解更多</p>"
-        "    <p>图片: <img></p>"
+        "    <p>图片: <img>  <input value='hello'>  <button>Go</button></p>"
         "  </div>"
         "  <div class='card'>"
         "    <h2>Another Card</h2>"

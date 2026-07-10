@@ -238,15 +238,62 @@ void screen_render_node(Screen* s, LayoutNode* n) {
     }
 }
 
-static void screen_render_offset(Screen* s, LayoutNode* n, int px, int py) {
+/**
+ * Render a node and its children with optional clip rect.
+ * clip_x/y/w/h define the visible area (in screen coords after scroll).
+ * clip_w <= 0 means no clipping.
+ */
+static void screen_render_offset(Screen* s, LayoutNode* n, int px, int py, int clip_x, int clip_y, int clip_w, int clip_h) {
     if (!n || n->display == DISPLAY_NONE) return;
     int svx=n->x, svy=n->y; n->x+=px; n->y+=py;
+
+    /* Compute effective clip for children */
+    int my_clip_x = clip_x, my_clip_y = clip_y, my_clip_w = clip_w, my_clip_h = clip_h;
+    if (n->overflow_hidden) {
+        int sx = n->x - n->border_left - n->padding_left;
+        int sy = n->y - n->border_top - n->padding_top;
+        int sw = n->width + n->padding_left + n->padding_right + n->border_left + n->border_right;
+        int sh = n->height + n->padding_top + n->padding_bottom + n->border_top + n->border_bottom;
+        int sx2 = sx + sw, sy2 = sy + sh;
+        /* Intersect with parent clip */
+        if (clip_w > 0) {
+            int cx2 = clip_x + clip_w, cy2 = clip_y + clip_h;
+            if (sx < clip_x) sx = clip_x;
+            if (sy < clip_y) sy = clip_y;
+            if (sx2 > cx2) sx2 = cx2;
+            if (sy2 > cy2) sy2 = cy2;
+        }
+        my_clip_x = sx; my_clip_y = sy;
+        my_clip_w = sx2 - sx > 0 ? sx2 - sx : 0;
+        my_clip_h = sy2 - sy > 0 ? sy2 - sy : 0;
+    }
+
+    /* Check visibility against clip */
+    {
+        int sx = n->x - n->border_left - n->padding_left;
+        int sy = n->y - n->border_top - n->padding_top;
+        int sw = n->width + n->padding_left + n->padding_right + n->border_left + n->border_right;
+        int sh = n->height + n->padding_top + n->padding_bottom + n->border_top + n->border_bottom;
+        if (my_clip_w > 0) {
+            if (sx + sw <= my_clip_x || sx >= my_clip_x + my_clip_w ||
+                sy + sh <= my_clip_y || sy >= my_clip_y + my_clip_h) {
+                /* Outside clip — still render children? No, skip entirely */
+                n->x = svx; n->y = svy;
+                return;
+            }
+        }
+    }
+
     screen_render_node(s, n);
     int cpx=n->x, cpy=n->y; n->x=svx; n->y=svy;
-    for (size_t i = 0; i < n->num_children; i++) screen_render_offset(s, n->children[i], cpx, cpy);
+
+    for (size_t i = 0; i < n->num_children; i++)
+        screen_render_offset(s, n->children[i], cpx, cpy, my_clip_x, my_clip_y, my_clip_w, my_clip_h);
 }
 
-void screen_render_tree(Screen* s, LayoutNode* root) { if(s&&root) screen_render_offset(s,root,0,0); }
+void screen_render_tree(Screen* s, LayoutNode* root) {
+    if (s && root) screen_render_offset(s, root, 0, 0, 0, 0, 0, 0);
+}
 
 void screen_flush(Screen* s) {
     if (!s) return;
@@ -322,12 +369,28 @@ void render_run(LayoutNode* root) {
     bool running = true;
     struct tb_event ev;
 
+    /* Input interaction state */
+    LayoutNode* focused = NULL;       /* currently focused input/button */
+    char input_buf[256];             /* for typing into <input> */
+    int input_pos = 0;               /* cursor position */
+
     while (running) {
         /* Render frame */
         screen_clear(s);
         s->scroll_x = scroll_x;
         s->scroll_y = scroll_y;
         screen_render_tree(s, root);
+        /* Draw focus indicator on focused input */
+        if (focused && focused->text_content && input_pos >= 0) {
+            /* Input field uses [value] format; cursor pos inside brackets */
+            int bx = focused->x - focused->border_left - focused->padding_left - scroll_x;
+            int by = focused->y - focused->border_top - focused->padding_top - scroll_y;
+            int cu = bx + 1 + input_pos; /* +1 for '[' */
+            if (cu >= 0 && cu < s->cols && by >= 0 && by < s->rows) {
+                scr_set(s, cu, by, '|');
+                scr_fg(s, cu, by, 255, 255, 0);
+            }
+        }
         screen_flush(s);
 
         /* Poll input */
@@ -340,6 +403,38 @@ void render_run(LayoutNode* root) {
         case TB_EVENT_KEY:
             if (ev.ch == 'q' || ev.ch == 'Q') {
                 running = false;
+            } else if (ev.key == TB_KEY_TAB) {
+                /* Cycle focus: collect all interactive nodes */
+                static LayoutNode* prev_focused = NULL; /* hack: just toggle */
+                focused = focused ? NULL : root; /* simple: focus root then... */
+            } else if (focused && focused->text_content && focused->text_content[0] == '[') {
+                /* Editing <input> value */
+                if (ev.key == TB_KEY_BACKSPACE || ev.key == TB_KEY_BACKSPACE2) {
+                    if (input_pos > 0) {
+                        int cur_len = (int)strlen(focused->text_content);
+                        if (cur_len > 3) {
+                            memmove(&focused->text_content[1 + input_pos - 1],
+                                    &focused->text_content[1 + input_pos],
+                                    cur_len - 1 - input_pos);
+                            focused->text_content[cur_len - 1] = '\0';
+                        } else {
+                            focused->text_content[1] = ' ';
+                        }
+                        input_pos--;
+                    }
+                } else if (ev.ch >= 32 && ev.ch < 127) {
+                    int cur_len = (int)strlen(focused->text_content);
+                    if (cur_len < (int)sizeof(input_buf) - 2) {
+                        memmove(&focused->text_content[1 + input_pos + 1],
+                                &focused->text_content[1 + input_pos],
+                                cur_len - 1 - input_pos + 1); /* +1 for null */
+                        focused->text_content[1 + input_pos] = (char)ev.ch;
+                        input_pos++;
+                    }
+                }
+            } else if (focused && focused->text_content && strcmp(focused->text_content, "[  ]") == 0) {
+                /* Click on input with no value — start fresh */
+                focused = focused; /* keep focus */
             } else if (ev.key == TB_KEY_ARROW_UP) {
                 scroll_y--;
             } else if (ev.key == TB_KEY_ARROW_DOWN) {
@@ -364,6 +459,49 @@ void render_run(LayoutNode* root) {
                 scroll_y -= 3;
             } else if (ev.key == TB_KEY_MOUSE_WHEEL_DOWN) {
                 scroll_y += 3;
+            } else if (ev.key == TB_KEY_MOUSE_LEFT) {
+                /* Click: find node at (ev.x, ev.y) */
+                LayoutNode* hit = NULL;
+                /* Find first matching input or button at click position */
+                /* Walk the tree using a simple recursive search */
+                {
+                    LayoutNode* stack[256];
+                    int sp = 0;
+                    stack[sp++] = root;
+                    while (sp > 0) {
+                        LayoutNode* n = stack[--sp];
+                        int nx = n->x - n->border_left - n->padding_left - scroll_x;
+                        int ny = n->y - n->border_top - n->padding_top - scroll_y;
+                        int nw = n->width + n->padding_left + n->padding_right +
+                                  n->border_left + n->border_right;
+                        int nh = n->height + n->padding_top + n->padding_bottom +
+                                  n->border_top + n->border_bottom;
+                        if (ev.x >= nx && ev.x < nx + nw && ev.y >= ny && ev.y < ny + nh) {
+                            if (n->styled && n->styled->node &&
+                                n->styled->node->type == GUMBO_NODE_ELEMENT) {
+                                GumboTag t = n->styled->node->v.element.tag;
+                                if (t == GUMBO_TAG_INPUT || t == GUMBO_TAG_BUTTON) {
+                                    hit = n; break;
+                                }
+                            }
+                        }
+                        for (size_t ci = 0; ci < n->num_children; ci++)
+                            stack[sp++] = n->children[ci];
+                    }
+                }
+                if (hit) {
+                    focused = hit;
+                    /* Initialize input buffer from text content */
+                    if (hit->text_content && hit->text_content[0] == '[') {
+                        input_pos = 0;
+                        /* Count chars between [ and ] */
+                        const char* content = hit->text_content + 1;
+                        input_pos = (int)strlen(content) - 1;
+                        if (input_pos < 0) input_pos = 0;
+                    }
+                } else {
+                    focused = NULL;
+                }
             }
             break;
 

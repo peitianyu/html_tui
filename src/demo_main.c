@@ -30,6 +30,32 @@ int main(void) {
         "  <div class='nav'>"
         "    <span>Home</span> <span>About</span> <span>Contact</span>"
         "  </div>"
+
+        /* ======= 交互测试区 ======= */
+        "  <div class='card'>"
+        "    <h2>🎮 交互测试</h2>"
+        "    <p>Tab 切换焦点 / Enter/Space 点击按钮 / 箭头键滚动</p>"
+        "    <hr>"
+        "    <div class='interact-row'>"
+        "      <span>输入框 A:</span> <input value='Hello'>"
+        "    </div>"
+        "    <div class='interact-row'>"
+        "      <span>输入框 B:</span> <input value='World'>"
+        "    </div>"
+        "    <div class='interact-row'>"
+        "      <span>输入框 C:</span> <input value='中文测试'>"
+        "    </div>"
+        "    <hr>"
+        "    <div class='interact-row'>"
+        "      <span>按钮区域:</span> <button>提交</button>"
+        "      <button>重置</button> <button>✕ 关闭</button>"
+        "    </div>"
+        "    <hr>"
+        "    <div class='interact-row'>"
+        "      <span>清空输入:</span> <button>清空A</button> <button>清空B</button> <button>清空C</button>"
+        "    </div>"
+        "  </div>"
+
         "  <div class='card'>"
         "    <h2>Card Title</h2>"
         "    <p>Paragraph with <strong>bold</strong> and <u>underline</u>.</p>"
@@ -86,6 +112,8 @@ int main(void) {
         ".card{background-color:#0f3460;padding:2;margin:1;"
         "      border:1;border-style:solid;border-color:#e94560;}"
         ".card p{color:#e0e0e0;}"
+        ".interact-row{display:flex;align-items:center;gap:2;margin-bottom:1;}"
+        ".interact-row span{color:#53a8b6;min-width:14;}"
         "table{color:#e0e0e0;width:100%;border:1;border-style:solid;border-color:#53a8b6;}"
         "td,th{padding:1;border:1;border-style:solid;border-color:#0f3460;}"
         "th{font-weight:bold;}"
@@ -93,7 +121,12 @@ int main(void) {
         "strong{color:#e94560;font-weight:bold;}"
         "u{color:#53a8b6;text-decoration:underline;}"
         ".footer{text-align:center;color:#888;margin-top:1;}"
-        "pre{background-color:#1a1a2e;color:#0f0;padding:1;border:1;border-style:solid;border-color:#53a8b6;}";
+        "pre{background-color:#1a1a2e;color:#0f0;padding:1;border:1;border-style:solid;border-color:#53a8b6;}"
+        "button{background-color:#e94560;color:#fff;font-weight:bold;}"
+        "button:hover{background-color:#ff6b81;}"
+        "button:active{background-color:#c23150;}"
+        "input{background-color:#1a1a2e;color:#e0e0e0;width:20;}"
+        "input:focus{background-color:#16213e;color:#fff;}";
 
     /* Parse → Style → Layout */
     GumboOutput* dom = gumbo_parse(html);

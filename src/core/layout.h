@@ -95,6 +95,9 @@ typedef struct LayoutNode {
     int flex_shrink;
     int flex_basis;
 
+    /* truncate overflow text (single-line, no wrap) */
+    bool truncate_overflow;
+
     /* border style: 0=none, 1=solid, 2=dashed */
     int border_style;
 
@@ -108,6 +111,9 @@ typedef struct LayoutNode {
 
     /* overflow hidden */
     bool overflow_hidden;
+
+    /* parent pointer for absolute position computation */
+    struct LayoutNode* parent;
 
     /* children */
     struct LayoutNode** children;
@@ -463,7 +469,10 @@ static void apply_styles(LayoutNode* ln) {
 
     /* overflow */
     const char* ov = get_style(sn, "overflow");
-    if (ov && strcmp(ov, "hidden") == 0) ln->overflow_hidden = true;
+    if (ov && strcmp(ov, "hidden") == 0) {
+        ln->overflow_hidden = true;
+        ln->truncate_overflow = true;
+    }
 
     /* border */
     const char* bord = get_style(sn, "border");
@@ -617,10 +626,15 @@ static void layout_block_children(LayoutNode* parent, int content_w) {
                            child->padding_left - child->padding_right -
                            child->border_left - child->border_right;
             if (child->width < 0) child->width = 0;
-            /* Width from measured text */
+            /* Width from measured text (unless CSS width is set) */
             if (child->text_content) {
                 int tw = uc_str_width(child->text_content);
                 if (tw > 0) child->width = tw;
+            }
+            {
+                const char* css_w = get_style(child->styled, "width");
+                if (css_w) { ParsedDim pd = parse_dimension(css_w);
+                    if (pd.valid && pd.unit == 0 && (int)pd.value > 0) child->width = (int)pd.value; }
             }
 
             child->x = inline_cursor + child->margin_left + child->border_left + child->padding_left;
@@ -1039,6 +1053,7 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
 
     LayoutNode* ln = (LayoutNode*)calloc(1, sizeof(LayoutNode));
     ln->styled = snode;
+    ln->parent = parent;
 
     /* apply styles */
     apply_styles(ln);
@@ -1214,6 +1229,7 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
     }
 
     /* <input>: render as [value] box */
+    /* <input>: render as value box (no brackets) */
     if (snode->node->type == GUMBO_NODE_ELEMENT &&
         snode->node->v.element.tag == GUMBO_TAG_INPUT) {
         const char* val = NULL;
@@ -1221,14 +1237,16 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
         if (attr && attr->value) val = attr->value;
         char buf[128];
         if (val && *val) {
-            snprintf(buf, sizeof(buf), "[%s]", val);
+            snprintf(buf, sizeof(buf), "%s", val);
         } else {
-            strcpy(buf, "[  ]");
+            strcpy(buf, " ");
         }
         if (ln->text_content) free(ln->text_content);
         ln->text_content = strdup(buf);
         ln->color.r = 180; ln->color.g = 180; ln->color.b = 180;
         ln->color.valid = true;
+        ln->truncate_overflow = true;  /* single-line input, no wrap */
+        if (ln->height < 1) ln->height = 1;
     }
 
     /* <button>: background + bold text */

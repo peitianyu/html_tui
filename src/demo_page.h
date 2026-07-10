@@ -108,7 +108,7 @@ static void extract_css_from_html(const char* raw_html,
 /*    3. btn-back / btn-back-N 自动回菜单                                */
 /* ==================================================================== */
 
-#define PAGES_DIR "doc/test_pages/"
+#define PAGES_DIR "pages/"
 
 static void resolve_page_path(int page_num, char* out, size_t out_size) {
     /* Try common patterns: NN-xxx.html in PAGES_DIR */

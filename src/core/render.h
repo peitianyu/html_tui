@@ -122,14 +122,47 @@ void screen_render_node(Screen* s, LayoutNode* n) {
         ResolvedColor bc = n->border_color; if (!bc.valid && n->color.valid) bc = n->color; bc.valid = true;
         draw_border(s, scr_x, scr_y, tw, th, bc);
     }
+    /* <hr>: draw horizontal line across content width */
+    if (n->styled && n->styled->node && n->styled->node->type == GUMBO_NODE_ELEMENT &&
+        n->styled->node->v.element.tag == GUMBO_TAG_HR && n->color.valid) {
+        int hx = scr_x + n->border_left + n->padding_left;
+        int hy = scr_y + n->border_top + n->padding_top;
+        int w = n->width; if (w < 0) w = 0;
+        int cw = 0x2500; /* ─ */
+        for (int ci = 0; ci < w && hx + ci < s->cols; ci++) {
+            int col = hx + ci;
+            if (col >= 0) { scr_set(s, col, hy, cw); scr_fg(s,col,hy,n->color.r,n->color.g,n->color.b); }
+        }
+    }
     if (n->text_content && n->color.valid) {
         int lnx = scr_x + n->border_left + n->padding_left;
         int cy = scr_y + n->border_top + n->padding_top, mw = n->width; if (mw<1) mw=1;
         const char* p = n->text_content;
 
+        /* Render list marker if applicable */
+        int cx = lnx;
+        if (n->list_marker > 0) {
+            if (n->list_marker == 1) {
+                if (cx >= 0 && cx < s->cols) {
+                    scr_set(s, cx, cy, 0x2022);
+                    scr_fg(s, cx, cy, n->color.r, n->color.g, n->color.b);
+                }
+                cx += 2;
+            } else if (n->list_marker == 2) {
+                char num[16];
+                int nlen = snprintf(num, sizeof(num), "%d. ", n->list_index);
+                for (int k = 0; k < nlen && k < 8; k++) {
+                    if (cx >= 0 && cx < s->cols) {
+                        scr_set(s, cx, cy, (unsigned char)num[k]);
+                        scr_fg(s, cx, cy, n->color.r, n->color.g, n->color.b);
+                    }
+                    cx++;
+                }
+            }
+        }
+
         if (n->preserve_ws) {
             /* <pre> mode: preserve whitespace, no word-wrap */
-            int cx = lnx;
             while (*p && cy < s->rows) {
                 if (*p == '\n') { cy++; cx = lnx; p++; continue; }
                 if (*p == '\t') { cx = ((cx - lnx) / 4 + 1) * 4 + lnx; p++; continue; }
@@ -147,7 +180,6 @@ void screen_render_node(Screen* s, LayoutNode* n) {
             }
         } else {
             /* Normal word-wrap mode */
-            int cx = lnx;
 
             /* Alignment: measure first line width for center/right */
             if (n->text_align == 1 || n->text_align == 2) {

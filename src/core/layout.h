@@ -101,6 +101,11 @@ typedef struct LayoutNode {
     /* whitespace preservation (like <pre>) */
     bool preserve_ws;
 
+    /* list marker type: 0=none, 1=bullet (•), 2=ordered (1.) */
+    int list_marker;
+    /* list item index (1-based, for ordered lists) */
+    int list_index;
+
     /* children */
     struct LayoutNode** children;
     size_t num_children;
@@ -386,7 +391,7 @@ static char* extract_text(GumboNode* node) {
         GumboVector* children = &node->v.element.children;
         size_t total_len = 0;
 
-        /* first pass: calculate total length from text/br children only */
+        /* first pass: calculate total length from text/br/inline children */
         char** pieces = (char**)calloc(children->length, sizeof(char*));
         size_t piece_count = 0;
         for (unsigned int i = 0; i < children->length; i++) {
@@ -592,42 +597,67 @@ static void layout_block_children(LayoutNode* parent, int content_w) {
     }
 
     /* second pass: position children and compute their heights */
+    int inline_cursor = 0;
     for (size_t i = 0; i < parent->num_children; i++) {
         LayoutNode* child = parent->children[i];
         if (child->display == DISPLAY_NONE) continue;
 
-        /* position */
-        child->x = child->margin_left + child->border_left + child->padding_left;
-        child->y = y_cursor + child->margin_top + child->border_top + child->padding_top;
+        if (child->display == DISPLAY_INLINE) {
+            /* Inline children flow horizontally on the same line */
+            child->width = content_w - child->margin_left - child->margin_right -
+                           child->padding_left - child->padding_right -
+                           child->border_left - child->border_right;
+            if (child->width < 0) child->width = 0;
+            /* Width from measured text */
+            if (child->text_content) {
+                int tw = uc_str_width(child->text_content);
+                if (tw > 0) child->width = tw;
+            }
 
-        /* compute child's own children layout */
-        compute_child_layouts(child, child->width);
+            child->x = inline_cursor + child->margin_left + child->border_left + child->padding_left;
+            child->y = child->margin_top + child->border_top + child->padding_top;
 
-        /* resolve child height */
-        const char* h_str = get_style(child->styled, "height");
-        ParsedDim hdim = parse_dimension(h_str);
-        if (hdim.valid && hdim.unit == 0) {
-            child->height = (int)hdim.value;
-            if (child->height < 0) child->height = 0;
+            compute_child_layouts(child, child->width);
+
+            const char* h_str = get_style(child->styled, "height");
+            if (h_str) {
+                ParsedDim hdim = parse_dimension(h_str);
+                if (hdim.valid && hdim.unit == 0) child->height = (int)hdim.value;
+            }
+            if (child->height < 1) child->height = 1;
+
+            inline_cursor += child->width + child->padding_left + child->padding_right +
+                             child->border_left + child->border_right +
+                             child->margin_left + child->margin_right;
+        } else {
+            /* Block children: stack vertically, full width */
+            child->x = child->margin_left + child->border_left + child->padding_left;
+            child->y = y_cursor + child->margin_top + child->border_top + child->padding_top;
+
+            compute_child_layouts(child, child->width);
+
+            const char* h_str = get_style(child->styled, "height");
+            if (h_str) {
+                ParsedDim hdim = parse_dimension(h_str);
+                if (hdim.valid && hdim.unit == 0) child->height = (int)hdim.value;
+            }
+
+            y_cursor += total_height(child) + child->margin_top + child->margin_bottom;
         }
-        /* If height is auto, it's already set by compute_child_layouts */
-
-        /* advance cursor */
-        y_cursor += total_height(child) + child->margin_top + child->margin_bottom;
     }
 
     /* set parent height based on children */
     if (visible_count > 0) {
-        /* Find the bottom-most child */
         int max_bottom = 0;
         for (size_t i = 0; i < parent->num_children; i++) {
-            LayoutNode* child = parent->children[i];
-            if (child->display == DISPLAY_NONE) continue;
-            int bottom = child->y + child->height + child->padding_bottom +
-                         child->border_bottom + child->margin_bottom;
-            if (bottom > max_bottom) max_bottom = bottom;
+            LayoutNode* ch = parent->children[i];
+            if (ch->display == DISPLAY_NONE) continue;
+            int btm = ch->y + ch->height + ch->padding_bottom +
+                      ch->border_bottom + ch->margin_bottom;
+            if (btm > max_bottom) max_bottom = btm;
         }
-        parent->height = max_bottom;
+        if (y_cursor < max_bottom) y_cursor = max_bottom;
+        parent->height = y_cursor;
     }
 }
 
@@ -1020,24 +1050,78 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
     
     if (tag_name && (strcmp(tag_name, "table") == 0 || strcmp(tag_name, "tr") == 0)) {
         ln->text_content = NULL;
+    } else if (tag_name && strcmp(tag_name, "img") == 0) {
+        ln->text_content = strdup("[img]");
+    } else if (tag_name && snode->num_children > 0) {
+        /* Node has element children — don't extract text, let children render it */
+        ln->text_content = NULL;
     } else {
         ln->text_content = extract_text(snode->node);
     }
 
-    /* build children */
+    /* build children — interleave styled element children with inline text fragments
+       in the original DOM order from Gumbo children */
     if (snode->num_children > 0) {
-        /* allocate children array for all styled children */
-        ln->children = (LayoutNode**)calloc(snode->num_children, sizeof(LayoutNode*));
-        size_t idx = 0;
-        for (size_t i = 0; i < snode->num_children; i++) {
-            LayoutNode* child = build_layout_tree_recursive(snode->children[i], ln,
-                                                            viewport_w, viewport_h);
-            if (child) {
-                ln->children[idx++] = child;
+        GumboVector* gchildren = (snode->node && snode->node->type == GUMBO_NODE_ELEMENT)
+            ? &snode->node->v.element.children : NULL;
+
+        /* Count Gumbo non-whitespace text children for allocation */
+        size_t gumbo_text_count = 0;
+        if (gchildren) {
+            for (unsigned int gi = 0; gi < gchildren->length; gi++) {
+                GumboNode* gc = (GumboNode*)gchildren->data[gi];
+                if (gc->type == GUMBO_NODE_TEXT && gc->v.text.text && *gc->v.text.text) {
+                    bool only_ws = true;
+                    for (const char* cp = gc->v.text.text; *cp; cp++)
+                        if (*cp != ' ' && *cp != '\t' && *cp != '\n' && *cp != '\r') { only_ws = false; break; }
+                    if (!only_ws) gumbo_text_count++;
+                }
+            }
+        }
+
+        size_t total = snode->num_children + gumbo_text_count;
+        ln->children = (LayoutNode**)calloc(total, sizeof(LayoutNode*));
+        size_t idx = 0, elem_i = 0;
+
+        /* Walk Gumbo children in DOM order; interleave text fragments and element children */
+        if (gchildren) {
+            for (unsigned int gi = 0; gi < gchildren->length; gi++) {
+                GumboNode* gc = (GumboNode*)gchildren->data[gi];
+                if (gc->type == GUMBO_NODE_TEXT) {
+                    /* Text node → create inline fragment */
+                    if (!gc->v.text.text || !*gc->v.text.text) continue;
+                    bool only_ws = true;
+                    for (const char* cp = gc->v.text.text; *cp; cp++)
+                        if (*cp != ' ' && *cp != '\t' && *cp != '\n' && *cp != '\r') { only_ws = false; break; }
+                    if (only_ws) continue;
+                    LayoutNode* tn = (LayoutNode*)calloc(1, sizeof(LayoutNode));
+                    tn->text_content = strdup(gc->v.text.text);
+                    tn->display = DISPLAY_INLINE;
+                    tn->height = 1;
+                    tn->color = ln->color;
+                    tn->color.valid = ln->color.valid;
+                    tn->width = uc_str_width(tn->text_content);
+                    ln->children[idx++] = tn;
+                } else if (gc->type == GUMBO_NODE_ELEMENT && elem_i < snode->num_children) {
+                    /* Element child → use styled tree child */
+                    LayoutNode* child = build_layout_tree_recursive(
+                        snode->children[elem_i], ln, viewport_w, viewport_h);
+                    if (child) ln->children[idx++] = child;
+                    elem_i++;
+                }
+            }
+        } else {
+            /* No Gumbo children (document root), use styled children directly */
+            for (size_t i = 0; i < snode->num_children; i++) {
+                LayoutNode* child = build_layout_tree_recursive(
+                    snode->children[i], ln, viewport_w, viewport_h);
+                if (child) ln->children[idx++] = child;
             }
         }
         ln->num_children = idx;
     }
+
+    /* set default text color to white */
 
     /* Compute natural text height if no explicit height */
     if (ln->text_content) {
@@ -1087,6 +1171,36 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
         ln->preserve_ws = true;
     }
 
+    /* <hr>: set height to 1 for the horizontal line */
+    if (snode->node->type == GUMBO_NODE_ELEMENT &&
+        snode->node->v.element.tag == GUMBO_TAG_HR && ln->height < 1) {
+        ln->height = 1;
+    }
+
+    /* List markers for <ul>/<ol>/<li> */
+    if (snode->node->type == GUMBO_NODE_ELEMENT) {
+        if (snode->node->v.element.tag == GUMBO_TAG_LI) {
+            if (parent && parent->styled && parent->styled->node &&
+                parent->styled->node->type == GUMBO_NODE_ELEMENT) {
+                GumboTag pt = parent->styled->node->v.element.tag;
+                if (pt == GUMBO_TAG_UL) ln->list_marker = 1;
+                else if (pt == GUMBO_TAG_OL) ln->list_marker = 2;
+            }
+        }
+    }
+
+    /* <a>: default blue + underline */
+    if (snode->node->type == GUMBO_NODE_ELEMENT &&
+        snode->node->v.element.tag == GUMBO_TAG_A) {
+        ln->font_underline = true;
+        if (!ln->color.valid ||
+            (ln->color.r == 255 && ln->color.g == 255 && ln->color.b == 255)) {
+            /* Default link blue #0000EE -> actually visible: #53a8b6-like */
+            ln->color.r = 83; ln->color.g = 168; ln->color.b = 182;
+            ln->color.valid = true;
+        }
+    }
+
     /* set default text color to white */
     if (!ln->color.valid) {
         ln->color.r = 255; ln->color.g = 255; ln->color.b = 255;
@@ -1097,6 +1211,32 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
     return ln;
 }
 
+/* ---------- list numbering (post-process) ---------- */
+
+static void number_list_items(LayoutNode* node) {
+    if (!node) return;
+    /* Number ordered list children */
+    if (node->num_children > 0) {
+        /* Check if this node is an <ol> — then number its li children */
+        bool is_ol = false;
+        for (size_t i = 0; i < node->num_children && !is_ol; i++) {
+            if (node->children[i]->list_marker == 2) is_ol = true;
+        }
+        if (is_ol) {
+            int idx = 1;
+            for (size_t i = 0; i < node->num_children; i++) {
+                if (node->children[i]->list_marker == 2) {
+                    node->children[i]->list_index = idx++;
+                }
+            }
+        }
+        /* Recurse */
+        for (size_t i = 0; i < node->num_children; i++) {
+            number_list_items(node->children[i]);
+        }
+    }
+}
+
 /* ---------- public API ---------- */
 
 LayoutNode* build_layout_tree(StyledNode* styled_root, int viewport_w, int viewport_h) {
@@ -1104,6 +1244,9 @@ LayoutNode* build_layout_tree(StyledNode* styled_root, int viewport_w, int viewp
 
     LayoutNode* root = build_layout_tree_recursive(styled_root, NULL, viewport_w, viewport_h);
     if (!root) return NULL;
+
+    /* Post-process: number list items */
+    number_list_items(root);
 
     /* Root fills viewport */
     root->width = viewport_w;

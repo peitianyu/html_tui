@@ -60,32 +60,32 @@ HTML (.html 含 <style>)
     │
     ▼
 ┌──────────────────┐
-│  Gumbo (HTML 解析) │  →  DOM 树
+│Gumbo (HTML 解析) │  →  DOM 树
 └──────────────────┘
     │
     ▼
 ┌──────────────────┐
-│  Katana (CSS 解析)  │  →  样式表
+│Katana (CSS 解析) │  →  样式表
 └──────────────────┘
     │
     ▼
 ┌──────────────────┐
-│  StyleTree         │  →  样式树（选择器匹配 + 属性继承）
+│  StyleTree       │  →  样式树（选择器匹配 + 属性继承）
 └──────────────────┘
     │
     ▼
 ┌──────────────────┐
-│  Layout (Box/Flex) │  →  布局树（盒模型 + Flexbox）
+│Layout (Box/Flex) │  →  布局树（盒模型 + Flexbox）
 └──────────────────┘
     │
     ▼
 ┌──────────────────┐
-│  Render (Termbox2) │  → 终端 24-bit 真彩色渲染
+│Render (Termbox2) │  → 终端 24-bit 真彩色渲染
 └──────────────────┘
     │
     ▼
 ┌──────────────────┐
-│  Interact          │  → 交互循环（焦点、点击、输入）
+│Interact          │  → 交互循环（焦点、点击、输入）
 └──────────────────┘
 ```
 
@@ -194,28 +194,60 @@ HTML (.html 含 <style>)
 
 | 选择器 | 说明 |
 |:--|:--|
-| `:not()` | 否定伪类（katana 已解析但未参与匹配） |
-| `::before` / `::after` | 伪元素（katana 已解析但未生成内容） |
+| `:not()` | 否定伪类（Katana 已解析但未参与样式匹配） |
+| `::before` / `::after` | 伪元素已解析，但未生成实际内容 |
 
-### CSS 属性
+### CSS 布局属性
 
-| 属性 | 原因 |
+| 属性 | 说明 |
 |:--|:--|
-| `float`, `clear` | Flexbox 可替代 |
-| `position: absolute/fixed` | 需层叠上下文支持 |
-| `z-index` | 子元素天然覆盖父元素 |
-| `transform`, `transition`, `animation` | 终端无意义 |
-| `vertical-align` | `align-items` 已足够 |
-| `opacity`, `box-shadow`, `border-radius` | 终端不支持 |
-| `grid-template-*` | grid 降级为 block |
+| `float`, `clear` | 未实现，推荐 Flexbox 替代 |
+| `position: absolute / fixed / relative` | 仅支持静态流定位 |
+| `z-index` | 无层叠上下文，元素顺序依赖 DOM |
+| `grid-template-*` 及 Grid 相关 | Grid 降级为 `block` 处理 |
+| `flex-wrap`, `align-content`, `flex-flow` | 仅支持单行 Flex，未实现换行与多行对齐 |
 
-### 渲染
+### CSS 视觉样式
+
+| 属性 | 说明 |
+|:--|:--|
+| `vertical-align` | 未支持，可用 `align-items` 替代 |
+| `opacity`, `box-shadow`, `border-radius` | 终端无法渲染透明、阴影、圆角 |
+| `transform`, `transition`, `animation` | 终端渲染无实际意义 |
+| 字体相关：`font-family`, `font-size` | 仅支持 `font-weight` 粗体 |
+| `text-decoration` 的 `overline` / `line-through` | 仅支持 `underline` |
+
+### 渲染与盒模型
 
 | 功能 | 说明 |
 |:--|:--|
-| `display: inline-block` | 未实现该中间模式 |
-| 重叠元素层叠 | 仅依赖 DOM 顺序 |
-| 交互重排内存泄漏 | 伪类触发 layout rebuild 时，旧 tree 未 free |
+| `display: inline-block` | 该中间模式未实现 |
+| 独立滚动容器（`overflow: auto / scroll`） | 仅支持 `overflow: hidden` 裁剪，无滚动条 |
+| 层叠顺序 | 重叠元素仅按 DOM 顺序，无真正层叠 |
+| 内存泄漏 | 伪类触发布局重建时，旧样式树未释放（已知问题） |
+
+### HTML 标签/元素
+
+| 标签 | 说明 |
+|:--|:--|
+| `<iframe>`, `<video>`, `<audio>`, `<canvas>` | 嵌入/多媒体/绘图元素不支持 |
+| `<select>`, `<textarea>`, `<input type="radio/checkbox">` 等 | 仅支持 `<input type="text">` 和 `<button>` |
+| `<details>`, `<dialog>`, `<summary>` 等语义标签 | 不支持 |
+
+### CSS 其他
+
+| 特性 | 说明 |
+|:--|:--|
+| `@media` 查询 | 无响应式支持 |
+| `background` 简写（除 `background-color`） | 仅支持纯色背景填充 |
+| `border` 部分样式（`groove` / `ridge` / `inset` / `outset`） | 降级为 `solid` 绘制 |
+
+### 交互
+
+| 功能 | 说明 |
+|:--|:--|
+| 鼠标悬停 `:hover` 等伪类 | 部分支持，但触发可能不稳定（依赖终端） |
+| 键盘/鼠标事件扩展 | 仅支持焦点切换、点击、输入，无拖拽等 |
 
 ---
 

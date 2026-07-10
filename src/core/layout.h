@@ -17,7 +17,9 @@ typedef enum {
     DISPLAY_BLOCK,
     DISPLAY_INLINE,
     DISPLAY_FLEX,
-    DISPLAY_GRID
+    DISPLAY_GRID,
+    DISPLAY_TABLE,
+    DISPLAY_TABLE_ROW
 } DisplayType;
 
 /** Flex direction */
@@ -95,6 +97,9 @@ typedef struct LayoutNode {
 
     /* border style: 0=none, 1=solid, 2=dashed */
     int border_style;
+
+    /* whitespace preservation (like <pre>) */
+    bool preserve_ws;
 
     /* children */
     struct LayoutNode** children;
@@ -318,8 +323,8 @@ static DisplayType get_default_display(const char* tagname) {
     if (strcmp(tagname, "form") == 0)   return DISPLAY_BLOCK;
     if (strcmp(tagname, "hr") == 0)     return DISPLAY_BLOCK;
     if (strcmp(tagname, "pre") == 0)    return DISPLAY_BLOCK;
-    if (strcmp(tagname, "table") == 0)  return DISPLAY_BLOCK;
-    if (strcmp(tagname, "tr") == 0)     return DISPLAY_BLOCK;
+    if (strcmp(tagname, "table") == 0)  return DISPLAY_TABLE;
+    if (strcmp(tagname, "tr") == 0)     return DISPLAY_TABLE_ROW;
     if (strcmp(tagname, "td") == 0)     return DISPLAY_BLOCK;
     if (strcmp(tagname, "th") == 0)     return DISPLAY_BLOCK;
 
@@ -347,6 +352,8 @@ static DisplayType parse_display(const char* str) {
     if (strcmp(str, "inline") == 0)    return DISPLAY_INLINE;
     if (strcmp(str, "flex") == 0)      return DISPLAY_FLEX;
     if (strcmp(str, "grid") == 0)      return DISPLAY_GRID;
+    if (strcmp(str, "table") == 0)    return DISPLAY_TABLE;
+    if (strcmp(str, "table-row") == 0) return DISPLAY_TABLE_ROW;
     return DISPLAY_BLOCK;
 }
 
@@ -848,6 +855,115 @@ static void layout_flex_children(LayoutNode* parent, int content_w, int content_
 }
 
 /** Compute child layouts based on parent's display type */
+/** Layout table: rows stack vertically, cells share width equally */
+static void layout_table_children(LayoutNode* parent, int content_w) {
+    if (content_w < 1) content_w = 1;
+
+    /* First pass: collect all rows by walking through table children.
+       Gumbo wraps <tr> in <tbody>, so we need to handle both.
+       A "row" is any child with display=TABLE_ROW.
+       A "row group" (like tbody) has rows as children. */
+    LayoutNode** rows = (LayoutNode**)malloc(16 * sizeof(LayoutNode*));
+    size_t num_rows = 0, cap_rows = 16;
+
+    for (size_t i = 0; i < parent->num_children; i++) {
+        LayoutNode* child = parent->children[i];
+        if (child->display == DISPLAY_NONE) continue;
+        if (child->display == DISPLAY_TABLE_ROW) {
+            /* Direct row child */
+            if (num_rows >= cap_rows) { cap_rows *= 2; rows = realloc(rows, cap_rows * sizeof(LayoutNode*)); }
+            rows[num_rows++] = child;
+        } else if (child->num_children > 0) {
+            /* Could be a row group (tbody/thead/tfoot). Collect its row children. */
+            for (size_t j = 0; j < child->num_children; j++) {
+                LayoutNode* rc = child->children[j];
+                if (rc->display != DISPLAY_NONE && rc->display == DISPLAY_TABLE_ROW) {
+                    if (num_rows >= cap_rows) { cap_rows *= 2; rows = realloc(rows, cap_rows * sizeof(LayoutNode*)); }
+                    rows[num_rows++] = rc;
+                }
+            }
+        }
+    }
+
+    if (num_rows == 0) { free(rows); return; }
+
+    /* Count max columns across all rows */
+    size_t max_cols = 0;
+    for (size_t i = 0; i < num_rows; i++) {
+        size_t n = 0;
+        for (size_t j = 0; j < rows[i]->num_children; j++)
+            if (rows[i]->children[j]->display != DISPLAY_NONE) n++;
+        if (n > max_cols) max_cols = n;
+    }
+    if (max_cols == 0) { free(rows); return; }
+
+    /* Measure natural cell width per column */
+    int* col_w = (int*)calloc(max_cols, sizeof(int));
+    for (size_t i = 0; i < num_rows; i++) {
+        LayoutNode* row = rows[i];
+        size_t c = 0;
+        for (size_t j = 0; j < row->num_children; j++) {
+            LayoutNode* cell = row->children[j];
+            if (cell->display == DISPLAY_NONE) continue;
+            int nat = cell->padding_left + cell->padding_right +
+                      cell->border_left + cell->border_right;
+            if (cell->text_content) nat += uc_str_width(cell->text_content);
+            if (c < max_cols && nat > (int)col_w[c]) col_w[c] = nat;
+            c++;
+        }
+    }
+
+    int total_nat = 0;
+    for (size_t c = 0; c < max_cols; c++) total_nat += col_w[c];
+    if (total_nat < 1) total_nat = 1;
+
+    int y_cursor = 0;
+    for (size_t i = 0; i < num_rows; i++) {
+        LayoutNode* row = rows[i];
+
+        row->x = 0; row->y = y_cursor; row->width = content_w;
+
+        int cx = 0, max_h = 0;
+        size_t c = 0;
+        for (size_t j = 0; j < row->num_children; j++) {
+            LayoutNode* cell = row->children[j];
+            if (cell->display == DISPLAY_NONE) continue;
+
+            int cw = col_w[c] * content_w / total_nat;
+            if (cw < 1) cw = 1;
+
+            cell->x = cx + cell->border_left + cell->padding_left;
+            cell->y = cell->border_top + cell->padding_top;
+            cell->width = cw - cell->padding_left - cell->padding_right -
+                          cell->border_left - cell->border_right;
+            if (cell->width < 0) cell->width = 0;
+
+            compute_child_layouts(cell, cell->width);
+
+            int ch = cell->height + cell->padding_top + cell->padding_bottom +
+                     cell->border_top + cell->border_bottom;
+            if (ch > max_h) max_h = ch;
+            cx += cw;
+            c++;
+        }
+
+        for (size_t j = 0; j < row->num_children; j++) {
+            LayoutNode* cell = row->children[j];
+            if (cell->display == DISPLAY_NONE) continue;
+            int target = max_h - cell->padding_top - cell->padding_bottom -
+                         cell->border_top - cell->border_bottom;
+            if (target > cell->height) cell->height = target;
+        }
+        row->height = max_h;
+        y_cursor += max_h;
+    }
+
+    parent->height = y_cursor;
+    free(col_w);
+    free(rows);
+}
+
+/** Compute child layouts based on parent's display type */
 static void compute_child_layouts(LayoutNode* parent, int content_w) {
     if (!parent || parent->num_children == 0) return;
 
@@ -857,6 +973,12 @@ static void compute_child_layouts(LayoutNode* parent, int content_w) {
         case DISPLAY_BLOCK:
         case DISPLAY_INLINE:
             layout_block_children(parent, content_w);
+            break;
+        case DISPLAY_TABLE:
+            layout_table_children(parent, content_w);
+            break;
+        case DISPLAY_TABLE_ROW:
+            /* Handled entirely by parent layout_table_children */
             break;
         case DISPLAY_FLEX:
             layout_flex_children(parent, content_w, content_h);
@@ -891,8 +1013,16 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
         ln->display = get_default_display(gumbo_normalized_tagname(snode->node->v.element.tag));
     }
 
-    /* extract text content */
-    ln->text_content = extract_text(snode->node);
+    /* extract text content (skip for table/tr — they render via children) */
+    const char* tag_name = NULL;
+    if (snode->node->type == GUMBO_NODE_ELEMENT)
+        tag_name = gumbo_normalized_tagname(snode->node->v.element.tag);
+    
+    if (tag_name && (strcmp(tag_name, "table") == 0 || strcmp(tag_name, "tr") == 0)) {
+        ln->text_content = NULL;
+    } else {
+        ln->text_content = extract_text(snode->node);
+    }
 
     /* build children */
     if (snode->num_children > 0) {
@@ -910,38 +1040,54 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
     }
 
     /* Compute natural text height if no explicit height */
-    /* This will be refined in layout_block_children/layout_flex_children */
     if (ln->text_content) {
-        /* estimate word-wrapped height using display widths */
         int mw = viewport_w - ln->padding_left - ln->padding_right -
                  ln->border_left - ln->border_right;
         if (mw < 1) mw = 1;
-        int lines = 0, lpos = 0;
-        const char* p = ln->text_content;
-        while (*p) {
-            while (*p == ' ' || *p == '\t') p++;
-            if (!*p) break;
-            if (*p == '\n') { lines++; lpos = 0; p++; continue; }
-            /* measure word width */
-            const char* we = p;
-            int ww = 0;
-            while (*we && *we != ' ' && *we != '\t' && *we != '\n') {
-                uint32_t cp = uc_dec(&we);
-                if (cp == 0) break;
-                ww += uc_wid((int)cp);
+
+        if (ln->preserve_ws) {
+            /* <pre>: line count = newlines + 1, no word-wrap */
+            int lines = 1;
+            for (const char* p = ln->text_content; *p; p++) {
+                if (*p == '\n') lines++;
             }
-            if (lpos + ww > mw && lpos > 0) { lines++; lpos = 0; }
-            lpos += ww + 1;
-            if (lpos >= mw) { lines++; lpos = 0; }
-            p = we;
-            if (*p == ' ' || *p == '\t') p++;
-            while (*p == '\n') { lines++; lpos = 0; p++; }
+            ln->height = lines;
+        } else {
+            /* estimate word-wrapped height using display widths */
+            int lines = 0, lpos = 0;
+            const char* p = ln->text_content;
+            while (*p) {
+                while (*p == ' ' || *p == '\t') p++;
+                if (!*p) break;
+                if (*p == '\n') { lines++; lpos = 0; p++; continue; }
+                const char* we = p;
+                int ww = 0;
+                while (*we && *we != ' ' && *we != '\t' && *we != '\n') {
+                    uint32_t cp = uc_dec(&we);
+                    if (cp == 0) break;
+                    ww += uc_wid((int)cp);
+                }
+                if (lpos + ww > mw && lpos > 0) { lines++; lpos = 0; }
+                lpos += ww + 1;
+                if (lpos >= mw) { lines++; lpos = 0; }
+                p = we;
+                if (*p == ' ' || *p == '\t') p++;
+                while (*p == '\n') { lines++; lpos = 0; p++; }
+            }
+            if (lines == 0) lines = 1;
+            ln->height = lines;
         }
-        if (lines == 0) lines = 1;
-        ln->height = lines;
     }
 
-    /* set default text color to white (inheritable, so children get it too) */
+    /* Check whitespace preservation (<pre> tag) */
+    if (snode->node->type == GUMBO_NODE_ELEMENT &&
+        snode->node->v.element.tag == GUMBO_TAG_PRE) {
+        ln->preserve_ws = true;
+    } else if (parent && parent->preserve_ws) {
+        ln->preserve_ws = true;
+    }
+
+    /* set default text color to white */
     if (!ln->color.valid) {
         ln->color.r = 255; ln->color.g = 255; ln->color.b = 255;
         ln->color.valid = true;

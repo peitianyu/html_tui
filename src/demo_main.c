@@ -40,6 +40,20 @@ int main(void) {
         "    <p>你好世界！这是一段中文文本，用于测试 UTF-8 多字节字符渲染。</p>"
         "    <p>🌟 Star / ★ Star / ☆ 空心星号 — 各种符号测试。</p>"
         "  </div>"
+        "  <div class='card'>"
+        "    <h2>&lt;pre&gt; 测试</h2>"
+        "    <pre>  前面两个空格  中间  多个   空格  结尾  </pre>"
+        "  </div>"
+        "  <div class='card'>"
+        "    <h2>表格测试</h2>"
+        "    <table>"
+        "      <tr><th>名称</th><th>数量</th><th>价格</th></tr>"
+        "      <tr><td>苹果</td><td>3</td><td>¥5.00</td></tr>"
+        "      <tr><td>香蕉</td><td>2</td><td>¥3.50</td></tr>"
+        "      <tr><td>橙子</td><td>5</td><td>¥8.00</td></tr>"
+        "    </table>"
+        "  </div>"
+        "  <div class='card'>"
         "    <h2>Another Card</h2>"
         "    <p>Scroll down for more content below here. Word wrap should keep words intact across line breaks.</p>"
         "    <p>Arrow keys / PgUp/Dn / Home/End / q=quit</p>"
@@ -64,9 +78,13 @@ int main(void) {
         ".card{background-color:#0f3460;padding:2;margin:1;"
         "      border:1;border-style:solid;border-color:#e94560;}"
         ".card p{color:#e0e0e0;}"
+        "table{color:#e0e0e0;width:100%;border:1;border-style:solid;border-color:#53a8b6;}"
+        "td,th{padding:1;border:1;border-style:solid;border-color:#0f3460;}"
+        "th{font-weight:bold;}"
         "strong{color:#e94560;font-weight:bold;}"
         "u{color:#53a8b6;text-decoration:underline;}"
-        ".footer{text-align:center;color:#888;margin-top:1;}";
+        ".footer{text-align:center;color:#888;margin-top:1;}"
+        "pre{background-color:#1a1a2e;color:#0f0;padding:1;border:1;border-style:solid;border-color:#53a8b6;}";
 
     /* Parse → Style → Layout */
     GumboOutput* dom = gumbo_parse(html);

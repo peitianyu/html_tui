@@ -238,9 +238,169 @@ static bool match_simple_selector(KatanaSelector* sel, GumboNode* node) {
             break;
         }
 
-        case KatanaSelectorMatchPseudoClass:
-            /* Skip pseudo-classes for now */
+        case KatanaSelectorMatchAttributeContain: {
+            /* E[foo*="bar"]: value contains substring */
+            if (!sel->data || !sel->data->attribute || !sel->data->value) return false;
+            GumboAttribute* attr = gumbo_get_attribute(&node->v.element.attributes, sel->data->attribute->local);
+            if (!attr) return false;
+            if (!strstr(attr->value, sel->data->value)) return false;
             break;
+        }
+
+        case KatanaSelectorMatchAttributeBegin: {
+            /* E[foo^="bar"]: value starts with substring */
+            if (!sel->data || !sel->data->attribute || !sel->data->value) return false;
+            GumboAttribute* attr = gumbo_get_attribute(&node->v.element.attributes, sel->data->attribute->local);
+            if (!attr) return false;
+            size_t vlen = strlen(sel->data->value);
+            if (strncmp(attr->value, sel->data->value, vlen) != 0) return false;
+            break;
+        }
+
+        case KatanaSelectorMatchAttributeEnd: {
+            /* E[foo$="bar"]: value ends with substring */
+            if (!sel->data || !sel->data->attribute || !sel->data->value) return false;
+            GumboAttribute* attr = gumbo_get_attribute(&node->v.element.attributes, sel->data->attribute->local);
+            if (!attr) return false;
+            size_t vlen = strlen(sel->data->value);
+            size_t alen = strlen(attr->value);
+            if (vlen > alen) return false;
+            if (strcmp(attr->value + alen - vlen, sel->data->value) != 0) return false;
+            break;
+        }
+
+        case KatanaSelectorMatchAttributeList: {
+            /* E[foo~="bar"]: space-separated list contains value */
+            if (!sel->data || !sel->data->attribute || !sel->data->value) return false;
+            GumboAttribute* attr = gumbo_get_attribute(&node->v.element.attributes, sel->data->attribute->local);
+            if (!attr) return false;
+            if (!has_class(attr->value, sel->data->value)) return false;
+            break;
+        }
+
+        case KatanaSelectorMatchAttributeHyphen: {
+            /* E[foo|="bar"]: value starts with "bar" or "bar-" */
+            if (!sel->data || !sel->data->attribute || !sel->data->value) return false;
+            GumboAttribute* attr = gumbo_get_attribute(&node->v.element.attributes, sel->data->attribute->local);
+            if (!attr) return false;
+            size_t vlen = strlen(sel->data->value);
+            if (strncmp(attr->value, sel->data->value, vlen) != 0) return false;
+            if (attr->value[vlen] != '\0' && attr->value[vlen] != '-') return false;
+            break;
+        }
+
+        case KatanaSelectorMatchPseudoClass: {
+            /* Structural and other pseudo-classes */
+            if (!sel->data) break;
+            GumboNode* parent = node->parent;
+            GumboVector* sibs = parent ? &parent->v.element.children : NULL;
+
+            /* Helper: count element siblings and get node index (1-based) */
+            int elem_idx = 0, elem_total = 0;
+            if (sibs) {
+                for (unsigned int i = 0; i < sibs->length; i++) {
+                    GumboNode* s = (GumboNode*)sibs->data[i];
+                    if (s->type == GUMBO_NODE_ELEMENT) {
+                        elem_total++;
+                        if (s == node) elem_idx = elem_total;
+                    }
+                }
+            }
+            /* Helper: count same-tag siblings */
+            int type_idx = 0, type_total = 0;
+            if (sibs && node->type == GUMBO_NODE_ELEMENT) {
+                GumboTag tag = node->v.element.tag;
+                for (unsigned int i = 0; i < sibs->length; i++) {
+                    GumboNode* s = (GumboNode*)sibs->data[i];
+                    if (s->type == GUMBO_NODE_ELEMENT && s->v.element.tag == tag) {
+                        type_total++;
+                        if (s == node) type_idx = type_total;
+                    }
+                }
+            }
+
+            switch (sel->pseudo) {
+                case KatanaPseudoFirstChild:
+                    if (elem_idx != 1) return false;
+                    break;
+                case KatanaPseudoLastChild:
+                    if (elem_idx != elem_total) return false;
+                    break;
+                case KatanaPseudoOnlyChild:
+                    if (elem_total != 1) return false;
+                    break;
+                case KatanaPseudoFirstOfType:
+                    if (type_idx != 1) return false;
+                    break;
+                case KatanaPseudoLastOfType:
+                    if (type_idx != type_total) return false;
+                    break;
+                case KatanaPseudoOnlyOfType:
+                    if (type_total != 1) return false;
+                    break;
+                case KatanaPseudoEmpty: {
+                    /* No children (element or text) */
+                    if (node->type != GUMBO_NODE_ELEMENT) break;
+                    GumboVector* ch = &node->v.element.children;
+                    bool empty = true;
+                    for (unsigned int i = 0; i < ch->length; i++) {
+                        GumboNode* c = (GumboNode*)ch->data[i];
+                        if (c->type == GUMBO_NODE_ELEMENT ||
+                            (c->type == GUMBO_NODE_TEXT && c->v.text.text && *(c->v.text.text))) {
+                            empty = false; break;
+                        }
+                    }
+                    if (!empty) return false;
+                    break;
+                }
+                case KatanaPseudoNthChild:
+                case KatanaPseudoNthLastChild: {
+                    /* Parse "an+b" from argument */
+                    const char* arg = sel->data->argument;
+                    if (!arg) return false;
+                    int a = 0, b = 0;
+                    bool valid = false;
+                    if (strcmp(arg, "odd") == 0) { a = 2; b = 1; valid = true; }
+                    else if (strcmp(arg, "even") == 0) { a = 2; b = 0; valid = true; }
+                    else {
+                        /* Parse "an+b" format */
+                        const char* p = arg;
+                        if (*p == '-' || (*p >= '0' && *p <= '9') || *p == '+') {
+                            char* end = NULL;
+                            long n = strtol(p, &end, 10);
+                            if (end && (*end == 'n' || *end == 'N')) {
+                                a = (int)n;
+                                p = end + 1;
+                                if (*p == '+' || *p == '-') {
+                                    b = (int)strtol(p, &end, 10);
+                                }
+                                valid = true;
+                            } else if (end && *end == '\0') {
+                                /* Just a number: nth-child(3) */
+                                b = (int)n; a = 0; valid = true;
+                            }
+                        }
+                    }
+                    if (!valid) break;
+                    int pos = (sel->pseudo == KatanaPseudoNthChild) ? elem_idx : elem_total - elem_idx + 1;
+                    if (pos < 1) return false;
+                    if (a == 0) { if (pos != b) return false; }
+                    else { int diff = pos - b; if (diff < 0 || diff % a != 0) return false; }
+                    break;
+                }
+                case KatanaPseudoLink:
+                case KatanaPseudoAnyLink:
+                    /* Match <a> elements with href attribute */
+                    if (node->type != GUMBO_NODE_ELEMENT) return false;
+                    if (node->v.element.tag != GUMBO_TAG_A) return false;
+                    if (!gumbo_get_attribute(&node->v.element.attributes, "href")) return false;
+                    break;
+                default:
+                    /* Skip unsupported pseudo-classes */
+                    break;
+            }
+            break;
+        }
 
         default:
             break;

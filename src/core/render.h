@@ -125,45 +125,14 @@ void screen_render_node(Screen* s, LayoutNode* n) {
     if (n->text_content && n->color.valid) {
         int lnx = scr_x + n->border_left + n->padding_left;
         int cy = scr_y + n->border_top + n->padding_top, mw = n->width; if (mw<1) mw=1;
-        int cx = lnx;
         const char* p = n->text_content;
 
-        /* Alignment: measure first line width for center/right */
-        if (n->text_align == 1 || n->text_align == 2) {
-            int line_w = 0;
-            const char* q = p;
-            while (*q && *q != '\n') {
-                uint32_t cp = uc_dec(&q);
-                if (cp == 0) break;
-                if (cp != ' ' && cp != '\t') line_w += uc_wid((int)cp);
-            }
-            if (n->text_align == 1 && line_w < mw) cx = lnx + (mw - line_w) / 2;
-            else if (n->text_align == 2 && line_w < mw) cx = lnx + mw - line_w;
-        }
-
-        while (*p && cy < s->rows) {
-            /* Skip leading spaces/tabs */
-            while (*p == ' ' || *p == '\t') { cx++; p++; }
-            if (!*p) break;
-            if (*p == '\n') { cy++; cx = lnx; p++; continue; }
-
-            /* Measure word display width */
-            const char* we = p;
-            int word_w = 0;
-            while (*we && *we != ' ' && *we != '\t' && *we != '\n') {
-                uint32_t cp = uc_dec(&we);
-                if (cp == 0) break;
-                word_w += uc_wid((int)cp);
-            }
-
-            /* Word-wrap if needed */
-            if (cx - lnx + word_w > mw && cx > lnx) {
-                cy++; cx = lnx;
-            }
-            if (cy >= s->rows) break;
-
-            /* Render word characters */
-            while (p < we && cy < s->rows) {
+        if (n->preserve_ws) {
+            /* <pre> mode: preserve whitespace, no word-wrap */
+            int cx = lnx;
+            while (*p && cy < s->rows) {
+                if (*p == '\n') { cy++; cx = lnx; p++; continue; }
+                if (*p == '\t') { cx = ((cx - lnx) / 4 + 1) * 4 + lnx; p++; continue; }
                 uint32_t cp = uc_dec(&p);
                 if (cp == 0 || cp == 0xFFFD) continue;
                 int w = uc_wid((int)cp);
@@ -175,13 +144,64 @@ void screen_render_node(Screen* s, LayoutNode* n) {
                     if (w == 2 && cx + 1 < s->cols) scr_set(s, cx + 1, cy, 0);
                 }
                 cx += w;
-                if (cx - lnx >= mw && p < we) { cy++; cx = lnx; }
+            }
+        } else {
+            /* Normal word-wrap mode */
+            int cx = lnx;
+
+            /* Alignment: measure first line width for center/right */
+            if (n->text_align == 1 || n->text_align == 2) {
+                int line_w = 0;
+                const char* q = p;
+                while (*q && *q != '\n') {
+                    uint32_t cp = uc_dec(&q);
+                    if (cp == 0) break;
+                    if (cp != ' ' && cp != '\t') line_w += uc_wid((int)cp);
+                }
+                if (n->text_align == 1 && line_w < mw) cx = lnx + (mw - line_w) / 2;
+                else if (n->text_align == 2 && line_w < mw) cx = lnx + mw - line_w;
             }
 
-            /* Skip trailing space */
-            if (*p == ' ') { cx++; p++; }
-            /* Handle newlines */
-            while (*p == '\n') { cy++; cx = lnx; p++; }
+            while (*p && cy < s->rows) {
+                /* Skip leading spaces/tabs */
+                while (*p == ' ' || *p == '\t') { cx++; p++; }
+                if (!*p) break;
+                if (*p == '\n') { cy++; cx = lnx; p++; continue; }
+
+                /* Measure word display width */
+                const char* we = p;
+                int word_w = 0;
+                while (*we && *we != ' ' && *we != '\t' && *we != '\n') {
+                    uint32_t cp = uc_dec(&we);
+                    if (cp == 0) break;
+                    word_w += uc_wid((int)cp);
+                }
+
+                /* Word-wrap if needed */
+                if (cx - lnx + word_w > mw && cx > lnx) { cy++; cx = lnx; }
+                if (cy >= s->rows) break;
+
+                /* Render word characters */
+                while (p < we && cy < s->rows) {
+                    uint32_t cp = uc_dec(&p);
+                    if (cp == 0 || cp == 0xFFFD) continue;
+                    int w = uc_wid((int)cp);
+                    if (cx >= 0 && cx < s->cols) {
+                        scr_set(s, cx, cy, cp);
+                        scr_fg(s, cx, cy, n->color.r, n->color.g, n->color.b);
+                        if (n->font_bold) scr_bold(s, cx, cy, true);
+                        if (n->font_underline) scr_uline(s, cx, cy, true);
+                        if (w == 2 && cx + 1 < s->cols) scr_set(s, cx + 1, cy, 0);
+                    }
+                    cx += w;
+                    if (cx - lnx >= mw && p < we) { cy++; cx = lnx; }
+                }
+
+                /* Skip trailing space */
+                if (*p == ' ') { cx++; p++; }
+                /* Handle newlines */
+                while (*p == '\n') { cy++; cx = lnx; p++; }
+            }
         }
     }
 }

@@ -110,12 +110,46 @@ static void node_abs_box(LayoutNode* n, int scroll_x, int scroll_y,
     *out_h = n->height + n->padding_top + n->padding_bottom + n->border_top + n->border_bottom;
 }
 
-static void draw_border(Screen* s, int x, int y, int w, int h, ResolvedColor color) {
+static void draw_border(Screen* s, int x, int y, int w, int h, ResolvedColor color, int style) {
     if (w < 2 || h < 2) return;
     int r = x + w - 1, b = y + h - 1;
-    scr_set(s,x,y,'+'); scr_set(s,r,y,'+'); scr_set(s,x,b,'+'); scr_set(s,r,b,'+');
-    for (int cx = x+1; cx < r; cx++) { scr_set(s,cx,y,'-'); scr_set(s,cx,b,'-'); }
-    for (int cy = y+1; cy < b; cy++) { scr_set(s,x,cy,'|'); scr_set(s,r,cy,'|'); }
+    uint32_t ch_h, ch_v, ch_tl, ch_tr, ch_bl, ch_br;
+    switch (style) {
+        case 6: /* rounded */
+            ch_h = 0x2500; ch_v = 0x2502;   /* ─ │ */
+            ch_tl = 0x256D; ch_tr = 0x256E;
+            ch_bl = 0x2570; ch_br = 0x256F; /* ╭ ╮ ╰ ╯ */
+            break;
+        case 5: /* heavy */
+            ch_h = 0x2501; ch_v = 0x2503;   /* ━ ┃ */
+            ch_tl = 0x250F; ch_tr = 0x2513;
+            ch_bl = 0x2517; ch_br = 0x251B; /* ┏ ┓ ┗ ┛ */
+            break;
+        case 4: /* double */
+            ch_h = 0x2550; ch_v = 0x2551;   /* ═ ║ */
+            ch_tl = 0x2554; ch_tr = 0x2557;
+            ch_bl = 0x255A; ch_br = 0x255D; /* ╔ ╗ ╚ ╝ */
+            break;
+        case 3: /* dotted */
+            ch_h = 0x2504; ch_v = 0x2506;   /* ┄ ┆ */
+            ch_tl = 0x250C; ch_tr = 0x2510;
+            ch_bl = 0x2514; ch_br = 0x2518; /* ┌ ┐ └ ┘ */
+            break;
+        case 2: /* dashed */
+            ch_h = 0x254C; ch_v = 0x254E;   /* ╌ ╎ */
+            ch_tl = 0x250C; ch_tr = 0x2510;
+            ch_bl = 0x2514; ch_br = 0x2518; /* ┌ ┐ └ ┘ */
+            break;
+        default: /* solid */
+            ch_h = 0x2500; ch_v = 0x2502;   /* ─ │ */
+            ch_tl = 0x250C; ch_tr = 0x2510;
+            ch_bl = 0x2514; ch_br = 0x2518; /* ┌ ┐ └ ┘ */
+            break;
+    }
+    scr_set(s,x,y,ch_tl); scr_set(s,r,y,ch_tr);
+    scr_set(s,x,b,ch_bl); scr_set(s,r,b,ch_br);
+    for (int cx = x+1; cx < r; cx++) { scr_set(s,cx,y,ch_h); scr_set(s,cx,b,ch_h); }
+    for (int cy = y+1; cy < b; cy++) { scr_set(s,x,cy,ch_v); scr_set(s,r,cy,ch_v); }
     if (color.valid) {
         for (int cx = x; cx <= r; cx++) { scr_fg(s,cx,y,color.r,color.g,color.b); scr_fg(s,cx,b,color.r,color.g,color.b); }
         for (int cy = y; cy <= b; cy++) { scr_fg(s,x,cy,color.r,color.g,color.b); scr_fg(s,r,cy,color.r,color.g,color.b); }
@@ -137,8 +171,16 @@ void screen_render_node(Screen* s, LayoutNode* n) {
         for (int row=y1; row<y2; row++) for (int col=x1; col<x2; col++) scr_bg(s,col,row,n->bg_color.r,n->bg_color.g,n->bg_color.b);
     }
     if (n->border_top > 0 && n->border_style > 0) {
-        ResolvedColor bc = n->border_color; if (!bc.valid && n->color.valid) bc = n->color; bc.valid = true;
-        draw_border(s, scr_x, scr_y, tw, th, bc);
+        /* Skip border drawing for table cells - table draws a unified grid */
+        bool skip = false;
+        if (n->styled && n->styled->node && n->styled->node->type == GUMBO_NODE_ELEMENT) {
+            GumboTag t = n->styled->node->v.element.tag;
+            skip = (t == GUMBO_TAG_TABLE || t == GUMBO_TAG_TD || t == GUMBO_TAG_TH);
+        }
+        if (!skip) {
+            ResolvedColor bc = n->border_color; if (!bc.valid && n->color.valid) bc = n->color; bc.valid = true;
+            draw_border(s, scr_x, scr_y, tw, th, bc, n->border_style);
+        }
     }
     /* <hr>: draw horizontal line across content width */
     if (n->styled && n->styled->node && n->styled->node->type == GUMBO_NODE_ELEMENT &&
@@ -273,6 +315,137 @@ void screen_render_node(Screen* s, LayoutNode* n) {
     }
 }
 
+/* ─── Table grid: draw unified grid for <table> ──────────────── */
+static int sort_ints(const void* a, const void* b) { return *(const int*)a - *(const int*)b; }
+static void add_unique(int** arr, size_t* n, size_t* cap, int val) {
+    for (size_t i = 0; i < *n; i++) if ((*arr)[i] == val) return;
+    if (*n >= *cap) { *cap *= 2; *arr = realloc(*arr, *cap * sizeof(int)); }
+    (*arr)[(*n)++] = val;
+}
+
+/* Collect grid line positions from table cells */
+static void collect_grid_from_table(LayoutNode* node, int scroll_x, int scroll_y,
+                                     int** xs, size_t* nx, size_t* cap_x,
+                                     int** ys, size_t* ny, size_t* cap_y) {
+    if (!node || node->display == DISPLAY_NONE) return;
+    /* td/th: add their box edges */
+    if (node->styled && node->styled->node &&
+        node->styled->node->type == GUMBO_NODE_ELEMENT) {
+        GumboTag t = node->styled->node->v.element.tag;
+        if (t == GUMBO_TAG_TD || t == GUMBO_TAG_TH) {
+            int bx, by, bw, bh;
+            node_abs_box(node, scroll_x, scroll_y, &bx, &by, &bw, &bh);
+            add_unique(xs, nx, cap_x, bx);
+            add_unique(xs, nx, cap_x, bx + bw);
+            add_unique(ys, ny, cap_y, by);
+            add_unique(ys, ny, cap_y, by + bh);
+            return;
+        }
+    }
+    for (size_t i = 0; i < node->num_children; i++)
+        collect_grid_from_table(node->children[i], scroll_x, scroll_y, xs, nx, cap_x, ys, ny, cap_y);
+}
+
+/* Draw a unified grid for a <table> node */
+static void draw_table_grid(Screen* s, LayoutNode* table) {
+    int sx = s->scroll_x, sy = s->scroll_y;
+
+    /* Collect column (x) and row (y) boundaries from cells only */
+    size_t cap_x = 64, nx = 0; int* xs = malloc(cap_x * sizeof(int));
+    size_t cap_y = 64, ny = 0; int* ys = malloc(cap_y * sizeof(int));
+
+    collect_grid_from_table(table, sx, sy, &xs, &nx, &cap_x, &ys, &ny, &cap_y);
+
+    if (nx < 2 || ny < 2) { free(xs); free(ys); return; }
+
+    /* Sort */
+    qsort(xs, nx, sizeof(int), sort_ints);
+    qsort(ys, ny, sizeof(int), sort_ints);
+
+    /* Determine line style from table; cells inherit same style */
+    uint32_t ch_h = 0x2500, ch_v = 0x2502;
+    uint32_t ch_tl = 0x250C, ch_tr = 0x2510;
+    uint32_t ch_bl = 0x2514, ch_br = 0x2518;
+    switch (table->border_style) {
+        case 6: /* rounded */
+            ch_h = 0x2500; ch_v = 0x2502;
+            ch_tl = 0x256D; ch_tr = 0x256E;
+            ch_bl = 0x2570; ch_br = 0x256F;
+            break;
+        case 5: /* heavy */
+            ch_h = 0x2501; ch_v = 0x2503;
+            ch_tl = 0x250F; ch_tr = 0x2513;
+            ch_bl = 0x2517; ch_br = 0x251B;
+            break;
+        case 4: /* double */
+            ch_h = 0x2550; ch_v = 0x2551;
+            ch_tl = 0x2554; ch_tr = 0x2557;
+            ch_bl = 0x255A; ch_br = 0x255D;
+            break;
+        default: break;
+    }
+
+    ResolvedColor bc = table->border_color;
+    if (!bc.valid) { bc.r = 180; bc.g = 180; bc.b = 180; bc.valid = true; }
+
+    /* Draw horizontal grid lines — continuous from leftmost to rightmost */
+    for (size_t yi = 0; yi < ny; yi++) {
+        int y = ys[yi];
+        if (y < 0 || y >= s->rows) continue;
+        int x_start = xs[0] + 1;
+        int x_end   = xs[nx - 1];
+        if (x_start >= x_end) continue;
+        for (int cx = x_start; cx < x_end && cx < s->cols; cx++) {
+            if (cx >= 0) { scr_set(s, cx, y, ch_h); scr_fg(s,cx,y,bc.r,bc.g,bc.b); }
+        }
+    }
+
+    /* Draw vertical grid lines — continuous from topmost to bottommost */
+    for (size_t xi = 0; xi < nx; xi++) {
+        int x = xs[xi];
+        if (x < 0 || x >= s->cols) continue;
+        int y_start = ys[0] + 1;
+        int y_end   = ys[ny - 1];
+        if (y_start >= y_end) continue;
+        for (int cy = y_start; cy < y_end && cy < s->rows; cy++) {
+            if (cy >= 0) { scr_set(s, x, cy, ch_v); scr_fg(s,x,cy,bc.r,bc.g,bc.b); }
+        }
+    }
+
+    /* Draw intersection characters at each grid point */
+    for (size_t yi = 0; yi < ny; yi++) {
+        int y = ys[yi];
+        if (y < 0 || y >= s->rows) continue;
+        for (size_t xi = 0; xi < nx; xi++) {
+            int x = xs[xi];
+            if (x < 0 || x >= s->cols) continue;
+            bool up    = yi > 0;
+            bool down  = yi + 1 < ny;
+            bool left  = xi > 0;
+            bool right = xi + 1 < nx;
+
+            uint32_t isect;
+            if      (up && down && left && right) isect = 0x253C; /* ┼ */
+            else if (up && down && left)          isect = 0x2524; /* ┤ */
+            else if (up && down && right)         isect = 0x251C; /* ├ */
+            else if (up && left && right)         isect = 0x2534; /* ┴ */
+            else if (down && left && right)       isect = 0x252C; /* ┬ */
+            else if (up && down)                  isect = 0x2502; /* │ */
+            else if (left && right)               isect = 0x2500; /* ─ */
+            else if (down && right)               isect = ch_tl;  /* top-left corner */
+            else if (down && left)                isect = ch_tr;  /* top-right corner */
+            else if (up && right)                 isect = ch_bl;  /* bottom-left corner */
+            else if (up && left)                  isect = ch_br;  /* bottom-right corner */
+            else                                  isect = 0x0020;
+
+            scr_set(s, x, y, isect);
+            scr_fg(s, x, y, bc.r, bc.g, bc.b);
+        }
+    }
+
+    free(xs); free(ys);
+}
+
 /**
  * Render a node and its children with optional clip rect.
  * clip_x/y/w/h define the visible area (in screen coords after scroll).
@@ -324,6 +497,12 @@ static void screen_render_offset(Screen* s, LayoutNode* n, int px, int py, int c
 
     for (size_t i = 0; i < n->num_children; i++)
         screen_render_offset(s, n->children[i], cpx, cpy, my_clip_x, my_clip_y, my_clip_w, my_clip_h);
+
+    /* Draw table grid if this is a <table> node */
+    if (n->styled && n->styled->node && n->styled->node->type == GUMBO_NODE_ELEMENT &&
+        n->styled->node->v.element.tag == GUMBO_TAG_TABLE) {
+        draw_table_grid(s, n);
+    }
 }
 
 void screen_render_tree(Screen* s, LayoutNode* root) {

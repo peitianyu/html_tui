@@ -98,7 +98,7 @@ typedef struct LayoutNode {
     /* truncate overflow text (single-line, no wrap) */
     bool truncate_overflow;
 
-    /* border style: 0=none, 1=solid, 2=dashed */
+    /* border style: 0=none, 1=solid, 2=dashed, 3=dotted, 4=double, 5=heavy, 6=rounded */
     int border_style;
 
     /* whitespace preservation (like <pre>) */
@@ -488,6 +488,12 @@ static void apply_styles(LayoutNode* ln) {
     if (bs) {
         if (strcmp(bs, "solid") == 0) ln->border_style = 1;
         else if (strcmp(bs, "dashed") == 0) ln->border_style = 2;
+        else if (strcmp(bs, "dotted") == 0) ln->border_style = 3;
+        else if (strcmp(bs, "double") == 0) ln->border_style = 4;
+        else if (strcmp(bs, "heavy") == 0 || strcmp(bs, "bold") == 0) ln->border_style = 5;
+        else if (strcmp(bs, "rounded") == 0) ln->border_style = 6;
+        else if (strcmp(bs, "groove") == 0 || strcmp(bs, "ridge") == 0 ||
+                 strcmp(bs, "inset") == 0 || strcmp(bs, "outset") == 0) ln->border_style = 1;
     }
 
     /* border color */
@@ -912,6 +918,27 @@ static void layout_flex_children(LayoutNode* parent, int content_w, int content_
 static void layout_table_children(LayoutNode* parent, int content_w) {
     if (content_w < 1) content_w = 1;
 
+    /* Respect CSS width/height on <table> element if set */
+    bool has_css_width = false;
+    int table_w = content_w;
+    const char* tw_str = parent->styled ? get_style(parent->styled, "width") : NULL;
+    if (tw_str && strcmp(tw_str, "auto") != 0) {
+        ParsedDim tw_dim = parse_dimension(tw_str);
+        if (tw_dim.valid) {
+            int tw = resolve_dim(tw_dim, content_w, content_w);
+            if (tw > 0) { table_w = tw; has_css_width = true; }
+        }
+    }
+    int table_h = 0; /* 0 means auto */
+    const char* th_str = parent->styled ? get_style(parent->styled, "height") : NULL;
+    if (th_str) {
+        ParsedDim th_dim = parse_dimension(th_str);
+        if (th_dim.valid) {
+            int th = resolve_dim(th_dim, content_w, content_w);
+            if (th > 0) table_h = th;
+        }
+    }
+
     /* First pass: collect all rows by walking through table children.
        Gumbo wraps <tr> in <tbody>, so we need to handle both.
        A "row" is any child with display=TABLE_ROW.
@@ -970,11 +997,15 @@ static void layout_table_children(LayoutNode* parent, int content_w) {
     for (size_t c = 0; c < max_cols; c++) total_nat += col_w[c];
     if (total_nat < 1) total_nat = 1;
 
+    /* Use CSS width if set, otherwise natural width (capped at parent) */
+    bool has_width = (tw_str && strcmp(tw_str, "auto") != 0);
+    int avail = has_width ? table_w : (total_nat < content_w ? total_nat : content_w);
+
     int y_cursor = 0;
     for (size_t i = 0; i < num_rows; i++) {
         LayoutNode* row = rows[i];
 
-        row->x = 0; row->y = y_cursor; row->width = content_w;
+        row->x = 0; row->y = y_cursor; row->width = avail;
 
         int cx = 0, max_h = 0;
         size_t c = 0;
@@ -982,7 +1013,7 @@ static void layout_table_children(LayoutNode* parent, int content_w) {
             LayoutNode* cell = row->children[j];
             if (cell->display == DISPLAY_NONE) continue;
 
-            int cw = col_w[c] * content_w / total_nat;
+            int cw = col_w[c] * avail / total_nat;
             if (cw < 1) cw = 1;
 
             cell->x = cx + cell->border_left + cell->padding_left;
@@ -1012,6 +1043,30 @@ static void layout_table_children(LayoutNode* parent, int content_w) {
     }
 
     parent->height = y_cursor;
+
+    /* If CSS height is set, adjust row heights to fill */
+    if (table_h > 0 && y_cursor > 0 && y_cursor < table_h && num_rows > 0) {
+        int extra = table_h - y_cursor;
+        int extra_per = extra / (int)num_rows;
+        int extra_rem = extra % (int)num_rows;
+        int y_fix = 0;
+        for (size_t i = 0; i < num_rows; i++) {
+            int add = extra_per + (i < (size_t)extra_rem ? 1 : 0);
+            LayoutNode* row = rows[i];
+            row->height += add;
+            row->y = y_fix;
+            /* Extend cell heights in this row */
+            for (size_t j = 0; j < row->num_children; j++) {
+                LayoutNode* cell = row->children[j];
+                if (cell->display == DISPLAY_NONE) continue;
+                cell->height += add;
+            }
+            y_fix += row->height;
+        }
+        parent->height = table_h;
+    }
+
+    parent->width = avail;
     free(col_w);
     free(rows);
 }

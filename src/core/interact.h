@@ -581,6 +581,8 @@ handle_scroll_keys:
             else if (ev.key == TB_KEY_HOME) { scroll_x = 0; scroll_y = 0; }
             else if (ev.key == TB_KEY_END) { scroll_y = 999999; }
             else if (ev.key == TB_KEY_TAB && focus_count > 0) {
+                /* Clear hover state on keyboard navigation */
+                if (g_interact_hover) { g_interact_hover = NULL; restyle = true; }
                 focus_idx = (focus_idx + 1) % focus_count;
                 GumboNode* gn = (focus_idx >= 0 && focus_list[focus_idx]->styled)
                                 ? focus_list[focus_idx]->styled->node : NULL;
@@ -592,6 +594,28 @@ handle_scroll_keys:
                     } else if (cb) {
                         snprintf(cb->status_msg, sizeof(cb->status_msg),
                                  "Tab: focus #%d (%s)", focus_idx,
+                                 gumbo_normalized_tagname(gn->v.element.tag));
+                    }
+                } else {
+                    g_interact_focus = NULL;
+                }
+                restyle = true;
+                continue;
+            }
+            else if (ev.key == TB_KEY_BACK_TAB && focus_count > 0) {
+                /* Clear hover state on keyboard navigation */
+                if (g_interact_hover) { g_interact_hover = NULL; restyle = true; }
+                focus_idx = (focus_idx - 1 + focus_count) % focus_count;
+                GumboNode* gn = (focus_idx >= 0 && focus_list[focus_idx]->styled)
+                                ? focus_list[focus_idx]->styled->node : NULL;
+                if (gn) {
+                    g_interact_focus = gn;
+                    if (cb && cb->on_focus_change) {
+                        cb->on_focus_change(focus_idx,
+                            gumbo_normalized_tagname(gn->v.element.tag), cb);
+                    } else if (cb) {
+                        snprintf(cb->status_msg, sizeof(cb->status_msg),
+                                 "Shift+Tab: focus #%d (%s)", focus_idx,
                                  gumbo_normalized_tagname(gn->v.element.tag));
                     }
                 } else {

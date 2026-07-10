@@ -2,7 +2,7 @@
  * Page configuration for the TUI browser demo.
  *
  * 使用方式:
- *   1. 在 doc/test_pages/ 下放 HTML 文件 (含 <style> 内联 CSS)
+ *   1. 在 pages/ 下放 HTML 文件 (含 <style> 内联 CSS)
  *   2. 在 btn_actions[] 中注册按钮行为 (可选)
  *   3. 运行: tcc -I src -run src/demo_main.c [page.html]
  *

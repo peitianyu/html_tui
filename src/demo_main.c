@@ -2,7 +2,7 @@
  * demo_main.c - Interactive TUI browser: HTML+CSS → Layout → Termbox2
  *
  * Usage: tcc src/demo_main.c -I src -run [page.html]
- *   If no page is given, loads doc/test_pages/00-menu.html
+ *   If no page is given, loads pages/00-menu.html
  *
  * Each .html file contains both HTML structure and inline <style> CSS.
  */
@@ -31,7 +31,7 @@
 #include "demo_page.h"
 
 int main(int argc, char** argv) {
-    const char* filepath = argc > 1 ? argv[1] : "doc/test_pages/00-menu.html";
+    const char* filepath = argc > 1 ? argv[1] : "pages/00-menu.html";
     demo_run(filepath);
     return 0;
 }

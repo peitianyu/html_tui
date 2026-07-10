@@ -148,8 +148,11 @@ HTML (.html 含 <style>)
 | `align-items` | `start`, `center`, `end`, `stretch` |
 | `gap` | flex 子元素间距 |
 | `flex-grow` | 剩余空间分配 |
+| `flex-shrink` | ✅ 超出容器时按比例收缩 |
 | `flex-basis` | `px` 单位 |
 | `overflow` | `hidden`（递归裁剪子节点） |
+| `visibility` | ✅ `hidden`（元素占位不可见） |
+| `white-space` | ✅ `pre`/`pre-wrap`/`pre-line`（保留空白） |
 
 ### HTML 标签
 
@@ -196,6 +199,7 @@ HTML (.html 含 <style>)
 |:--|:--|
 | `:not()` | 否定伪类（Katana 已解析但未参与样式匹配） |
 | `::before` / `::after` | 伪元素已解析，但未生成实际内容 |
+| `:nth-child(an+b)` 复杂公式 | 支持 `odd`/`even`/纯数字，`3n+1` 等含乘法的公式未验证 |
 
 ### CSS 布局属性
 
@@ -206,6 +210,12 @@ HTML (.html 含 <style>)
 | `z-index` | 无层叠上下文，元素顺序依赖 DOM |
 | `grid-template-*` 及 Grid 相关 | Grid 降级为 `block` 处理 |
 | `flex-wrap`, `align-content`, `flex-flow` | 仅支持单行 Flex，未实现换行与多行对齐 |
+| `flex-shrink` | ✅ 已实现（超出容器时按比例收缩） |
+| `max-width` / `min-width` / `max-height` / `min-height` | 未实现尺寸约束 |
+| `box-sizing` | 始终按 `content-box` 计算（padding/border 附加到宽高外） |
+| `margin: auto` | 未实现自动居中 |
+| 负 `margin` | 未处理，行为未定义 |
+| margin 折叠 | 相邻垂直 margin 不会折叠，直接相加 |
 
 ### CSS 视觉样式
 
@@ -214,8 +224,24 @@ HTML (.html 含 <style>)
 | `vertical-align` | 未支持，可用 `align-items` 替代 |
 | `opacity`, `box-shadow`, `border-radius` | 终端无法渲染透明、阴影、圆角 |
 | `transform`, `transition`, `animation` | 终端渲染无实际意义 |
-| 字体相关：`font-family`, `font-size` | 仅支持 `font-weight` 粗体 |
+| 字体相关：`font-family`, `font-size`, `font-style` | 仅支持 `font-weight` 粗体 |
 | `text-decoration` 的 `overline` / `line-through` | 仅支持 `underline` |
+| `line-height` | 行高固定为 1 字符高度 |
+| `text-transform` | 大小写转换未实现 |
+| `letter-spacing`, `word-spacing` | 字符/单词间距未实现 |
+| `white-space` | ✅ 已实现（`pre`/`pre-wrap`/`pre-line` 保留空白） |
+| `visibility` | ✅ 已实现（`hidden` 占位不可见） |
+| `outline` | 未实现 |
+| `cursor` | 终端光标样式不可控 |
+
+### 颜色格式
+
+| 格式 | 说明 |
+|:--|:--|
+| `rgb(r,g,b)` / `rgba(r,g,b,a)` | 函数式 RGB 未解析 |
+| `hsl()` / `hsla()` | HSL 颜色空间未实现 |
+| `transparent` 关键字 | 未识别为透明色 |
+| `currentColor` 关键字 | 未识别 |
 
 ### 渲染与盒模型
 
@@ -224,29 +250,48 @@ HTML (.html 含 <style>)
 | `display: inline-block` | 该中间模式未实现 |
 | 独立滚动容器（`overflow: auto / scroll`） | 仅支持 `overflow: hidden` 裁剪，无滚动条 |
 | 层叠顺序 | 重叠元素仅按 DOM 顺序，无真正层叠 |
+| 终端 resize 信号 | 依赖 `tb_poll_event` 轮询检测（`SIGWINCH` 无独立 handler） |
+| 文本选中/复制 | 终端 TUI 无选择复制机制 |
+| `<img>` 的 `alt` 属性 | ✅ 已实现（读取 `alt` 属性，显示 `[alt文本]`） |
 
 ### HTML 标签/元素
 
 | 标签 | 说明 |
 |:--|:--|
 | `<iframe>`, `<video>`, `<audio>`, `<canvas>` | 嵌入/多媒体/绘图元素不支持 |
-| `<select>`, `<textarea>`, `<input type="radio/checkbox">` 等 | 仅支持 `<input type="text">` 和 `<button>` |
+| `<select>`, `<textarea>`, `<input type="radio/checkbox/email/password/number/range/date">` 等 | 仅支持 `<input type="text">` 和 `<button>` |
 | `<details>`, `<dialog>`, `<summary>` 等语义标签 | 不支持 |
+| `<label>` | 未绑定到输入框，点击无聚焦效果 |
+| `<fieldset>`, `<legend>` | 表单分组元素未实现 |
+| `<optgroup>`, `<option>` | 下拉选择相关不支持 |
+
+### 表格
+
+| 特性 | 说明 |
+|:--|:--|
+| `colspan` / `rowspan` | 跨列/跨行合并未实现 |
+| `<thead>` / `<tbody>` / `<tfoot>` | 表格行组无语义区分 |
+| `border-collapse` | 始终使用 collapsed 网格绘制模式 |
 
 ### CSS 其他
 
 | 特性 | 说明 |
 |:--|:--|
 | `@media` 查询 | 无响应式支持 |
-| `background` 简写（除 `background-color`） | 仅支持纯色背景填充 |
-| `border` 部分样式（`groove` / `ridge` / `inset` / `outset`） | 降级为 `solid` 绘制 |
+| `background` 简写（除 `background-color`）| 仅支持纯色背景填充，`background-image` 等不支持 |
+| `border` 部分样式（`groove` / `ridge` / `inset` / `outset`）| 降级为 `solid` 绘制 |
+| `@font-face` | 字体定义无意义 |
+| `@keyframes` / `animation` | 动画不支持 |
+| `inherit` / `initial` / `unset` 关键字 | 未实现 CSS 级联关键字 |
 
 ### 交互
 
 | 功能 | 说明 |
 |:--|:--|
-| 鼠标悬停 `:hover` 等伪类 | 部分支持，但触发可能不稳定（依赖终端） |
-| 键盘/鼠标事件扩展 | 仅支持焦点切换、点击、输入，无拖拽等 |
+| `Shift+Tab` | ✅ 已实现（`TB_KEY_BACK_TAB`，反向遍历焦点） |
+| 鼠标悬停 `:hover` | ⚠️ 部分支持：键盘导航会清除悬停，但鼠标离开后无独立事件重置 |
+| 键盘/鼠标事件扩展 | 仅支持焦点切换、点击、输入，无拖拽、右键菜单等 |
+| 输入框光标位置 | 输入始终追加到末尾，不支持光标移动/插入 |
 
 ---
 
@@ -254,6 +299,7 @@ HTML (.html 含 <style>)
 
 ```
 ├── run.sh                        # 运行脚本
+├── pages/                        # 测试页面（HTML + 内联 CSS）
 ├── src/
 │   ├── demo_main.c               # 入口：组装模块并启动
 │   ├── demo_page.h               # 用户页面配置（可编辑）
@@ -269,6 +315,6 @@ HTML (.html 含 <style>)
 ├── doc/
 │   ├── 实现状态.md               # 详细的功能实现状态
 │   ├── 解耦方案.md               # 架构解耦设计文档
-│   └── test_pages/               # 测试页面（HTML + 内联 CSS）
+│   └── test_pages/               # 历史测试页面 (已迁移到 pages/)
 └── README.md
 ```

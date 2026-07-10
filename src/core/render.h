@@ -169,11 +169,14 @@ void screen_render_node(Screen* s, LayoutNode* n) {
     int th = n->height + n->padding_top + n->padding_bottom + n->border_top + n->border_bottom;
     if (scr_x+tw < 0 || scr_x >= s->cols || scr_y+th < 0 || scr_y >= s->rows) return;
 
-    if (n->bg_color.valid) {
+    /* visibility: hidden — element occupies space but is invisible */
+    bool vis_hidden = n->visibility_hidden;
+
+    if (!vis_hidden && n->bg_color.valid) {
         int x1=scr_x>0?scr_x:0, y1=scr_y>0?scr_y:0, x2=scr_x+tw<s->cols?scr_x+tw:s->cols, y2=scr_y+th<s->rows?scr_y+th:s->rows;
         for (int row=y1; row<y2; row++) for (int col=x1; col<x2; col++) scr_bg(s,col,row,n->bg_color.r,n->bg_color.g,n->bg_color.b);
     }
-    if (n->border_top > 0 && n->border_style > 0) {
+    if (!vis_hidden && n->border_top > 0 && n->border_style > 0) {
         /* Skip border drawing for table cells - table draws a unified grid */
         bool skip = false;
         if (n->styled && n->styled->node && n->styled->node->type == GUMBO_NODE_ELEMENT) {
@@ -186,7 +189,7 @@ void screen_render_node(Screen* s, LayoutNode* n) {
         }
     }
     /* <hr>: draw horizontal line across content width */
-    if (n->styled && n->styled->node && n->styled->node->type == GUMBO_NODE_ELEMENT &&
+    if (!vis_hidden && n->styled && n->styled->node && n->styled->node->type == GUMBO_NODE_ELEMENT &&
         n->styled->node->v.element.tag == GUMBO_TAG_HR && n->color.valid) {
         int hx = scr_x + n->border_left + n->padding_left;
         int hy = scr_y + n->border_top + n->padding_top;
@@ -197,7 +200,7 @@ void screen_render_node(Screen* s, LayoutNode* n) {
             if (col >= 0) { scr_set(s, col, hy, cw); scr_fg(s,col,hy,n->color.r,n->color.g,n->color.b); }
         }
     }
-    if (n->text_content && n->color.valid) {
+    if (!vis_hidden && n->text_content && n->color.valid) {
         int lnx = scr_x + n->border_left + n->padding_left;
         int cy = scr_y + n->border_top + n->padding_top, mw = n->width; if (mw<1) mw=1;
         const char* p = n->text_content;
@@ -446,7 +449,7 @@ static void draw_table_grid(Screen* s, LayoutNode* table) {
  * clip_w <= 0 means no clipping.
  */
 static void screen_render_offset(Screen* s, LayoutNode* n, int px, int py, int clip_x, int clip_y, int clip_w, int clip_h) {
-    if (!n || n->display == DISPLAY_NONE) return;
+    if (!n || n->display == DISPLAY_NONE || n->visibility_hidden) return;
     int svx=n->x, svy=n->y; n->x+=px; n->y+=py;
 
     /* Compute effective clip for children */

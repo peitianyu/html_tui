@@ -112,6 +112,9 @@ typedef struct LayoutNode {
     /* overflow hidden */
     bool overflow_hidden;
 
+    /* visibility: hidden — element takes space but is invisible */
+    bool visibility_hidden;
+
     /* parent pointer for absolute position computation */
     struct LayoutNode* parent;
 
@@ -474,6 +477,17 @@ static void apply_styles(LayoutNode* ln) {
         ln->truncate_overflow = true;
     }
 
+    /* whitespace */
+    const char* ws = get_style(sn, "white-space");
+    if (ws && (strcmp(ws, "pre") == 0 || strcmp(ws, "pre-wrap") == 0 ||
+               strcmp(ws, "pre-line") == 0))
+        ln->preserve_ws = true;
+
+    /* visibility */
+    const char* vis = get_style(sn, "visibility");
+    if (vis && strcmp(vis, "hidden") == 0)
+        ln->visibility_hidden = true;
+
     /* border */
     const char* bord = get_style(sn, "border");
     if (bord) parse_box_shorthand(bord, &ln->border_top, &ln->border_right,
@@ -750,6 +764,37 @@ static void layout_flex_children(LayoutNode* parent, int content_w, int content_
     }
 
     int remaining = main_size - used_main;
+
+    /* flex-shrink: if items overflow, shrink proportionally */
+    if (remaining < 0 && visible > 0) {
+        int total_shrink_weight = 0;
+        for (size_t i = 0; i < parent->num_children; i++) {
+            LayoutNode* child = parent->children[i];
+            if (child->display == DISPLAY_NONE) continue;
+            /* Use natural_main as weight (larger items shrink more) */
+            int weight = child->flex_shrink > 0 ? child->flex_shrink * natural_mains[i] : natural_mains[i];
+            if (weight < 0) weight = 1;
+            total_shrink_weight += weight;
+        }
+        if (total_shrink_weight > 0) {
+            int shrink_total = -remaining;
+            int remaining_shrink = shrink_total;
+            for (size_t i = 0; i < parent->num_children; i++) {
+                LayoutNode* child = parent->children[i];
+                if (child->display == DISPLAY_NONE) continue;
+                int weight = child->flex_shrink > 0 ? child->flex_shrink * natural_mains[i] : natural_mains[i];
+                if (weight < 0) weight = 1;
+                int shrink = (shrink_total * weight) / total_shrink_weight;
+                if (shrink > natural_mains[i]) shrink = natural_mains[i];
+                if (shrink < 0) shrink = 0;
+                if (i == parent->num_children - 1)
+                    shrink = remaining_shrink; /* last one takes remainder */
+                remaining_shrink -= shrink;
+                natural_mains[i] -= shrink;
+            }
+            remaining = 0;
+        }
+    }
 
     /* second pass: distribute remaining space */
     int main_cursor = 0;
@@ -1140,7 +1185,20 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
     if (tag_name && (strcmp(tag_name, "table") == 0 || strcmp(tag_name, "tr") == 0)) {
         ln->text_content = NULL;
     } else if (tag_name && strcmp(tag_name, "img") == 0) {
-        ln->text_content = strdup("[img]");
+        /* Try to read alt attribute */
+        if (snode->node->type == GUMBO_NODE_ELEMENT) {
+            GumboAttribute* alt_attr = gumbo_get_attribute(
+                &snode->node->v.element.attributes, "alt");
+            if (alt_attr && alt_attr->value && alt_attr->value[0]) {
+                char buf[128];
+                snprintf(buf, sizeof(buf), "[%s]", alt_attr->value);
+                ln->text_content = strdup(buf);
+            } else {
+                ln->text_content = strdup("[img]");
+            }
+        } else {
+            ln->text_content = strdup("[img]");
+        }
     } else if (tag_name && snode->num_children > 0) {
         /* Node has element children — don't extract text, let children render it */
         ln->text_content = NULL;

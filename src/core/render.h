@@ -46,17 +46,29 @@ void render_shutdown(void);
 /** Get current viewport size (from termbox2). */
 void render_size(int* w, int* h);
 
-/** Run interactive loop. Pass stylesheet + styled_root for :hover/:focus/:active support. */
-void render_run_ex(LayoutNode* root, KatanaStylesheet* css, StyledNode* styled_root);
+/* ─── Internal helpers exposed for interact.h ─── */
 
-/** Set a status message displayed at the bottom of the screen. */
-void render_set_status(const char* fmt, ...);
+/** Set a character cell (wraps Screen internal). */
+void screen_scr_set(Screen* s, int c, int r, uint32_t ch);
+/** Set foreground color for a cell. */
+void screen_scr_fg(Screen* s, int c, int r, int R, int G, int B);
+/** Set background color for a cell. */
+void screen_scr_bg(Screen* s, int c, int r, int R, int G, int B);
+/** Set bold flag for a cell. */
+void screen_scr_bold(Screen* s, int c, int r, bool b);
+/** Compute absolute screen position of a layout node (walking parent chain). */
+void node_abs_box(LayoutNode* n, int scroll_x, int scroll_y,
+                  int* out_x, int* out_y, int* out_w, int* out_h);
+/** Find a styled node by GumboNode pointer. */
+StyledNode* find_styled_node(StyledNode* st, GumboNode* gn);
 
 #ifdef __cplusplus
 }
 #endif
 
 #ifdef RENDER_IMPLEMENTATION
+#ifndef RENDER_IMPLEMENTED
+#define RENDER_IMPLEMENTED
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -88,14 +100,22 @@ void screen_clear(Screen* s) {
 
 static inline bool scr_vis(Screen* s, int c, int r) { return c>=0 && c<s->cols && r>=0 && r<s->rows; }
 static inline Cell* scr_at(Screen* s, int c, int r) { return &s->cells[r*s->cols + c]; }
-static void scr_set(Screen* s, int c, int r, uint32_t ch) { if(scr_vis(s,c,r)) scr_at(s,c,r)->ch = ch; }
-static void scr_fg(Screen* s, int c, int r, int R, int G, int B) { if(scr_vis(s,c,r)){Cell*x=scr_at(s,c,r);x->fg_r=R;x->fg_g=G;x->fg_b=B;} }
-static void scr_bg(Screen* s, int c, int r, int R, int G, int B) { if(scr_vis(s,c,r)){Cell*x=scr_at(s,c,r);x->bg_r=R;x->bg_g=G;x->bg_b=B;} }
-static void scr_bold(Screen* s, int c, int r, bool b) { if(scr_vis(s,c,r)) scr_at(s,c,r)->bold=b; }
+
+/* Public wrappers for interact.h */
+void screen_scr_set(Screen* s, int c, int r, uint32_t ch) { if(scr_vis(s,c,r)) scr_at(s,c,r)->ch = ch; }
+void screen_scr_fg(Screen* s, int c, int r, int R, int G, int B) { if(scr_vis(s,c,r)){Cell*x=scr_at(s,c,r);x->fg_r=R;x->fg_g=G;x->fg_b=B;} }
+void screen_scr_bg(Screen* s, int c, int r, int R, int G, int B) { if(scr_vis(s,c,r)){Cell*x=scr_at(s,c,r);x->bg_r=R;x->bg_g=G;x->bg_b=B;} }
+void screen_scr_bold(Screen* s, int c, int r, bool b) { if(scr_vis(s,c,r)) scr_at(s,c,r)->bold=b; }
+
+/* ─── Keep static inline for internal use ─── */
+static void scr_set(Screen* s, int c, int r, uint32_t ch) { screen_scr_set(s,c,r,ch); }
+static void scr_fg(Screen* s, int c, int r, int R, int G, int B) { screen_scr_fg(s,c,r,R,G,B); }
+static void scr_bg(Screen* s, int c, int r, int R, int G, int B) { screen_scr_bg(s,c,r,R,G,B); }
+static void scr_bold(Screen* s, int c, int r, bool b) { screen_scr_bold(s,c,r,b); }
 static void scr_uline(Screen* s, int c, int r, bool u) { if(scr_vis(s,c,r)) scr_at(s,c,r)->underline=u; }
 
 /* ─── Compute absolute screen position of a layout node ──────── */
-static void node_abs_box(LayoutNode* n, int scroll_x, int scroll_y,
+void node_abs_box(LayoutNode* n, int scroll_x, int scroll_y,
                          int* out_x, int* out_y, int* out_w, int* out_h) {
     int ax = 0, ay = 0;
     LayoutNode* p = n;
@@ -582,8 +602,8 @@ void render_size(int* w, int* h) {
     *h = tb_height();
 }
 
-/* Helper: find styled node by GumboNode pointer */
-static StyledNode* find_styled_node(StyledNode* st, GumboNode* gn) {
+/* ─── Find styled node by GumboNode pointer ──────────────────── */
+StyledNode* find_styled_node(StyledNode* st, GumboNode* gn) {
     if (!st || !gn) return NULL;
     if (st->node == gn) return st;
     for (size_t i = 0; i < st->num_children; i++) {
@@ -593,486 +613,6 @@ static StyledNode* find_styled_node(StyledNode* st, GumboNode* gn) {
     return NULL;
 }
 
-// ─── Status message for interactive test ──────────────────────────
-static char g_status_msg[256] = "";
-void render_set_status(const char* fmt, ...) {
-    va_list ap;
-    va_start(ap, fmt);
-    vsnprintf(g_status_msg, sizeof(g_status_msg), fmt, ap);
-    va_end(ap);
-}
-
-// ─── Track input buffers across rebuilds ────────────────────────
-// Indexed by the same order as focus_list.
-static char g_input_buf[256][64] = {{{0}}};
-static int  g_input_buf_count = 0;
-
-/* ─── Button click handler ────────────────────────────────────── */
-/* Returns true if a layout rebuild is needed */
-static void handle_button_click(LayoutNode* btn, LayoutNode** focus_list, int focus_count,
-                                 char input_buf[][64], int* input_buf_count,
-                                 LayoutNode* root, bool need_restyle) {
-    (void)root; (void)need_restyle;
-    /* Find button text content (trimmed) */
-    const char* btxt = btn->text_content;
-    if (!btxt) btxt = "(unnamed)";
-    /* Trim surrounding whitespace/newlines for comparison */
-    while (*btxt == ' ' || *btxt == '\n' || *btxt == '\r') btxt++;
-    if (strcmp(btxt, "提交") == 0) {
-        /* Collect all input values and show them */
-        char vals[512] = "";
-        int n = 0;
-        for (int i = 0; i < focus_count && i < *input_buf_count; i++) {
-            if (focus_list[i]->styled && focus_list[i]->styled->node &&
-                focus_list[i]->styled->node->type == GUMBO_NODE_ELEMENT &&
-                focus_list[i]->styled->node->v.element.tag == GUMBO_TAG_INPUT) {
-                char tmp[80];
-                snprintf(tmp, sizeof(tmp), "%s%s=%s", n>0?", ":"",
-                    gumbo_get_attribute(&focus_list[i]->styled->node->v.element.attributes, "value") ? "inp" : "inp",
-                    input_buf[i]);
-                strncat(vals, tmp, sizeof(vals)-strlen(vals)-1);
-                n++;
-            }
-        }
-        render_set_status("✓ 提交: %s", n > 0 ? vals : "(无输入框)");
-    } else if (strcmp(btxt, "重置") == 0) {
-        for (int i = 0; i < focus_count && i < *input_buf_count; i++) {
-            if (focus_list[i]->styled && focus_list[i]->styled->node &&
-                focus_list[i]->styled->node->type == GUMBO_NODE_ELEMENT &&
-                focus_list[i]->styled->node->v.element.tag == GUMBO_TAG_INPUT) {
-                input_buf[i][0] = '\0';
-            }
-        }
-        render_set_status("✓ 重置: 所有输入框已清空");
-    } else if (strcmp(btxt, "✕ 关闭") == 0) {
-        render_set_status("✓ 关闭按钮被点击 (演示功能)");
-    } else if (strcmp(btxt, "清空A") == 0) {
-        if (focus_count >= 1) { input_buf[0][0] = '\0'; render_set_status("✓ 输入框 A 已清空"); }
-    } else if (strcmp(btxt, "清空B") == 0) {
-        if (focus_count >= 2) { input_buf[1][0] = '\0'; render_set_status("✓ 输入框 B 已清空"); }
-    } else if (strcmp(btxt, "清空C") == 0) {
-        if (focus_count >= 3) { input_buf[2][0] = '\0'; render_set_status("✓ 输入框 C 已清空"); }
-    } else if (strcmp(btxt, "Go") == 0) {
-        render_set_status("✓ Go button clicked");
-    } else {
-        render_set_status("✓ Button clicked: '%s'", btxt);
-    }
-
-    /* Refresh input text from buffers after action */
-    for (int fi = 0; fi < focus_count && fi < *input_buf_count; fi++) {
-        LayoutNode* n = focus_list[fi];
-        if (n->styled && n->styled->node &&
-            n->styled->node->type == GUMBO_NODE_ELEMENT &&
-            n->styled->node->v.element.tag == GUMBO_TAG_INPUT) {
-            char buf[128];
-            const char* val = input_buf[fi];
-            if (val && val[0]) snprintf(buf, sizeof(buf), "%s", val);
-            else snprintf(buf, sizeof(buf), " ");
-            if (n->text_content) free(n->text_content);
-            n->text_content = strdup(buf);
-        }
-    }
-}
-
-void render_run_ex(LayoutNode* root, KatanaStylesheet* css, StyledNode* styled_root) {
-    int vw, vh;
-    render_size(&vw, &vh);
-
-    Screen* s = screen_create(vw, vh);
-    int scroll_x = 0, scroll_y = 0;
-    bool running = true;
-    struct tb_event ev;
-
-    /* Collect interactive nodes (INPUT/BUTTON) for focus */
-    LayoutNode* focus_list[256];
-    int focus_count = 0;
-    int focus_idx = -1;
-    {
-        LayoutNode* stack[256]; int sp = 0;
-        stack[sp++] = root;
-        while (sp > 0 && focus_count < 256) {
-            LayoutNode* n = stack[--sp];
-            if (n->styled && n->styled->node &&
-                n->styled->node->type == GUMBO_NODE_ELEMENT) {
-                GumboTag t = n->styled->node->v.element.tag;
-                if (t == GUMBO_TAG_INPUT || t == GUMBO_TAG_BUTTON) {
-                    focus_list[focus_count] = n;
-                    /* Seed input buffer from DOM attribute on first run */
-                    if (t == GUMBO_TAG_INPUT && g_input_buf[focus_count][0] == 0) {
-                        GumboAttribute* attr = gumbo_get_attribute(
-                            &n->styled->node->v.element.attributes, "value");
-                        if (attr && attr->value)
-                            strncpy(g_input_buf[focus_count], attr->value, sizeof(g_input_buf[0])-1);
-                    }
-                    focus_count++;
-                }
-            }
-            for (size_t ci = 0; ci < n->num_children && sp < 256; ci++)
-                stack[sp++] = n->children[ci];
-        }
-    }
-    g_input_buf_count = focus_count;
-
-    /* Patch INPUT text_content from g_input_buf */
-    for (int fi = 0; fi < focus_count; fi++) {
-        LayoutNode* n = focus_list[fi];
-        if (n->styled && n->styled->node &&
-            n->styled->node->type == GUMBO_NODE_ELEMENT &&
-            n->styled->node->v.element.tag == GUMBO_TAG_INPUT) {
-            char buf[128];
-            if (g_input_buf[fi][0]) snprintf(buf, sizeof(buf), "%s", g_input_buf[fi]);
-            else snprintf(buf, sizeof(buf), " ");
-            if (n->text_content) free(n->text_content);
-            n->text_content = strdup(buf);
-        }
-    }
-
-    /* Rebuild state: when pseudo-class changes, rebuild layout tree */
-    LayoutNode* current_root = root;
-    KatanaStylesheet* saved_css = css;
-    StyledNode* saved_st = styled_root;
-
-    int vw_cache = vw, vh_cache = vh;
-
-    while (running) {
-        /* Render frame */
-        screen_clear(s);
-        s->scroll_x = scroll_x;
-        s->scroll_y = scroll_y;
-        screen_render_tree(s, current_root);
-
-        /* Focus indicator — use absolute position */
-        if (focus_idx >= 0 && focus_idx < focus_count) {
-            LayoutNode* f = focus_list[focus_idx];
-            int bx, by, bw, bh;
-            node_abs_box(f, scroll_x, scroll_y, &bx, &by, &bw, &bh);
-            if (bw > 2 && bh > 1 && by >= 0 && by < s->rows) {
-                /* Draw focus outline: left/right vertical bars */
-                for (int ri = 0; ri < bh && by + ri < s->rows; ri++) {
-                    if (bx >= 0 && bx < s->cols)
-                        { scr_set(s, bx, by+ri, ' '); scr_bg(s, bx, by+ri, 80,80,120); }
-                    if (bx+bw-1 >= 0 && bx+bw-1 < s->cols)
-                        { scr_set(s, bx+bw-1, by+ri, ' '); scr_bg(s, bx+bw-1, by+ri, 80,80,120); }
-                }
-                /* Top and bottom bar */
-                for (int ci = 0; ci < bw && bx + ci < s->cols; ci++) {
-                    if (by >= 0 && bx+ci >= 0) { scr_set(s, bx+ci, by, ' '); scr_bg(s, bx+ci, by, 80,80,120); }
-                    int btm = by+bh-1;
-                    if (btm < s->rows && bx+ci >= 0) { scr_set(s, bx+ci, btm, ' '); scr_bg(s, bx+ci, btm, 80,80,120); }
-                }
-            }
-            if (f->styled && f->styled->node && f->styled->node->type == GUMBO_NODE_ELEMENT &&
-                f->styled->node->v.element.tag == GUMBO_TAG_INPUT &&
-                f->text_content) {
-                /* Cursor at end of input value (no brackets) */
-                int cu = bx + f->border_left + f->padding_left;  /* content start */
-                if (focus_idx >= 0 && focus_idx < g_input_buf_count)
-                    cu += uc_str_width(g_input_buf[focus_idx]); /* end of value */
-                int cursor_row = by + f->border_top + f->padding_top; /* text row */
-                if (cu >= 0 && cu < s->cols && cursor_row >= 0 && cursor_row < s->rows) {
-                    scr_set(s, cu, cursor_row, ' '); scr_bg(s, cu, cursor_row, 200, 200, 80);
-                    scr_set(s, cu, cursor_row, '|'); scr_fg(s, cu, cursor_row, 0, 0, 0);
-                }
-            }
-        }
-
-        /* Draw status bar at bottom */
-        if (g_status_msg[0]) {
-            int sb_row = s->rows - 1;
-            for (int ci = 0; ci < s->cols; ci++) {
-                scr_set(s, ci, sb_row, ' ');
-                scr_bg(s, ci, sb_row, 30, 30, 50);
-            }
-            const char* sp = g_status_msg;
-            int ci = 0;
-            while (*sp && ci < s->cols) {
-                uint32_t cp = uc_dec(&sp);
-                if (cp == 0) break;
-                int w = uc_wid((int)cp);
-                if (ci + w <= s->cols) {
-                    scr_set(s, ci, sb_row, cp);
-                    scr_fg(s, ci, sb_row, 200, 200, 100);
-                    scr_bold(s, ci, sb_row, true);
-                    if (w == 2 && ci + 1 < s->cols) scr_set(s, ci + 1, sb_row, 0);
-                }
-                ci += w;
-            }
-        }
-
-        screen_flush(s);
-
-        /* Poll input */
-        if (tb_poll_event(&ev) != TB_OK) {
-            if (tb_last_errno() == EINTR) continue;
-            break;
-        }
-
-        /* Track state changes */
-        bool restyle = false;
-
-        if (ev.type == TB_EVENT_MOUSE) {
-            if (ev.key != TB_KEY_MOUSE_WHEEL_UP && ev.key != TB_KEY_MOUSE_WHEEL_DOWN) {
-                /* Find node under mouse for hover (deepest match) */
-                GumboNode* hover_node = NULL;
-                LayoutNode* hstack[256]; int hsp = 0;
-                hstack[hsp++] = current_root;
-                int best_depth = -1;
-                while (hsp > 0) {
-                    LayoutNode* n = hstack[--hsp];
-                    /* Push children */
-                    for (size_t ci = 0; ci < n->num_children && hsp < 256; ci++)
-                        hstack[hsp++] = n->children[ci];
-                    /* Compute absolute position */
-                    int hx, hy, hw, hh;
-                    node_abs_box(n, scroll_x, scroll_y, &hx, &hy, &hw, &hh);
-                    int depth = 0; { LayoutNode* pp = n; while (pp) { depth++; pp = pp->parent; } }
-                    if (ev.x >= hx && ev.x < hx + hw && ev.y >= hy && ev.y < hy + hh && depth > best_depth) {
-                        if (n->styled && n->styled->node &&
-                            n->styled->node->type == GUMBO_NODE_ELEMENT) {
-                            hover_node = n->styled->node;
-                            best_depth = depth;
-                        }
-                    }
-                }
-
-                if (hover_node != g_interact_hover) {
-                    g_interact_hover = hover_node;
-                    restyle = true;
-                }
-
-                /* Left click → focus + active */
-                if (ev.key == TB_KEY_MOUSE_LEFT) {
-                    focus_idx = -1;
-                    for (int fi = 0; fi < focus_count; fi++) {
-                        LayoutNode* n = focus_list[fi];
-                        int nx, ny, nw, nh;
-                        node_abs_box(n, scroll_x, scroll_y, &nx, &ny, &nw, &nh);
-                        if (ev.x >= nx && ev.x < nx + nw && ev.y >= ny && ev.y < ny + nh) {
-                            focus_idx = fi; break;
-                        }
-                    }
-                    if (g_interact_focus != (focus_idx >= 0 ? focus_list[focus_idx]->styled->node : NULL)) {
-                        g_interact_focus = (focus_idx >= 0 && focus_list[focus_idx]->styled) ? focus_list[focus_idx]->styled->node : NULL;
-                        restyle = true;
-                    }
-                    g_interact_active = g_interact_focus;
-                    restyle = true;
-                }
-
-                /* Left click on BUTTON: trigger click action */
-                if (ev.key == TB_KEY_MOUSE_LEFT) {
-                    LayoutNode* clicked_btn = NULL;
-                    for (int fi = 0; fi < focus_count; fi++) {
-                        LayoutNode* n = focus_list[fi];
-                        int nx, ny, nw, nh;
-                        node_abs_box(n, scroll_x, scroll_y, &nx, &ny, &nw, &nh);
-                        if (ev.x >= nx && ev.x < nx + nw && ev.y >= ny && ev.y < ny + nh) {
-                            if (n->styled && n->styled->node &&
-                                n->styled->node->type == GUMBO_NODE_ELEMENT &&
-                                n->styled->node->v.element.tag == GUMBO_TAG_BUTTON) {
-                                clicked_btn = n;
-                            }
-                            break;
-                        }
-                    }
-                    if (clicked_btn) {
-                        handle_button_click(clicked_btn, focus_list, focus_count,
-                                            g_input_buf, &g_input_buf_count,
-                                            current_root, restyle);
-                    }
-                }
-            }
-        }
-
-        if (ev.type == TB_EVENT_KEY) {
-            if (ev.ch == 'q' || ev.ch == 'Q' || ev.key == TB_KEY_ESC ||
-                ev.key == TB_KEY_CTRL_C || ev.key == TB_KEY_CTRL_D) {
-                running = false; continue;
-            }
-
-            /* ── Input editing: when an INPUT is focused ── */
-            if (focus_idx >= 0 && focus_idx < focus_count &&
-                focus_list[focus_idx]->styled &&
-                focus_list[focus_idx]->styled->node &&
-                focus_list[focus_idx]->styled->node->type == GUMBO_NODE_ELEMENT &&
-                focus_list[focus_idx]->styled->node->v.element.tag == GUMBO_TAG_INPUT) {
-                char* buf = g_input_buf[focus_idx];
-                size_t blen = strlen(buf);
-
-                if (ev.key == TB_KEY_BACKSPACE2 || ev.key == TB_KEY_BACKSPACE) {
-                    if (blen > 0) { buf[blen-1] = '\0'; }
-                } else if (ev.key == TB_KEY_DELETE) {
-                    /* do nothing for delete in this simple TUI */
-                } else if (ev.ch >= 0x20 && ev.ch <= 0x7e) {
-                    if (blen < (int)sizeof(g_input_buf[0]) - 2) {
-                        char add[8];
-                        int nch = uc_enc(ev.ch, add); add[nch] = '\0';
-                        strcat(buf, add);
-                    }
-                } else if (ev.key == TB_KEY_SPACE) {
-                    if (blen < (int)sizeof(g_input_buf[0]) - 2) {
-                        strcat(buf, " ");
-                    }
-                } else if (ev.key == TB_KEY_ENTER) {
-                    /* Enter on INPUT: just move to next focusable */
-                    if (focus_count > 0) {
-                        focus_idx = (focus_idx + 1) % focus_count;
-                        if (focus_idx >= 0 && focus_list[focus_idx]->styled)
-                            g_interact_focus = focus_list[focus_idx]->styled->node;
-                        else g_interact_focus = NULL;
-                        restyle = true;
-                    }
-                    continue;
-                } else {
-                    /* Fall through to scroll keys etc */
-                    goto handle_scroll_keys;
-                }
-
-                /* Rebuild the input node's text (width stays as set by CSS/layout) */
-                LayoutNode* inp = focus_list[focus_idx];
-                char txt[128];
-                snprintf(txt, sizeof(txt), "%s", buf);
-                if (inp->text_content) free(inp->text_content);
-                inp->text_content = strdup(txt);
-                continue;
-            }
-
-            /* ── Button click: Enter/Space on focused BUTTON ── */
-            if (focus_idx >= 0 && focus_idx < focus_count &&
-                (ev.key == TB_KEY_ENTER || ev.key == TB_KEY_SPACE) &&
-                focus_list[focus_idx]->styled &&
-                focus_list[focus_idx]->styled->node &&
-                focus_list[focus_idx]->styled->node->type == GUMBO_NODE_ELEMENT &&
-                focus_list[focus_idx]->styled->node->v.element.tag == GUMBO_TAG_BUTTON) {
-                handle_button_click(focus_list[focus_idx], focus_list, focus_count,
-                                    g_input_buf, &g_input_buf_count,
-                                    current_root, restyle);
-                continue;
-            }
-
-handle_scroll_keys:
-            /* Scroll keys */
-            if (ev.key == TB_KEY_ARROW_UP) { scroll_y--; }
-            else if (ev.key == TB_KEY_ARROW_DOWN) { scroll_y++; }
-            else if (ev.key == TB_KEY_ARROW_LEFT) { scroll_x--; }
-            else if (ev.key == TB_KEY_ARROW_RIGHT) { scroll_x++; }
-            else if (ev.key == TB_KEY_PGUP) { scroll_y -= vh; }
-            else if (ev.key == TB_KEY_PGDN) { scroll_y += vh; }
-            else if (ev.key == TB_KEY_HOME) { scroll_x = 0; scroll_y = 0; }
-            else if (ev.key == TB_KEY_END) { scroll_y = 999999; }
-            else if (ev.key == TB_KEY_TAB && focus_count > 0) {
-                focus_idx = (focus_idx + 1) % focus_count;
-                if (focus_idx >= 0 && focus_list[focus_idx]->styled) {
-                    g_interact_focus = focus_list[focus_idx]->styled->node;
-                } else {
-                    g_interact_focus = NULL;
-                }
-                render_set_status("Tab: focus #%d (%s)", focus_idx,
-                    focus_list[focus_idx]->styled &&
-                    focus_list[focus_idx]->styled->node &&
-                    focus_list[focus_idx]->styled->node->type == GUMBO_NODE_ELEMENT
-                    ? gumbo_normalized_tagname(focus_list[focus_idx]->styled->node->v.element.tag)
-                    : "?");
-                restyle = true;
-                continue;
-            }
-
-            /* Active: key press sets :active on focused element */
-            if (g_interact_focus && g_interact_active != g_interact_focus) {
-                g_interact_active = g_interact_focus;
-                restyle = true;
-            }
-        }
-
-        /* Mouse wheel — don't continue, fall through to clamp */
-        if (ev.type == TB_EVENT_MOUSE) {
-            if (ev.key == TB_KEY_MOUSE_WHEEL_UP) { scroll_y -= 3; }
-            else if (ev.key == TB_KEY_MOUSE_WHEEL_DOWN) { scroll_y += 3; }
-        }
-
-        /* Key release → clear :active */
-        if (ev.type == TB_EVENT_KEY && g_interact_active) {
-            /* On key release (any key), clear active */
-            /* termbox2 doesn't distinguish press/release clearly,
-               so we clear active on any non-Tab keypress instead */
-            if (ev.key != TB_KEY_TAB) {
-                /* keep active briefly - clear on NEXT poll cycle */
-            }
-        }
-
-        /* Resize */
-        if (ev.type == TB_EVENT_RESIZE) {
-            vw = ev.w; vh = ev.h;
-            screen_free(s); s = screen_create(vw, vh);
-            vw_cache = vw; vh_cache = vh;
-            /* Restyle on resize too (rebuild layout) */
-            restyle = true;
-        }
-
-        /* If hover/focus/active changed, rebuild styles and layout */
-        if (restyle && saved_css && saved_st) {
-            g_interact_hover = g_interact_hover;
-            /* Recompute styles for affected nodes */
-            if (g_interact_hover) {
-                StyledNode* sn = find_styled_node(saved_st, g_interact_hover);
-                if (sn) {
-                    recompute_style_subtree(sn, saved_css, NULL);
-                }
-            }
-            if (g_interact_focus && g_interact_focus != g_interact_hover) {
-                StyledNode* sn = find_styled_node(saved_st, g_interact_focus);
-                if (sn) recompute_style_subtree(sn, saved_css, NULL);
-            }
-            /* Rebuild layout tree */
-            LayoutNode* new_root = build_layout_tree(saved_st, vw_cache, vh_cache);
-            if (new_root) {
-                LayoutNode* old_root = current_root;
-                current_root = new_root;
-                /* Don't free old root — it's being used in render path.
-                   Actually it's not, since we clear and re-render. */
-            }
-            /* Re-collect focus list */
-            focus_count = 0;
-            {
-                LayoutNode* stack[256]; int sp = 0;
-                stack[sp++] = current_root;
-                while (sp > 0 && focus_count < 256) {
-                    LayoutNode* n = stack[--sp];
-                    if (n->styled && n->styled->node &&
-                        n->styled->node->type == GUMBO_NODE_ELEMENT) {
-                        GumboTag t = n->styled->node->v.element.tag;
-                        if (t == GUMBO_TAG_INPUT || t == GUMBO_TAG_BUTTON) {
-                            focus_list[focus_count++] = n;
-                        }
-                    }
-                    for (size_t ci = 0; ci < n->num_children && sp < 256; ci++)
-                        stack[sp++] = n->children[ci];
-                }
-            }
-            /* Re-patch INPUT text_content from g_input_buf */
-            for (int fi = 0; fi < focus_count && fi < g_input_buf_count; fi++) {
-                LayoutNode* n = focus_list[fi];
-                if (n->styled && n->styled->node &&
-                    n->styled->node->type == GUMBO_NODE_ELEMENT &&
-                    n->styled->node->v.element.tag == GUMBO_TAG_INPUT) {
-                    char buf[128];
-                    const char* val = g_input_buf[fi];
-                    if (val && val[0]) snprintf(buf, sizeof(buf), "%s", val);
-                    else snprintf(buf, sizeof(buf), " ");
-                    if (n->text_content) free(n->text_content);
-                    n->text_content = strdup(buf);
-                }
-            }
-        }
-
-        /* Clamp scroll */
-        s->scroll_x = scroll_x; s->scroll_y = scroll_y;
-        screen_scroll_clamp(s, current_root->width, current_root->height);
-        scroll_x = s->scroll_x; scroll_y = s->scroll_y;
-    }
-
-    screen_free(s);
-}
-
-#endif /* RENDER_RUN_IMPLEMENTATION */
+#endif /* RENDER_IMPLEMENTED */
+#endif /* RENDER_IMPLEMENTATION */
 #endif /* RENDER_H */

@@ -1052,6 +1052,12 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
         ln->display = get_default_display(gumbo_normalized_tagname(snode->node->v.element.tag));
     }
 
+    /* Set default text color to white BEFORE building children (inline fragments inherit it) */
+    if (!ln->color.valid) {
+        ln->color.r = 255; ln->color.g = 255; ln->color.b = 255;
+        ln->color.valid = true;
+    }
+
     /* extract text content (skip for table/tr — they render via children) */
     const char* tag_name = NULL;
     if (snode->node->type == GUMBO_NODE_ELEMENT)
@@ -1079,7 +1085,7 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
         if (gchildren) {
             for (unsigned int gi = 0; gi < gchildren->length; gi++) {
                 GumboNode* gc = (GumboNode*)gchildren->data[gi];
-                if (gc->type == GUMBO_NODE_TEXT && gc->v.text.text && *gc->v.text.text) {
+                if (gc->type == GUMBO_NODE_TEXT || gc->type == GUMBO_NODE_WHITESPACE) {
                     bool only_ws = true;
                     for (const char* cp = gc->v.text.text; *cp; cp++)
                         if (*cp != ' ' && *cp != '\t' && *cp != '\n' && *cp != '\r') { only_ws = false; break; }
@@ -1096,8 +1102,8 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
         if (gchildren) {
             for (unsigned int gi = 0; gi < gchildren->length; gi++) {
                 GumboNode* gc = (GumboNode*)gchildren->data[gi];
-                if (gc->type == GUMBO_NODE_TEXT) {
-                    /* Text node → create inline fragment */
+                if (gc->type == GUMBO_NODE_TEXT || gc->type == GUMBO_NODE_WHITESPACE) {
+                    /* Text/whitespace node → create inline fragment */
                     if (!gc->v.text.text || !*gc->v.text.text) continue;
                     bool only_ws = true;
                     for (const char* cp = gc->v.text.text; *cp; cp++)
@@ -1129,8 +1135,6 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
         }
         ln->num_children = idx;
     }
-
-    /* set default text color to white */
 
     /* Compute natural text height if no explicit height */
     if (ln->text_content) {
@@ -1237,11 +1241,6 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
         ln->font_bold = true;
     }
 
-    /* set default text color to white */
-    if (!ln->color.valid) {
-        ln->color.r = 255; ln->color.g = 255; ln->color.b = 255;
-        ln->color.valid = true;
-    }
     /* background defaults to transparent (no fill) - CSS behavior */
 
     return ln;

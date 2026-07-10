@@ -52,6 +52,11 @@ const char* style_map_get(StyleMap* map, const char* key);
 
 /* ======================== Style Tree API ======================== */
 
+/* Set these before selector matching to enable :hover/:focus/:active */
+static GumboNode* g_interact_hover = NULL;
+static GumboNode* g_interact_focus = NULL;
+static GumboNode* g_interact_active = NULL;
+
 /**
  * Build the full style tree from a parsed DOM tree and a CSS stylesheet.
  * Returns the root StyledNode (the <html> element).
@@ -394,6 +399,15 @@ static bool match_simple_selector(KatanaSelector* sel, GumboNode* node) {
                     if (node->type != GUMBO_NODE_ELEMENT) return false;
                     if (node->v.element.tag != GUMBO_TAG_A) return false;
                     if (!gumbo_get_attribute(&node->v.element.attributes, "href")) return false;
+                    break;
+                case KatanaPseudoHover:
+                    if (node != g_interact_hover) return false;
+                    break;
+                case KatanaPseudoFocus:
+                    if (node != g_interact_focus) return false;
+                    break;
+                case KatanaPseudoActive:
+                    if (node != g_interact_active) return false;
                     break;
                 default:
                     /* Skip unsupported pseudo-classes */
@@ -811,6 +825,23 @@ void free_style_tree(StyledNode* tree) {
     free(tree->children);
     style_map_free(&tree->styles);
     free(tree);
+}
+
+/**
+ * Recompute styles for a single styled node (and its descendants).
+ * Used when hover/focus/active state changes.
+ * Pass the global KatanaStylesheet that was used in build_style_tree.
+ */
+void recompute_style_subtree(StyledNode* node, KatanaStylesheet* ss, StyledNode* parent) {
+    if (!node) return;
+    /* Recompute this node's styles */
+    style_map_free(&node->styles);
+    compute_styles_for_node(node->node, ss, parent ? parent : NULL, &node->styles);
+
+    /* Recurse into children */
+    for (size_t i = 0; i < node->num_children; i++) {
+        recompute_style_subtree(node->children[i], ss, node);
+    }
 }
 
 const char* get_style(StyledNode* node, const char* key) {

@@ -111,8 +111,8 @@ int main(void) {
     render_size(&vw, &vh);
     LayoutNode* lt = build_layout_tree(st, vw, vh);
 
-    /* Run interaction loop */
-    render_run(lt);
+    /* Run interaction loop (with :hover/:focus/:active support) */
+    render_run_ex(lt, css_out->stylesheet, st);
 
     /* Cleanup */
     render_shutdown();

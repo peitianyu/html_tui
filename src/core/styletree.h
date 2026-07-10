@@ -74,6 +74,9 @@ const char* get_style(StyledNode* node, const char* key);
 /** Check whether a CSS selector matches a DOM element node */
 bool selector_matches_node(KatanaSelector* selector, GumboNode* node);
 
+/** Find a styled node by GumboNode pointer (DFS). */
+StyledNode* find_styled_node(StyledNode* st, GumboNode* gn);
+
 #ifdef __cplusplus
 }
 #endif
@@ -825,6 +828,17 @@ void free_style_tree(StyledNode* tree) {
     free(tree->children);
     style_map_free(&tree->styles);
     free(tree);
+}
+
+/** Find a styled node by GumboNode pointer (DFS). */
+StyledNode* find_styled_node(StyledNode* st, GumboNode* gn) {
+    if (!st || !gn) return NULL;
+    if (st->node == gn) return st;
+    for (size_t i = 0; i < st->num_children; i++) {
+        StyledNode* r = find_styled_node(st->children[i], gn);
+        if (r) return r;
+    }
+    return NULL;
 }
 
 /**

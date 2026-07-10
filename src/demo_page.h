@@ -43,80 +43,83 @@ static char* read_file_content(const char* path, size_t* out_len) {
 
 /* ==================================================================== */
 /*  CSS Extraction from HTML String                                      */
+/*                                                                       */
+/*  Uses a simple state machine:                                        */
+/*    STATE_TEXT   →  copying characters to html_out                    */
+/*    STATE_STYLE  →  in <style>…</style>, copying to css_out           */
+/*  Single-pass O(n), case-insensitive tag matching.                    */
 /* ==================================================================== */
 
-#define CSS_BUF_SIZE (65536 * 4)
+typedef enum { EXTRACT_TEXT, EXTRACT_STYLE } ExtractState;
 
 static void extract_css_from_html(const char* raw_html,
                                    char* css_out, size_t css_size,
                                    char* html_out, size_t html_size)
 {
     css_out[0] = '\0';
-    size_t css_pos = 0, html_pos = 0;
+    html_out[0] = '\0';
+    size_t cp = 0, hp = 0;
+    ExtractState state = EXTRACT_TEXT;
     const char* p = raw_html;
-    while (*p && html_pos < html_size - 1) {
-        const char* style_start = NULL;
-        const char* scan = p;
-        while (*scan) {
-            if ((scan[0] == '<' && (scan[1] == 's' || scan[1] == 'S') &&
-                 (scan[2] == 't' || scan[2] == 'T') &&
-                 (scan[3] == 'y' || scan[3] == 'Y') &&
-                 (scan[4] == 'l' || scan[4] == 'L') &&
-                 (scan[5] == 'e' || scan[5] == 'E')) &&
-                 (scan[6] == '>' || scan[6] == ' ' || scan[6] == '\t' ||
-                  scan[6] == '\n' || scan[6] == '\r')) {
-                style_start = scan; break;
+
+    while (*p) {
+        if (state == EXTRACT_TEXT) {
+            /* Look for <style> or </style> */
+            if (p[0] == '<') {
+                /* Check for </style> (shouldn't happen in text state, but handle) */
+                if ((p[1] == '/' || p[1] == '/') &&
+                    (p[2] == 's'||p[2]=='S') && (p[3] == 't'||p[3]=='T') &&
+                    (p[4] == 'y'||p[4]=='Y') && (p[5] == 'l'||p[5]=='L') &&
+                    (p[6] == 'e'||p[6]=='E') && p[7] == '>') {
+                    p += 8; /* skip </style> */
+                    continue;
+                }
+                /* Check for <style ...> or <style> */
+                if (((p[1] == 's'||p[1]=='S') && (p[2] == 't'||p[2]=='T') &&
+                     (p[3] == 'y'||p[3]=='Y') && (p[4] == 'l'||p[4]=='L') &&
+                     (p[5] == 'e'||p[5]=='E')) &&
+                    (p[6] == '>' || p[6] == ' ' || p[6] == '\t' ||
+                     p[6] == '\n' || p[6] == '\r')) {
+                    /* Skip past the opening > */
+                    const char* gt = (p[6] == '>') ? p + 6 : strchr(p + 6, '>');
+                    if (gt) { p = gt + 1; state = EXTRACT_STYLE; continue; }
+                }
             }
-            scan++;
+            /* Normal character: copy to html_out */
+            if (hp < html_size - 1) html_out[hp++] = *p++;
+            else break;
+        } else {
+            /* EXTRACT_STYLE: look for </style> */
+            if (p[0] == '<' && p[1] == '/' &&
+                (p[2] == 's'||p[2]=='S') && (p[3] == 't'||p[3]=='T') &&
+                (p[4] == 'y'||p[4]=='Y') && (p[5] == 'l'||p[5]=='L') &&
+                (p[6] == 'e'||p[6]=='E') && p[7] == '>') {
+                p += 8;
+                state = EXTRACT_TEXT;
+                /* Add newline separator between style blocks */
+                if (cp > 0 && cp < css_size - 2) css_out[cp++] = '\n';
+                continue;
+            }
+            /* Copy to css_out */
+            if (cp < css_size - 1) css_out[cp++] = *p++;
+            else break;
         }
-        if (!style_start) {
-            while (*p && html_pos < html_size - 1) html_out[html_pos++] = *p++;
-            break;
-        }
-        while (p < style_start && html_pos < html_size - 1) html_out[html_pos++] = *p++;
-        const char* gt = strchr(style_start, '>');
-        if (!gt) { while (*p && html_pos < html_size - 1) html_out[html_pos++] = *p++; break; }
-        const char* style_end = NULL;
-        { const char* sp = gt + 1; while (*sp) {
-            if (sp[0] == '<' && sp[1] == '/' &&
-                (sp[2] == 's'||sp[2]=='S') && (sp[3] == 't'||sp[3]=='T') &&
-                (sp[4] == 'y'||sp[4]=='Y') && (sp[5] == 'l'||sp[5]=='L') &&
-                (sp[6] == 'e'||sp[6]=='E') && sp[7] == '>') { style_end = sp; break; }
-            sp++; } }
-        if (!style_end) {
-            const char* csp = gt + 1; while (*csp && css_pos < css_size - 1) css_out[css_pos++] = *csp++;
-            p = gt + 1 + strlen(gt + 1); break;
-        }
-        const char* css_start = gt + 1;
-        while (css_start < style_end && (*css_start == ' '||*css_start=='\n'||*css_start=='\r'||*css_start=='\t')) css_start++;
-        const char* css_end = style_end;
-        while (css_end > css_start && (*(css_end-1)==' '||*(css_end-1)=='\n'||*(css_end-1)=='\r'||*(css_end-1)=='\t')) css_end--;
-        size_t css_len = (size_t)(css_end - css_start);
-        if (css_pos + css_len < css_size - 1) { memcpy(css_out + css_pos, css_start, css_len); css_pos += css_len; css_out[css_pos] = '\0'; }
-        if (css_pos < css_size - 2) { css_out[css_pos++] = '\n'; css_out[css_pos] = '\0'; }
-        p = style_end + 8;
     }
-    html_out[html_pos] = '\0'; css_out[css_pos] = '\0';
+
+    html_out[hp] = '\0';
+    css_out[cp] = '\0';
 }
 
 /* ==================================================================== */
 /*  SIMPLE PAGE MAPPING                                                  */
 /*                                                                       */
 /*  新增页面只需:                                                         */
-/*    1. 在 doc/test_pages/ 下放 NN-xxx.html                             */
-/*    2. 如果按钮 id 是 btn-page-NN, 自动跳转到 NN-*.html               */
+/*    1. 在 pages/ 下放 NN-xxx.html                                      */
+/*    2. 如果按钮 id 是 btn-page-NN, 自动跳转到 NN-*.html                */
 /*    3. btn-back / btn-back-N 自动回菜单                                */
 /* ==================================================================== */
 
 #define PAGES_DIR "pages/"
-
-static void resolve_page_path(int page_num, char* out, size_t out_size) {
-    /* Try common patterns: NN-xxx.html in PAGES_DIR */
-    char pattern[64];
-    snprintf(pattern, sizeof(pattern), "%s%02d-", PAGES_DIR, page_num);
-    /* We can't do file listing in tcc, so use a known pattern */
-    snprintf(out, out_size, "%s%02d-complex-form.html", PAGES_DIR, page_num);
-}
 
 /* ==================================================================== */
 /*  BUTTON ACTION TABLE — 在这里注册按钮行为                              */
@@ -290,14 +293,18 @@ static void demo_run(const char* filepath) {
             return;
         }
 
+        size_t raw_len = strlen(raw_html);
+        size_t buf_size = raw_len + 4096;  /* extra room for extracted CSS+HTML */
+        if (buf_size < 8192) buf_size = 8192;
+
         /* ── Extract CSS and clean HTML ── */
-        char* css = (char*)calloc(CSS_BUF_SIZE, 1);
-        char* clean_html = (char*)calloc(CSS_BUF_SIZE, 1);
-        extract_css_from_html(raw_html, css, CSS_BUF_SIZE, clean_html, CSS_BUF_SIZE);
+        char* css = (char*)calloc(buf_size, 1);
+        char* clean_html = (char*)calloc(buf_size, 1);
+        extract_css_from_html(raw_html, css, buf_size, clean_html, buf_size);
         free(raw_html);
 
         if (strlen(clean_html) == 0)
-            strncpy(clean_html, "<html><body><p>No content</p></body></html>", CSS_BUF_SIZE - 1);
+            strncpy(clean_html, "<html><body><p>No content</p></body></html>", buf_size - 1);
 
         /* ── Parse HTML + CSS ── */
         GumboOutput* dom = gumbo_parse(clean_html);

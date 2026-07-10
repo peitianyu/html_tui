@@ -9,7 +9,7 @@
 ./run.sh
 
 # 指定页面
-./run.sh doc/test_pages/01-complex-form.html
+./run.sh pages/01-complex-form.html
 ```
 
 或直接使用 tcc 编译运行：
@@ -24,10 +24,10 @@ tcc -I src -run src/demo_main.c [page.html]
 
 ### 页面文件
 
-测试页面位于 `doc/test_pages/` 目录下，每个 HTML 文件包含内联 `<style>` CSS：
+测试页面位于 `pages/` 目录下，每个 HTML 文件包含内联 `<style>` CSS：
 
 ```
-doc/test_pages/
+pages/
 ├── 00-menu.html              # 主菜单（默认页面）
 ├── 01-complex-form.html      # 表单演示：输入框、按钮、选择器、边框
 ├── 02-flex-layout.html       # Flex 布局展示：对齐、间距、弹性
@@ -48,7 +48,7 @@ doc/test_pages/
 
 ### 页面跳转
 
-- 按钮 `id` 为 `btn-page-NN` 时，自动跳转到 `doc/test_pages/NN-*.html`
+- 按钮 `id` 为 `btn-page-NN` 时，自动跳转到 `pages/NN-*.html`
 - 按钮 `id` 为 `btn-back` 或 `btn-back-N` 时，返回菜单 `00-menu.html`
 
 ---
@@ -224,7 +224,6 @@ HTML (.html 含 <style>)
 | `display: inline-block` | 该中间模式未实现 |
 | 独立滚动容器（`overflow: auto / scroll`） | 仅支持 `overflow: hidden` 裁剪，无滚动条 |
 | 层叠顺序 | 重叠元素仅按 DOM 顺序，无真正层叠 |
-| 内存泄漏 | 伪类触发布局重建时，旧样式树未释放（已知问题） |
 
 ### HTML 标签/元素
 

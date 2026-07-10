@@ -31,8 +31,6 @@ void screen_clear(Screen* s);
 void screen_render_node(Screen* s, LayoutNode* node);
 void screen_render_tree(Screen* s, LayoutNode* root);
 void screen_flush(Screen* s);
-void screen_scroll_to(Screen* s, int x, int y);
-void screen_scroll_by(Screen* s, int dx, int dy);
 void screen_scroll_clamp(Screen* s, int content_w, int content_h);
 
 /* ======================== Interactive Loop (termbox2) ======================== */
@@ -60,7 +58,7 @@ void screen_scr_bold(Screen* s, int c, int r, bool b);
 void node_abs_box(LayoutNode* n, int scroll_x, int scroll_y,
                   int* out_x, int* out_y, int* out_w, int* out_h);
 /** Find a styled node by GumboNode pointer. */
-StyledNode* find_styled_node(StyledNode* st, GumboNode* gn);
+/* (declared in styletree.h — implementation moved there) */
 
 #ifdef __cplusplus
 }
@@ -130,46 +128,31 @@ void node_abs_box(LayoutNode* n, int scroll_x, int scroll_y,
     *out_h = n->height + n->padding_top + n->padding_bottom + n->border_top + n->border_bottom;
 }
 
+/* ─── Border character lookup table ──────────────────────────── */
+typedef struct { uint32_t h, v, tl, tr, bl, br; } BorderChars;
+
+static BorderChars get_border_chars(int style) {
+    static const BorderChars styles[7] = {
+        /* 0: none */   {0x2500,0x2502,0x250C,0x2510,0x2514,0x2518},
+        /* 1: solid */  {0x2500,0x2502,0x250C,0x2510,0x2514,0x2518},
+        /* 2: dashed */ {0x254C,0x254E,0x250C,0x2510,0x2514,0x2518},
+        /* 3: dotted */ {0x2504,0x2506,0x250C,0x2510,0x2514,0x2518},
+        /* 4: double */ {0x2550,0x2551,0x2554,0x2557,0x255A,0x255D},
+        /* 5: heavy */  {0x2501,0x2503,0x250F,0x2513,0x2517,0x251B},
+        /* 6: rounded */{0x2500,0x2502,0x256D,0x256E,0x2570,0x256F},
+    };
+    if (style < 0 || style > 6) style = 1;
+    return styles[style];
+}
+
 static void draw_border(Screen* s, int x, int y, int w, int h, ResolvedColor color, int style) {
     if (w < 2 || h < 2) return;
     int r = x + w - 1, b = y + h - 1;
-    uint32_t ch_h, ch_v, ch_tl, ch_tr, ch_bl, ch_br;
-    switch (style) {
-        case 6: /* rounded */
-            ch_h = 0x2500; ch_v = 0x2502;   /* ─ │ */
-            ch_tl = 0x256D; ch_tr = 0x256E;
-            ch_bl = 0x2570; ch_br = 0x256F; /* ╭ ╮ ╰ ╯ */
-            break;
-        case 5: /* heavy */
-            ch_h = 0x2501; ch_v = 0x2503;   /* ━ ┃ */
-            ch_tl = 0x250F; ch_tr = 0x2513;
-            ch_bl = 0x2517; ch_br = 0x251B; /* ┏ ┓ ┗ ┛ */
-            break;
-        case 4: /* double */
-            ch_h = 0x2550; ch_v = 0x2551;   /* ═ ║ */
-            ch_tl = 0x2554; ch_tr = 0x2557;
-            ch_bl = 0x255A; ch_br = 0x255D; /* ╔ ╗ ╚ ╝ */
-            break;
-        case 3: /* dotted */
-            ch_h = 0x2504; ch_v = 0x2506;   /* ┄ ┆ */
-            ch_tl = 0x250C; ch_tr = 0x2510;
-            ch_bl = 0x2514; ch_br = 0x2518; /* ┌ ┐ └ ┘ */
-            break;
-        case 2: /* dashed */
-            ch_h = 0x254C; ch_v = 0x254E;   /* ╌ ╎ */
-            ch_tl = 0x250C; ch_tr = 0x2510;
-            ch_bl = 0x2514; ch_br = 0x2518; /* ┌ ┐ └ ┘ */
-            break;
-        default: /* solid */
-            ch_h = 0x2500; ch_v = 0x2502;   /* ─ │ */
-            ch_tl = 0x250C; ch_tr = 0x2510;
-            ch_bl = 0x2514; ch_br = 0x2518; /* ┌ ┐ └ ┘ */
-            break;
-    }
-    scr_set(s,x,y,ch_tl); scr_set(s,r,y,ch_tr);
-    scr_set(s,x,b,ch_bl); scr_set(s,r,b,ch_br);
-    for (int cx = x+1; cx < r; cx++) { scr_set(s,cx,y,ch_h); scr_set(s,cx,b,ch_h); }
-    for (int cy = y+1; cy < b; cy++) { scr_set(s,x,cy,ch_v); scr_set(s,r,cy,ch_v); }
+    BorderChars ch = get_border_chars(style);
+    scr_set(s,x,y,ch.tl); scr_set(s,r,y,ch.tr);
+    scr_set(s,x,b,ch.bl); scr_set(s,r,b,ch.br);
+    for (int cx = x+1; cx < r; cx++) { scr_set(s,cx,y,ch.h); scr_set(s,cx,b,ch.h); }
+    for (int cy = y+1; cy < b; cy++) { scr_set(s,x,cy,ch.v); scr_set(s,r,cy,ch.v); }
     if (color.valid) {
         for (int cx = x; cx <= r; cx++) { scr_fg(s,cx,y,color.r,color.g,color.b); scr_fg(s,cx,b,color.r,color.g,color.b); }
         for (int cy = y; cy <= b; cy++) { scr_fg(s,x,cy,color.r,color.g,color.b); scr_fg(s,r,cy,color.r,color.g,color.b); }
@@ -391,27 +374,10 @@ static void draw_table_grid(Screen* s, LayoutNode* table) {
     qsort(ys, ny, sizeof(int), sort_ints);
 
     /* Determine line style from table; cells inherit same style */
-    uint32_t ch_h = 0x2500, ch_v = 0x2502;
-    uint32_t ch_tl = 0x250C, ch_tr = 0x2510;
-    uint32_t ch_bl = 0x2514, ch_br = 0x2518;
-    switch (table->border_style) {
-        case 6: /* rounded */
-            ch_h = 0x2500; ch_v = 0x2502;
-            ch_tl = 0x256D; ch_tr = 0x256E;
-            ch_bl = 0x2570; ch_br = 0x256F;
-            break;
-        case 5: /* heavy */
-            ch_h = 0x2501; ch_v = 0x2503;
-            ch_tl = 0x250F; ch_tr = 0x2513;
-            ch_bl = 0x2517; ch_br = 0x251B;
-            break;
-        case 4: /* double */
-            ch_h = 0x2550; ch_v = 0x2551;
-            ch_tl = 0x2554; ch_tr = 0x2557;
-            ch_bl = 0x255A; ch_br = 0x255D;
-            break;
-        default: break;
-    }
+    BorderChars bc_ch = get_border_chars(table->border_style);
+    uint32_t ch_h = bc_ch.h, ch_v = bc_ch.v;
+    uint32_t ch_tl = bc_ch.tl, ch_tr = bc_ch.tr;
+    uint32_t ch_bl = bc_ch.bl, ch_br = bc_ch.br;
 
     ResolvedColor bc = table->border_color;
     if (!bc.valid) { bc.r = 180; bc.g = 180; bc.b = 180; bc.valid = true; }
@@ -567,8 +533,6 @@ void screen_flush(Screen* s) {
 }
 
 /* Scroll helpers */
-void screen_scroll_to(Screen* s, int x, int y) { if(s){s->scroll_x=x;s->scroll_y=y;} }
-void screen_scroll_by(Screen* s, int dx, int dy) { if(s){s->scroll_x+=dx;s->scroll_y+=dy;} }
 void screen_scroll_clamp(Screen* s, int cw, int ch) {
     if(!s)return;
     if(s->scroll_x < 0) s->scroll_x=0;
@@ -602,16 +566,7 @@ void render_size(int* w, int* h) {
     *h = tb_height();
 }
 
-/* ─── Find styled node by GumboNode pointer ──────────────────── */
-StyledNode* find_styled_node(StyledNode* st, GumboNode* gn) {
-    if (!st || !gn) return NULL;
-    if (st->node == gn) return st;
-    for (size_t i = 0; i < st->num_children; i++) {
-        StyledNode* r = find_styled_node(st->children[i], gn);
-        if (r) return r;
-    }
-    return NULL;
-}
+/* find_styled_node moved to styletree.h */
 
 #endif /* RENDER_IMPLEMENTED */
 #endif /* RENDER_IMPLEMENTATION */

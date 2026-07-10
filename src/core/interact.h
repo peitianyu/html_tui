@@ -256,6 +256,46 @@ void node_set_visible(LayoutNode* n, bool visible) {
     n->display = visible ? DISPLAY_BLOCK : DISPLAY_NONE;
 }
 
+/* ─── Focus list collection helper ──────────────────────────── */
+/** Collect all focusable nodes (INPUT/BUTTON) from the layout tree.
+ *  Returns the number collected, or 0 on empty. */
+static int collect_focus_list(LayoutNode* root, LayoutNode** focus_list, int max_count) {
+    int count = 0;
+    LayoutNode* stack[256]; int sp = 0;
+    stack[sp++] = root;
+    while (sp > 0 && count < max_count) {
+        LayoutNode* n = stack[--sp];
+        if (n->styled && n->styled->node &&
+            n->styled->node->type == GUMBO_NODE_ELEMENT) {
+            GumboTag t = n->styled->node->v.element.tag;
+            if (t == GUMBO_TAG_INPUT || t == GUMBO_TAG_BUTTON) {
+                focus_list[count++] = n;
+            }
+        }
+        for (size_t ci = 0; ci < n->num_children && sp < 256; ci++)
+            stack[sp++] = n->children[ci];
+    }
+    return count;
+}
+
+/** Patch INPUT text_content from saved input buffers after a layout rebuild. */
+static void patch_input_text(LayoutNode** focus_list, int focus_count,
+                              char input_buf[][64], int input_buf_count) {
+    for (int fi = 0; fi < focus_count && fi < input_buf_count; fi++) {
+        LayoutNode* n = focus_list[fi];
+        if (n->styled && n->styled->node &&
+            n->styled->node->type == GUMBO_NODE_ELEMENT &&
+            n->styled->node->v.element.tag == GUMBO_TAG_INPUT) {
+            char buf[128];
+            const char* val = input_buf[fi];
+            if (val && val[0]) snprintf(buf, sizeof(buf), "%s", val);
+            else snprintf(buf, sizeof(buf), " ");
+            if (n->text_content) free(n->text_content);
+            n->text_content = strdup(buf);
+        }
+    }
+}
+
 /* ─── Interactive loop ──────────────────────────────────────────── */
 void interact_run(LayoutNode* root, KatanaStylesheet* css,
                   StyledNode* styled_root,
@@ -277,45 +317,25 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
     LayoutNode* focus_list[256];
     int focus_count = 0;
     int focus_idx = -1;
-    {
-        LayoutNode* stack[256]; int sp = 0;
-        stack[sp++] = root;
-        while (sp > 0 && focus_count < 256) {
-            LayoutNode* n = stack[--sp];
-            if (n->styled && n->styled->node &&
-                n->styled->node->type == GUMBO_NODE_ELEMENT) {
-                GumboTag t = n->styled->node->v.element.tag;
-                if (t == GUMBO_TAG_INPUT || t == GUMBO_TAG_BUTTON) {
-                    focus_list[focus_count] = n;
-                    /* Seed input buffer from DOM attribute on first run */
-                    if (t == GUMBO_TAG_INPUT && input_buf[focus_count][0] == 0) {
-                        GumboAttribute* attr = gumbo_get_attribute(
-                            &n->styled->node->v.element.attributes, "value");
-                        if (attr && attr->value)
-                            strncpy(input_buf[focus_count], attr->value, sizeof(input_buf[0])-1);
-                    }
-                    focus_count++;
-                }
-            }
-            for (size_t ci = 0; ci < n->num_children && sp < 256; ci++)
-                stack[sp++] = n->children[ci];
+
+    focus_count = collect_focus_list(root, focus_list, 256);
+    /* Seed input buffer from DOM attribute on first run */
+    for (int fi = 0; fi < focus_count; fi++) {
+        LayoutNode* n = focus_list[fi];
+        if (n->styled && n->styled->node &&
+            n->styled->node->type == GUMBO_NODE_ELEMENT &&
+            n->styled->node->v.element.tag == GUMBO_TAG_INPUT &&
+            input_buf[fi][0] == 0) {
+            GumboAttribute* attr = gumbo_get_attribute(
+                &n->styled->node->v.element.attributes, "value");
+            if (attr && attr->value)
+                strncpy(input_buf[fi], attr->value, sizeof(input_buf[0])-1);
         }
     }
     input_buf_count = focus_count;
 
     /* Patch INPUT text_content from input_buf */
-    for (int fi = 0; fi < focus_count; fi++) {
-        LayoutNode* n = focus_list[fi];
-        if (n->styled && n->styled->node &&
-            n->styled->node->type == GUMBO_NODE_ELEMENT &&
-            n->styled->node->v.element.tag == GUMBO_TAG_INPUT) {
-            char buf[128];
-            if (input_buf[fi][0]) snprintf(buf, sizeof(buf), "%s", input_buf[fi]);
-            else snprintf(buf, sizeof(buf), " ");
-            if (n->text_content) free(n->text_content);
-            n->text_content = strdup(buf);
-        }
-    }
+    patch_input_text(focus_list, focus_count, input_buf, input_buf_count);
 
     /* Rebuild state */
     LayoutNode* current_root = root;
@@ -618,37 +638,9 @@ handle_scroll_keys:
                 current_root = new_root;
             }
             /* Re-collect focus list */
-            focus_count = 0;
-            {
-                LayoutNode* stack[256]; int sp = 0;
-                stack[sp++] = current_root;
-                while (sp > 0 && focus_count < 256) {
-                    LayoutNode* n = stack[--sp];
-                    if (n->styled && n->styled->node &&
-                        n->styled->node->type == GUMBO_NODE_ELEMENT) {
-                        GumboTag t = n->styled->node->v.element.tag;
-                        if (t == GUMBO_TAG_INPUT || t == GUMBO_TAG_BUTTON) {
-                            focus_list[focus_count++] = n;
-                        }
-                    }
-                    for (size_t ci = 0; ci < n->num_children && sp < 256; ci++)
-                        stack[sp++] = n->children[ci];
-                }
-            }
+            focus_count = collect_focus_list(current_root, focus_list, 256);
             /* Re-patch INPUT text_content from input_buf */
-            for (int fi = 0; fi < focus_count && fi < input_buf_count; fi++) {
-                LayoutNode* n = focus_list[fi];
-                if (n->styled && n->styled->node &&
-                    n->styled->node->type == GUMBO_NODE_ELEMENT &&
-                    n->styled->node->v.element.tag == GUMBO_TAG_INPUT) {
-                    char buf[128];
-                    const char* val = input_buf[fi];
-                    if (val && val[0]) snprintf(buf, sizeof(buf), "%s", val);
-                    else snprintf(buf, sizeof(buf), " ");
-                    if (n->text_content) free(n->text_content);
-                    n->text_content = strdup(buf);
-                }
-            }
+            patch_input_text(focus_list, focus_count, input_buf, input_buf_count);
             /* Re-apply user text overrides (survive layout rebuilds) */
             if (cb) {
                 for (int i = 0; i < cb->text_override_count; i++) {

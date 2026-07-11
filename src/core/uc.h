@@ -67,6 +67,9 @@ int uc_enc(uint32_t cp, char out[4]);
 /** Display width of a UTF-8 string in terminal cells */
 int uc_str_width(const char *s);
 
+/** Display width of the first `bytes` bytes of a UTF-8 string (partial width) */
+int uc_str_width_len(const char *s, int bytes);
+
 #ifdef __cplusplus
 }
 #endif
@@ -219,6 +222,17 @@ int uc_enc(uint32_t cp, char out[4]) {
 int uc_str_width(const char *s) {
 	int w = 0;
 	while (s && *s) {
+		uint32_t cp = uc_dec(&s);
+		if (cp == 0) break;
+		w += uc_wid((int)cp);
+	}
+	return w;
+}
+
+int uc_str_width_len(const char *s, int bytes) {
+	int w = 0;
+	const char* end = s + bytes;
+	while (s && *s && s < end) {
 		uint32_t cp = uc_dec(&s);
 		if (cp == 0) break;
 		w += uc_wid((int)cp);

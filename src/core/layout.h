@@ -69,6 +69,7 @@ typedef struct LayoutNode {
     /* box model (all in character cells) */
     int padding_top, padding_right, padding_bottom, padding_left;
     int margin_top, margin_right, margin_bottom, margin_left;
+    bool margin_left_auto, margin_right_auto; /* for margin: auto centering */
     int border_top, border_right, border_bottom, border_left;
 
     /* text content extracted from DOM subtree */
@@ -81,7 +82,22 @@ typedef struct LayoutNode {
 
     /* text styling */
     bool font_bold;
-    bool font_underline;
+    int font_underline; /* 0=none, 1=underline, 2=overline, 3=line-through */
+
+    /* vertical-align: 0=baseline(default), 1=top, 2=middle, 3=bottom */
+    int vertical_align;
+
+    /* text-transform: 0=none, 1=uppercase, 2=lowercase, 3=capitalize */
+    int text_transform;
+
+    /* line-height in character rows (0 = default = 1) */
+    int line_height;
+
+    /* letter-spacing in character cells */
+    int letter_spacing;
+
+    /* word-spacing in character cells */
+    int word_spacing;
 
     /* text alignment */
     int text_align; /* 0=left, 1=center, 2=right */
@@ -111,6 +127,16 @@ typedef struct LayoutNode {
 
     /* overflow hidden */
     bool overflow_hidden;
+
+    /* max-width / min-width / max-height / min-height (0 = not set) */
+    int max_width, min_width, max_height, min_height;
+
+    /* box-sizing: 0=content-box, 1=border-box */
+    int box_sizing;
+
+    /* outline width (character cells) */
+    int outline_width;
+    ResolvedColor outline_color;
 
     /* visibility: hidden — element takes space but is invisible */
     bool visibility_hidden;
@@ -153,6 +179,7 @@ void debug_print_layout(LayoutNode* node, int indent);
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <math.h>
 
 /* ---------- value parsing helpers ---------- */
 
@@ -271,6 +298,79 @@ static ResolvedColor parse_color(const char* str) {
     if (strcmp(str, "orange") == 0)   { c.r = 255; c.g = 165; c.b = 0;   c.valid = true; return c; }
     if (strcmp(str, "pink") == 0)     { c.r = 255; c.g = 192; c.b = 203; c.valid = true; return c; }
     if (strcmp(str, "lime") == 0)     { c.r = 0;   c.g = 255; c.b = 0;   c.valid = true; return c; }
+    if (strcmp(str, "transparent") == 0) { c.valid = false; return c; }
+    if (strcmp(str, "currentColor") == 0) { c.valid = false; return c; /* resolved at apply_styles */ }
+
+    /* rgb(r,g,b) or rgba(r,g,b,a) */
+    if (strncmp(str, "rgb", 3) == 0) {
+        const char* p = strchr(str, '(');
+        if (p) {
+            p++;
+            int vals[4] = {0,0,0,255};
+            int cnt = 0;
+            while (*p && cnt < 4) {
+                while (*p == ' ' || *p == '\t' || *p == ',' || *p == '(') p++;
+                if (!*p || *p == ')') break;
+                char* end = NULL;
+                long v = strtol(p, &end, 10);
+                if (end != p) { vals[cnt++] = (int)v; p = end; }
+                else break;
+                if (*p == '%') { vals[cnt-1] = vals[cnt-1] * 255 / 100; p++; }
+            }
+            if (cnt >= 3) {
+                c.r = vals[0]; c.g = vals[1]; c.b = vals[2];
+                c.valid = true;
+                return c;
+            }
+        }
+    }
+
+    /* hsl(h,s,l) or hsla(h,s,l,a) — convert HSL to RGB */
+    if (strncmp(str, "hsl", 3) == 0) {
+        const char* p = strchr(str, '(');
+        if (p) {
+            p++;
+            double vals[4] = {0,0,0,1.0};
+            int cnt = 0;
+            while (*p && cnt < 4) {
+                while (*p == ' ' || *p == '\t' || *p == ',' || *p == '(') p++;
+                if (!*p || *p == ')') break;
+                char* end = NULL;
+                double v = strtod(p, &end);
+                if (end != p) {
+                    if (cnt == 0) { /* H — could be angle */
+                        if (*end == 'd' && end[1] == 'e' && end[2] == 'g') { p = end + 3; }
+                        else p = end;
+                    } else { /* S, L — check % */
+                        p = end;
+                        if (*p == '%') { v /= 100.0; p++; }
+                    }
+                    vals[cnt++] = v;
+                } else break;
+            }
+            if (cnt >= 3) {
+                double h = vals[0], s = vals[1], l = vals[2];
+                /* Normalize H to [0,360) */
+                h = h - 360.0 * floor(h / 360.0);
+                /* HSL → RGB conversion */
+                double C = (1.0 - fabs(2.0 * l - 1.0)) * s;
+                double X = C * (1.0 - fabs(fmod(h / 60.0, 2.0) - 1.0));
+                double m = l - C / 2.0;
+                double r1, g1, b1;
+                if (h < 60)       { r1 = C; g1 = X; b1 = 0; }
+                else if (h < 120) { r1 = X; g1 = C; b1 = 0; }
+                else if (h < 180) { r1 = 0; g1 = C; b1 = X; }
+                else if (h < 240) { r1 = 0; g1 = X; b1 = C; }
+                else if (h < 300) { r1 = X; g1 = 0; b1 = C; }
+                else              { r1 = C; g1 = 0; b1 = X; }
+                c.r = (int)((r1 + m) * 255.0 + 0.5);
+                c.g = (int)((g1 + m) * 255.0 + 0.5);
+                c.b = (int)((b1 + m) * 255.0 + 0.5);
+                c.valid = true;
+                return c;
+            }
+        }
+    }
 
     /* #RRGGBB or #RGB */
     if (str[0] == '#') {
@@ -452,6 +552,10 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
 /* ---------- style application ---------- */
 
 /** Apply computed styles from StyledNode to LayoutNode */
+static bool is_css_keyword(const char* val) {
+    return val && (strcmp(val, "inherit") == 0 || strcmp(val, "initial") == 0 || strcmp(val, "unset") == 0);
+}
+
 static void apply_styles(LayoutNode* ln) {
     if (!ln || !ln->styled) return;
     StyledNode* sn = ln->styled;
@@ -469,12 +573,38 @@ static void apply_styles(LayoutNode* ln) {
     const char* mar = get_style(sn, "margin");
     if (mar) parse_box_shorthand(mar, &ln->margin_top, &ln->margin_right,
                                   &ln->margin_bottom, &ln->margin_left);
+    /* Detect auto margins */
+    ln->margin_left_auto = ln->margin_right_auto = false;
+    if (mar) {
+        const char* mp = mar; while (*mp == ' '||*mp=='\t') mp++;
+        if (strcmp(mp, "auto") == 0) { ln->margin_left_auto = ln->margin_right_auto = true; }
+        else {
+            /* Try tokenizing and checking each value */
+            int cnt = 0; while (*mp) {
+                while (*mp == ' '||*mp=='\t') mp++;
+                if (!*mp) break;
+                if (mp[0] == 'a' && mp[1] == 'u' && mp[2] == 't' && mp[3] == 'o' && (mp[4]==' '||mp[4]=='\t'||!mp[4])) {
+                    if (cnt == 0 || cnt == 1) ln->margin_left_auto = true;
+                    if (cnt == 1 || cnt == 3) ln->margin_right_auto = true;
+                    while (*mp && *mp != ' ' && *mp != '\t') mp++;
+                } else {
+                    while (*mp && *mp != ' ' && *mp != '\t') mp++;
+                }
+                cnt++;
+            }
+        }
+    }
 
     /* overflow */
     const char* ov = get_style(sn, "overflow");
-    if (ov && strcmp(ov, "hidden") == 0) {
-        ln->overflow_hidden = true;
-        ln->truncate_overflow = true;
+    if (ov) {
+        if (strcmp(ov, "hidden") == 0) {
+            ln->overflow_hidden = true;
+            ln->truncate_overflow = true;
+        } else if (strcmp(ov, "auto") == 0 || strcmp(ov, "scroll") == 0) {
+            ln->overflow_hidden = true;
+            ln->truncate_overflow = true;
+        }
     }
 
     /* whitespace */
@@ -487,6 +617,43 @@ static void apply_styles(LayoutNode* ln) {
     const char* vis = get_style(sn, "visibility");
     if (vis && strcmp(vis, "hidden") == 0)
         ln->visibility_hidden = true;
+
+    /* outline */
+    ln->outline_width = 0;
+    const char* olw = get_style(sn, "outline-width");
+    if (olw) ln->outline_width = (int)strtol(olw, NULL, 10);
+    const char* olc = get_style(sn, "outline-color");
+    if (olc) ln->outline_color = parse_color(olc);
+    if (ln->outline_width == 0) {
+        const char* ol = get_style(sn, "outline");
+        if (ol) {
+            /* Try to parse "width style color" */
+            const char* cp = ol;
+            while (*cp) {
+                while (*cp == ' '||*cp=='\t') cp++;
+                if (!*cp) break;
+                if ((*cp >= '0' && *cp <= '9') || *cp == '-') {
+                    ln->outline_width = (int)strtol(cp, (char**)&cp, 10);
+                } else if (strncmp(cp, "currentColor", 12) == 0) {
+                    /* resolved later */
+                    cp += 12;
+                } else if (strncmp(cp, "transparent", 11) == 0) {
+                    cp += 11;
+                } else if (strncmp(cp, "solid", 5) == 0 || strncmp(cp, "dashed", 6) == 0) {
+                    cp += (*cp == 's') ? 5 : 6;
+                } else {
+                    /* Assume it's a color */
+                    const char* end = cp;
+                    while (*end && *end != ' ' && *end != '\t') end++;
+                    char tmp[64]; int tlen = (int)(end-cp);
+                    if (tlen > 63) tlen = 63;
+                    strncpy(tmp, cp, tlen); tmp[tlen] = '\0';
+                    ln->outline_color = parse_color(tmp);
+                    cp = end;
+                }
+            }
+        }
+    }
 
     /* border */
     const char* bord = get_style(sn, "border");
@@ -512,18 +679,30 @@ static void apply_styles(LayoutNode* ln) {
 
     /* border color */
     const char* bc = get_style(sn, "border-color");
-    if (bc) ln->border_color = parse_color(bc);
+    if (bc && strcmp(bc, "currentColor") != 0) ln->border_color = parse_color(bc);
 
     /* colors */
     const char* col = get_style(sn, "color");
     if (col) ln->color = parse_color(col);
 
     const char* bg = get_style(sn, "background-color");
-    if (bg) ln->bg_color = parse_color(bg);
+    if (bg) {
+        if (strcmp(bg, "currentColor") == 0) {
+            ln->bg_color = ln->color;
+        } else {
+            ln->bg_color = parse_color(bg);
+        }
+    }
     /* also check 'background' shorthand */
     if (!ln->bg_color.valid) {
         bg = get_style(sn, "background");
-        if (bg) ln->bg_color = parse_color(bg);
+        if (bg) {
+            if (strcmp(bg, "currentColor") == 0) {
+                ln->bg_color = ln->color;
+            } else {
+                ln->bg_color = parse_color(bg);
+            }
+        }
     }
 
     /* text styling */
@@ -532,10 +711,68 @@ static void apply_styles(LayoutNode* ln) {
     if (fw && (strcmp(fw, "bold") == 0 || strcmp(fw, "700") == 0 || strcmp(fw, "bolder") == 0))
         ln->font_bold = true;
 
-    ln->font_underline = false;
+    ln->font_underline = 0;
     const char* td = get_style(sn, "text-decoration");
-    if (td && strcmp(td, "underline") == 0)
-        ln->font_underline = true;
+    if (td) {
+        if (strcmp(td, "underline") == 0) ln->font_underline = 1;
+        else if (strcmp(td, "overline") == 0) ln->font_underline = 2;
+        else if (strcmp(td, "line-through") == 0) ln->font_underline = 3;
+    }
+
+    /* text-transform */
+    ln->text_transform = 0;
+    const char* tt = get_style(sn, "text-transform");
+    if (tt) {
+        if (strcmp(tt, "uppercase") == 0) ln->text_transform = 1;
+        else if (strcmp(tt, "lowercase") == 0) ln->text_transform = 2;
+        else if (strcmp(tt, "capitalize") == 0) ln->text_transform = 3;
+    }
+
+    /* line-height */
+    ln->line_height = 0;
+    const char* lh = get_style(sn, "line-height");
+    if (lh) {
+        int v = (int)strtol(lh, NULL, 10);
+        if (v > 1) ln->line_height = v;
+    }
+
+    /* letter-spacing */
+    ln->letter_spacing = 0;
+    const char* ls = get_style(sn, "letter-spacing");
+    if (ls) ln->letter_spacing = (int)strtol(ls, NULL, 10);
+
+    /* word-spacing */
+    ln->word_spacing = 0;
+    const char* wos = get_style(sn, "word-spacing");
+    if (wos) ln->word_spacing = (int)strtol(wos, NULL, 10);
+
+    /* vertical-align */
+    ln->vertical_align = 0;
+    const char* va = get_style(sn, "vertical-align");
+    if (va) {
+        if (strcmp(va, "top") == 0) ln->vertical_align = 1;
+        else if (strcmp(va, "middle") == 0) ln->vertical_align = 2;
+        else if (strcmp(va, "bottom") == 0) ln->vertical_align = 3;
+        else if (strcmp(va, "text-top") == 0) ln->vertical_align = 1;
+        else if (strcmp(va, "text-bottom") == 0) ln->vertical_align = 3;
+    }
+
+    /* max-width / min-width / max-height / min-height */
+    ln->min_width = 0; ln->max_width = 0;
+    ln->min_height = 0; ln->max_height = 0;
+    const char* mwstr = get_style(sn, "min-width");
+    if (mwstr) { ParsedDim pd = parse_dimension(mwstr); if (pd.valid && pd.unit==0) ln->min_width = (int)pd.value; }
+    mwstr = get_style(sn, "max-width");
+    if (mwstr) { ParsedDim pd = parse_dimension(mwstr); if (pd.valid && pd.unit==0) ln->max_width = (int)pd.value; }
+    mwstr = get_style(sn, "min-height");
+    if (mwstr) { ParsedDim pd = parse_dimension(mwstr); if (pd.valid && pd.unit==0) ln->min_height = (int)pd.value; }
+    mwstr = get_style(sn, "max-height");
+    if (mwstr) { ParsedDim pd = parse_dimension(mwstr); if (pd.valid && pd.unit==0) ln->max_height = (int)pd.value; }
+
+    /* box-sizing */
+    ln->box_sizing = 0;
+    const char* bs_str = get_style(sn, "box-sizing");
+    if (bs_str && strcmp(bs_str, "border-box") == 0) ln->box_sizing = 1;
 
     /* text-align */
     ln->text_align = 0; /* left */
@@ -620,17 +857,26 @@ static void layout_block_children(LayoutNode* parent, int content_w) {
         /* resolve child width */
         const char* w_str = get_style(child->styled, "width");
         ParsedDim wdim = parse_dimension(w_str);
+        int box_extra = (child->box_sizing == 1) ? child->padding_left + child->padding_right + child->border_left + child->border_right : 0;
         if (wdim.valid && wdim.unit != 2) {
-            child->width = resolve_dim(wdim, content_w,
-                          content_w - child->margin_left - child->margin_right -
-                          child->padding_left - child->padding_right -
-                          child->border_left - child->border_right);
+            int set_w = resolve_dim(wdim, content_w, content_w);
+            if (child->box_sizing == 1) {
+                child->width = set_w - child->padding_left - child->padding_right - child->border_left - child->border_right;
+            } else {
+                child->width = set_w;
+            }
+            /* Clamp to available space */
+            int avail = content_w - child->margin_left - child->margin_right - box_extra;
+            if (child->width > avail) child->width = avail;
         } else {
             /* default: fill parent */
             child->width = content_w - child->margin_left - child->margin_right -
                            child->padding_left - child->padding_right -
                            child->border_left - child->border_right;
         }
+        /* Apply min-width / max-width constraints */
+        if (child->min_width > 0 && child->width < child->min_width) child->width = child->min_width;
+        if (child->max_width > 0 && child->width > child->max_width) child->width = child->max_width;
         if (child->width < 0) child->width = 0;
     }
 
@@ -656,9 +902,18 @@ static void layout_block_children(LayoutNode* parent, int content_w) {
                 if (css_w) { ParsedDim pd = parse_dimension(css_w);
                     if (pd.valid && pd.unit == 0 && (int)pd.value > 0) child->width = (int)pd.value; }
             }
+            /* Apply min-width / max-width to inline children too */
+            if (child->min_width > 0 && child->width < child->min_width) child->width = child->min_width;
+            if (child->max_width > 0 && child->width > child->max_width) child->width = child->max_width;
 
             child->x = inline_cursor + child->margin_left + child->border_left + child->padding_left;
             child->y = child->margin_top + child->border_top + child->padding_top;
+            /* vertical-align adjustment for inline children */
+            if (child->vertical_align == 2) { /* middle */
+                child->y = (1 - child->height) / 2 + child->margin_top + child->border_top + child->padding_top;
+            } else if (child->vertical_align == 3) { /* bottom */
+                child->y = 1 - child->height + child->margin_top + child->border_top + child->padding_top;
+            }
 
             compute_child_layouts(child, child->width);
 
@@ -668,12 +923,33 @@ static void layout_block_children(LayoutNode* parent, int content_w) {
                 if (hdim.valid && hdim.unit == 0) child->height = (int)hdim.value;
             }
             if (child->height < 1) child->height = 1;
+            /* Apply min-height / max-height */
+            if (child->min_height > 0 && child->height < child->min_height) child->height = child->min_height;
+            if (child->max_height > 0 && child->height > child->max_height) child->height = child->max_height;
 
             inline_cursor += child->width + child->padding_left + child->padding_right +
                              child->border_left + child->border_right +
                              child->margin_left + child->margin_right;
         } else {
             /* Block children: stack vertically, full width */
+
+            /* margin: auto — center block horizontally */
+            if (child->margin_left_auto && child->margin_right_auto) {
+                int total_box = total_width(child) + child->margin_left + child->margin_right;
+                if (total_box < content_w) {
+                    child->margin_left = (content_w - total_box) / 2;
+                    child->margin_right = content_w - total_box - child->margin_left;
+                }
+            } else if (child->margin_left_auto) {
+                int total_box = total_width(child) + child->margin_right;
+                if (total_box < content_w)
+                    child->margin_left = content_w - total_box;
+            } else if (child->margin_right_auto) {
+                int total_box = total_width(child) + child->margin_left;
+                if (total_box < content_w)
+                    child->margin_right = content_w - total_box;
+            }
+
             child->x = child->margin_left + child->border_left + child->padding_left;
             child->y = y_cursor + child->margin_top + child->border_top + child->padding_top;
 
@@ -684,7 +960,10 @@ static void layout_block_children(LayoutNode* parent, int content_w) {
                 ParsedDim hdim = parse_dimension(h_str);
                 if (hdim.valid && hdim.unit == 0) child->height = (int)hdim.value;
             }
+            if (child->min_height > 0 && child->height < child->min_height) child->height = child->min_height;
+            if (child->max_height > 0 && child->height > child->max_height) child->height = child->max_height;
 
+            /* Margin collapse currently not implemented */
             y_cursor += total_height(child) + child->margin_top + child->margin_bottom;
         }
     }
@@ -765,8 +1044,8 @@ static void layout_flex_children(LayoutNode* parent, int content_w, int content_
 
     int remaining = main_size - used_main;
 
-    /* flex-shrink: if items overflow, shrink proportionally */
-    if (remaining < 0 && visible > 0) {
+    /* flex-shrink: only shrink when container has definite size (not auto) */
+    if (remaining < 0 && main_size > 0 && visible > 0) {
         int total_shrink_weight = 0;
         for (size_t i = 0; i < parent->num_children; i++) {
             LayoutNode* child = parent->children[i];
@@ -1206,6 +1485,33 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
         ln->text_content = extract_text(snode->node);
     }
 
+    /* Apply text-transform to text_content (do this once, not at render time) */
+    if (ln->text_content && snode->node->type == GUMBO_NODE_ELEMENT) {
+        const char* tt = get_style(snode, "text-transform");
+        if (tt) {
+            char* buf = strdup(ln->text_content);
+            if (buf) {
+                char* q = buf;
+                bool cap_next = true; /* for capitalize */
+                if (strcmp(tt, "uppercase") == 0) {
+                    while (*q) { if (*q >= 'a' && *q <= 'z') *q = *q - 32; q++; }
+                } else if (strcmp(tt, "lowercase") == 0) {
+                    while (*q) { if (*q >= 'A' && *q <= 'Z') *q = *q + 32; q++; }
+                } else if (strcmp(tt, "capitalize") == 0) {
+                    while (*q) {
+                        if (cap_next && *q >= 'a' && *q <= 'z') { *q = *q - 32; cap_next = false; }
+                        else if (*q >= 'A' && *q <= 'Z') { if (!cap_next) *q = *q + 32; cap_next = false; }
+                        else if (*q == ' ' || *q == '\t' || *q == '\n' || *q == '\r' || *q == '-' || *q == '.') cap_next = true;
+                        else cap_next = false;
+                        q++;
+                    }
+                }
+                free(ln->text_content);
+                ln->text_content = buf;
+            }
+        }
+    }
+
     /* build children — interleave styled element children with inline text fragments
        in the original DOM order from Gumbo children */
     if (snode->num_children > 0) {
@@ -1242,7 +1548,16 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
                         if (*cp != ' ' && *cp != '\t' && *cp != '\n' && *cp != '\r') { only_ws = false; break; }
                     if (only_ws) continue;
                     LayoutNode* tn = (LayoutNode*)calloc(1, sizeof(LayoutNode));
-                    tn->text_content = strdup(gc->v.text.text);
+                    /* Strip leading/trailing newlines and trim spaces */
+                    const char* src = gc->v.text.text;
+                    while (*src == '\n' || *src == '\r' || *src == ' ' || *src == '\t') src++;
+                    if (!*src) { free(tn); continue; }
+                    const char* end = src + strlen(src);
+                    while (end > src && (*(end-1) == '\n' || *(end-1) == '\r' || *(end-1) == ' ' || *(end-1) == '\t')) end--;
+                    if (end <= src) { free(tn); continue; }
+                    tn->text_content = (char*)malloc((size_t)(end - src) + 1);
+                    strncpy(tn->text_content, src, (size_t)(end - src));
+                    tn->text_content[end - src] = '\0';
                     tn->display = DISPLAY_INLINE;
                     tn->height = 1;
                     tn->color = ln->color;
@@ -1345,24 +1660,42 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
         }
     }
 
-    /* <input>: render as [value] box */
-    /* <input>: render as value box (no brackets) */
+    /* <input>: render as value or placeholder */
     if (snode->node->type == GUMBO_NODE_ELEMENT &&
         snode->node->v.element.tag == GUMBO_TAG_INPUT) {
+        /* Detect type=password — mask with dots */
+        const char* type_val = NULL;
+        GumboAttribute* type_attr = gumbo_get_attribute(&snode->node->v.element.attributes, "type");
+        if (type_attr && type_attr->value) type_val = type_attr->value;
+        bool is_password = (type_val && strcmp(type_val, "password") == 0);
+
         const char* val = NULL;
         GumboAttribute* attr = gumbo_get_attribute(&snode->node->v.element.attributes, "value");
         if (attr && attr->value) val = attr->value;
         char buf[128];
         if (val && *val) {
-            snprintf(buf, sizeof(buf), "%s", val);
+            if (is_password) {
+                int vlen = (int)strlen(val);
+                for (int k = 0; k < vlen && k < 126; k++) buf[k] = 0x2022; /* • */
+                buf[vlen > 126 ? 126 : vlen] = '\0';
+            } else {
+                snprintf(buf, sizeof(buf), "%s", val);
+            }
         } else {
-            strcpy(buf, " ");
+            /* Try placeholder */
+            GumboAttribute* ph = gumbo_get_attribute(&snode->node->v.element.attributes, "placeholder");
+            if (ph && ph->value && ph->value[0]) {
+                snprintf(buf, sizeof(buf), "%s", ph->value);
+                ln->color.r = 120; ln->color.g = 120; ln->color.b = 120;
+            } else {
+                strcpy(buf, " ");
+                ln->color.r = 180; ln->color.g = 180; ln->color.b = 180;
+            }
         }
         if (ln->text_content) free(ln->text_content);
         ln->text_content = strdup(buf);
-        ln->color.r = 180; ln->color.g = 180; ln->color.b = 180;
         ln->color.valid = true;
-        ln->truncate_overflow = true;  /* single-line input, no wrap */
+        ln->truncate_overflow = true;
         if (ln->height < 1) ln->height = 1;
     }
 

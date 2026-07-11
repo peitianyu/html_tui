@@ -311,6 +311,7 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
 
     /* Input buffers: keyed by the same order as focus_list */
     char input_buf[256][64] = {{{0}}};
+    int  input_cursor[256] = {0}; /* cursor position within each input */
     int  input_buf_count = 0;
 
     /* Collect interactive nodes (INPUT/BUTTON) for focus */
@@ -379,8 +380,9 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                 f->styled->node->v.element.tag == GUMBO_TAG_INPUT &&
                 f->text_content) {
                 int cu = bx + f->border_left + f->padding_left;
-                if (focus_idx >= 0 && focus_idx < input_buf_count)
-                    cu += uc_str_width(input_buf[focus_idx]);
+                /* Use cursor position for rendering */
+                int cursor_pos = (focus_idx >= 0 && focus_idx < input_buf_count) ? input_cursor[focus_idx] : 0;
+                if (cursor_pos > 0) cu += uc_str_width_len(input_buf[focus_idx], cursor_pos);
                 int cursor_row = by + f->border_top + f->padding_top;
                 if (cu >= 0 && cu < s->cols && cursor_row >= 0 && cursor_row < s->rows) {
                     screen_scr_set(s, cu, cursor_row, ' '); screen_scr_bg(s, cu, cursor_row, 200, 200, 80);
@@ -408,6 +410,15 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                     if (w == 2 && ci + 1 < s->cols) screen_scr_set(s, ci + 1, sb_row, 0);
                 }
                 ci += w;
+            }
+            /* Scroll indicators on the right side of status bar */
+            if (scroll_y > 0) {
+                int ri = s->cols - 3;
+                if (ri > ci && ri < s->cols) { screen_scr_set(s, ri, sb_row, 0x25B2); screen_scr_fg(s, ri, sb_row, 100,180,255); }
+            }
+            if (current_root && scroll_y < current_root->height - s->rows) {
+                int ri = s->cols - 2;
+                if (ri > ci && ri < s->cols) { screen_scr_set(s, ri, sb_row, 0x25BC); screen_scr_fg(s, ri, sb_row, 100,180,255); }
             }
         }
 
@@ -452,12 +463,56 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                 /* Left click → focus + active */
                 if (ev.key == TB_KEY_MOUSE_LEFT) {
                     focus_idx = -1;
-                    for (int fi = 0; fi < focus_count; fi++) {
-                        LayoutNode* n = focus_list[fi];
-                        int nx, ny, nw, nh;
-                        node_abs_box(n, scroll_x, scroll_y, &nx, &ny, &nw, &nh);
-                        if (ev.x >= nx && ev.x < nx + nw && ev.y >= ny && ev.y < ny + nh) {
-                            focus_idx = fi; break;
+                    /* First check if clicked on a <label> — redirect to its for= target */
+                    GumboNode* clicked_elem = NULL;
+                    {
+                        LayoutNode* hstack2[256]; int hsp2 = 0;
+                        hstack2[hsp2++] = current_root;
+                        int best_d2 = -1;
+                        while (hsp2 > 0) {
+                            LayoutNode* n = hstack2[--hsp2];
+                            for (size_t ci = 0; ci < n->num_children && hsp2 < 256; ci++)
+                                hstack2[hsp2++] = n->children[ci];
+                            int hx, hy, hw, hh;
+                            node_abs_box(n, scroll_x, scroll_y, &hx, &hy, &hw, &hh);
+                            int depth = 0; { LayoutNode* pp = n; while (pp) { depth++; pp = pp->parent; } }
+                            if (ev.x >= hx && ev.x < hx + hw && ev.y >= hy && ev.y < hy + hh && depth > best_d2) {
+                                if (n->styled && n->styled->node &&
+                                    n->styled->node->type == GUMBO_NODE_ELEMENT) {
+                                    clicked_elem = n->styled->node;
+                                    best_d2 = depth;
+                                }
+                            }
+                        }
+                    }
+                    if (clicked_elem && clicked_elem->type == GUMBO_NODE_ELEMENT &&
+                        clicked_elem->v.element.tag == GUMBO_TAG_LABEL) {
+                        GumboAttribute* for_attr = gumbo_get_attribute(
+                            &clicked_elem->v.element.attributes, "for");
+                        if (for_attr && for_attr->value) {
+                            for (int fi = 0; fi < focus_count; fi++) {
+                                LayoutNode* n = focus_list[fi];
+                                if (n->styled && n->styled->node &&
+                                    n->styled->node->type == GUMBO_NODE_ELEMENT) {
+                                    GumboAttribute* id_attr = gumbo_get_attribute(
+                                        &n->styled->node->v.element.attributes, "id");
+                                    if (id_attr && id_attr->value &&
+                                        strcmp(id_attr->value, for_attr->value) == 0) {
+                                        focus_idx = fi;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (focus_idx < 0) {
+                        for (int fi = 0; fi < focus_count; fi++) {
+                            LayoutNode* n = focus_list[fi];
+                            int nx, ny, nw, nh;
+                            node_abs_box(n, scroll_x, scroll_y, &nx, &ny, &nw, &nh);
+                            if (ev.x >= nx && ev.x < nx + nw && ev.y >= ny && ev.y < ny + nh) {
+                                focus_idx = fi; break;
+                            }
                         }
                     }
                     if (g_interact_focus != (focus_idx >= 0 ? focus_list[focus_idx]->styled->node : NULL)) {
@@ -514,20 +569,46 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                 focus_list[focus_idx]->styled->node->v.element.tag == GUMBO_TAG_INPUT) {
                 char* buf = input_buf[focus_idx];
                 size_t blen = strlen(buf);
+                int* cpos = &input_cursor[focus_idx];
+                LayoutNode* inp = focus_list[focus_idx];
+                if (*cpos < 0) *cpos = 0;
+                if ((size_t)*cpos > blen) *cpos = (int)blen;
 
-                if (ev.key == TB_KEY_BACKSPACE2 || ev.key == TB_KEY_BACKSPACE) {
-                    if (blen > 0) { buf[blen-1] = '\0'; }
+                if (ev.key == TB_KEY_ARROW_LEFT) {
+                    if (*cpos > 0) (*cpos)--;
+                    goto input_update_text;
+                } else if (ev.key == TB_KEY_ARROW_RIGHT) {
+                    if (*cpos < (int)blen) (*cpos)++;
+                    goto input_update_text;
+                } else if (ev.key == TB_KEY_HOME) {
+                    *cpos = 0;
+                    goto input_update_text;
+                } else if (ev.key == TB_KEY_END) {
+                    *cpos = (int)blen;
+                    goto input_update_text;
+                } else if (ev.key == TB_KEY_BACKSPACE2 || ev.key == TB_KEY_BACKSPACE) {
+                    if (*cpos > 0) {
+                        memmove(buf + *cpos - 1, buf + *cpos, blen - *cpos + 1);
+                        (*cpos)--;
+                    }
                 } else if (ev.key == TB_KEY_DELETE) {
-                    /* no-op */
+                    if (*cpos < (int)blen) {
+                        memmove(buf + *cpos, buf + *cpos + 1, blen - *cpos);
+                    }
                 } else if (ev.ch >= 0x20 && ev.ch <= 0x7e) {
                     if (blen < (int)sizeof(input_buf[0]) - 2) {
                         char add[8];
                         int nch = uc_enc(ev.ch, add); add[nch] = '\0';
-                        strcat(buf, add);
+                        size_t addlen = strlen(add);
+                        memmove(buf + *cpos + addlen, buf + *cpos, blen - *cpos + 1);
+                        memcpy(buf + *cpos, add, addlen);
+                        *cpos += (int)addlen;
                     }
                 } else if (ev.key == TB_KEY_SPACE) {
                     if (blen < (int)sizeof(input_buf[0]) - 2) {
-                        strcat(buf, " ");
+                        memmove(buf + *cpos + 1, buf + *cpos, blen - *cpos + 1);
+                        buf[*cpos] = ' ';
+                        (*cpos)++;
                     }
                 } else if (ev.key == TB_KEY_ENTER) {
                     if (focus_count > 0) {
@@ -542,12 +623,12 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                     goto handle_scroll_keys;
                 }
 
+input_update_text:
                 /* Update text_content */
-                LayoutNode* inp = focus_list[focus_idx];
-                char txt[128];
+                { char txt[128];
                 snprintf(txt, sizeof(txt), "%s", buf);
                 if (inp->text_content) free(inp->text_content);
-                inp->text_content = strdup(txt);
+                inp->text_content = strdup(txt); }
                 continue;
             }
 

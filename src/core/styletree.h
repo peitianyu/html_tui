@@ -192,6 +192,9 @@ static bool has_class(const char* class_attr, const char* class_name) {
 
 /* ---------- Single-selector matching ---------- */
 
+/** Forward declaration for cross-referenced functions */
+static bool match_selector_chain_to_ancestors(KatanaSelector* cur, GumboNode* cur_node);
+
 /**
  * Match one simple selector (one link in the chain) against a single element.
  * Returns true if this part of the selector matches the element.
@@ -373,12 +376,19 @@ static bool match_simple_selector(KatanaSelector* sel, GumboNode* node) {
                     else {
                         /* Parse "an+b" format */
                         const char* p = arg;
+                        /* Handle bare 'n' or '-n' (no leading number) */
+                        if (*p == 'n' || *p == 'N') { a = 1; p++; goto nth_parse_b; }
+                        if (*p == '-' && (p[1] == 'n' || p[1] == 'N')) { a = -1; p += 2; goto nth_parse_b; }
+                        /* Handle '+n' */
+                        if (*p == '+' && (p[1] == 'n' || p[1] == 'N')) { a = 1; p += 2; goto nth_parse_b; }
                         if (*p == '-' || (*p >= '0' && *p <= '9') || *p == '+') {
                             char* end = NULL;
                             long n = strtol(p, &end, 10);
                             if (end && (*end == 'n' || *end == 'N')) {
                                 a = (int)n;
                                 p = end + 1;
+                                if (a == 0) a = 1; /* "0n" should be 0, but handle as 1 */
+nth_parse_b:
                                 if (*p == '+' || *p == '-') {
                                     b = (int)strtol(p, &end, 10);
                                 }
@@ -394,6 +404,20 @@ static bool match_simple_selector(KatanaSelector* sel, GumboNode* node) {
                     if (pos < 1) return false;
                     if (a == 0) { if (pos != b) return false; }
                     else { int diff = pos - b; if (diff < 0 || diff % a != 0) return false; }
+                    break;
+                }
+                case KatanaPseudoNot: {
+                    /* :not(selector) — match if inner selector does NOT match */
+                    if (sel->data && sel->data->selectors) {
+                        bool any_match = false;
+                        for (unsigned int ni = 0; ni < sel->data->selectors->length; ni++) {
+                            KatanaSelector* inner = (KatanaSelector*)sel->data->selectors->data[ni];
+                            if (match_selector_chain_to_ancestors(inner, node)) {
+                                any_match = true; break;
+                            }
+                        }
+                        if (any_match) return false;
+                    }
                     break;
                 }
                 case KatanaPseudoLink:

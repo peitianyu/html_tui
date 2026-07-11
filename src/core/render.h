@@ -188,6 +188,14 @@ void screen_render_node(Screen* s, LayoutNode* n) {
             draw_border(s, scr_x, scr_y, tw, th, bc, n->border_style);
         }
     }
+    /* outline: draw outside the border (similar to border but at outline_width) */
+    if (!vis_hidden && n->outline_width > 0) {
+        ResolvedColor oc = n->outline_color;
+        if (!oc.valid && n->color.valid) oc = n->color;
+        oc.valid = true;
+        int ow = n->outline_width;
+        draw_border(s, scr_x - ow, scr_y - ow, tw + 2*ow, th + 2*ow, oc, 1);
+    }
     /* <hr>: draw horizontal line across content width */
     if (!vis_hidden && n->styled && n->styled->node && n->styled->node->type == GUMBO_NODE_ELEMENT &&
         n->styled->node->v.element.tag == GUMBO_TAG_HR && n->color.valid) {
@@ -203,6 +211,7 @@ void screen_render_node(Screen* s, LayoutNode* n) {
     if (!vis_hidden && n->text_content && n->color.valid) {
         int lnx = scr_x + n->border_left + n->padding_left;
         int cy = scr_y + n->border_top + n->padding_top, mw = n->width; if (mw<1) mw=1;
+        int lh = n->line_height > 0 ? n->line_height : 1;
         const char* p = n->text_content;
 
         /* Render list marker if applicable */
@@ -230,7 +239,7 @@ void screen_render_node(Screen* s, LayoutNode* n) {
         if (n->preserve_ws) {
             /* <pre> mode: preserve whitespace, no word-wrap */
             while (*p && cy < s->rows) {
-                if (*p == '\n') { cy++; cx = lnx; p++; continue; }
+                if (*p == '\n') { cy += lh; cx = lnx; p++; continue; }
                 if (*p == '\t') { cx = ((cx - lnx) / 4 + 1) * 4 + lnx; p++; continue; }
                 uint32_t cp = uc_dec(&p);
                 if (cp == 0 || cp == 0xFFFD) continue;
@@ -239,10 +248,20 @@ void screen_render_node(Screen* s, LayoutNode* n) {
                     scr_set(s, cx, cy, cp);
                     scr_fg(s, cx, cy, n->color.r, n->color.g, n->color.b);
                     if (n->font_bold) scr_bold(s, cx, cy, true);
-                    if (n->font_underline) scr_uline(s, cx, cy, true);
+                    if (n->font_underline == 1) scr_uline(s, cx, cy, true);
+                    else if (n->font_underline == 2 && cx >= 0 && cx < s->cols) {
+                        /* overline: macron above */
+                        scr_set(s, cx, cy, 0x00AF);
+                        scr_fg(s, cx, cy, n->color.r, n->color.g, n->color.b);
+                    }
+                    else if (n->font_underline == 3 && cx >= 0 && cx < s->cols) {
+                        /* line-through: strike with - */
+                        scr_set(s, cx, cy, 0x002D);
+                        scr_fg(s, cx, cy, n->color.r, n->color.g, n->color.b);
+                    }
                     if (w == 2 && cx + 1 < s->cols) scr_set(s, cx + 1, cy, 0);
                 }
-                cx += w;
+                cx += w + n->letter_spacing;
             }
         } else {
             /* Normal word-wrap mode */
@@ -264,7 +283,7 @@ void screen_render_node(Screen* s, LayoutNode* n) {
                 /* Skip leading spaces/tabs */
                 while (*p == ' ' || *p == '\t') { cx++; p++; }
                 if (!*p) break;
-                if (*p == '\n') { cy++; cx = lnx; p++; continue; }
+                if (*p == '\n') { cy += lh; cx = lnx; p++; continue; }
 
                 /* Measure word display width */
                 const char* we = p;
@@ -278,7 +297,7 @@ void screen_render_node(Screen* s, LayoutNode* n) {
                 /* Word-wrap if needed */
                 if (cx - lnx + word_w > mw && cx > lnx) {
                     if (n->truncate_overflow) break;  /* truncate, don't wrap */
-                    cy++; cx = lnx;
+                    cy += lh; cx = lnx;
                 }
                 if (cy >= s->rows) break;
 
@@ -305,17 +324,17 @@ void screen_render_node(Screen* s, LayoutNode* n) {
                         if (n->font_underline) scr_uline(s, cx, cy, true);
                         if (w == 2 && cx + 1 < s->cols) scr_set(s, cx + 1, cy, 0);
                     }
-                    cx += w;
+                    cx += w + n->letter_spacing;
                     if (cx - lnx >= mw && p < we) {
                         if (n->truncate_overflow) { p = we; break; }
-                        cy++; cx = lnx;
+                        cy += lh; cx = lnx;
                     }
                 }
 
                 /* Skip trailing space */
-                if (*p == ' ') { cx++; p++; }
+                if (*p == ' ') { cx += 1 + n->word_spacing; p++; }
                 /* Handle newlines */
-                while (*p == '\n') { cy++; cx = lnx; p++; }
+                while (*p == '\n') { cy += lh; cx = lnx; p++; }
             }
         }
     }

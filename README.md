@@ -31,7 +31,8 @@ pages/
 ├── 00-menu.html              # 主菜单（默认页面）
 ├── 01-complex-form.html      # 表单演示：输入框、按钮、选择器、边框
 ├── 02-flex-layout.html       # Flex 布局展示：对齐、间距、弹性
-└── 03-selectors-elements.html# CSS 选择器与元素：伪类、表格、列表
+├── 03-selectors-elements.html# CSS 选择器与元素：伪类、表格、列表
+└── 04-new-features.html      # 新功能展示：折叠面板、多行输入、下拉选择、colspan、flex-wrap
 ```
 
 ### 键盘操作
@@ -133,10 +134,11 @@ HTML (.html 含 <style>)
 
 | 属性 | 说明 |
 |:--|:--|
-| `display` | `block`, `inline`, `flex`, `grid`（降级为 block）, `table`, `none` |
+| `display` | `block`, `inline`, `flex`, `grid`（降级为 block）, `table`, `inline-block`（降级为 block）, `none` |
+| `position` | ✅ `static`, `relative`（`top`/`left`/`right`/`bottom` 偏移） |
 | `width` / `height` | `px`, `%` 单位 |
 | `padding` | 简写 1~4 值 |
-| `margin` | 简写 1~4 值（透明间距） |
+| `margin` | 简写 1~4 值（透明间距，margin 折叠已修复） |
 | `border` | 简写 + `px`，Unicode 框线绘制 |
 | `border-style` | `solid`, `dashed`, `dotted`, `double`, `heavy`, `rounded`, `groove`/`ridge`/`inset`/`outset`（后四种降级为 solid） |
 | `border-color` | `#RRGGBB`, 命名色 |
@@ -147,6 +149,7 @@ HTML (.html 含 <style>)
 | `font-weight` | `bold`, `700`, `bolder`（终端粗体 ANSI） |
 | `text-decoration` | `underline`（终端下划线 ANSI），`overline`（Macron `¯`），`line-through`（删除线 `-`） |
 | `flex-direction` | `row`, `column` |
+| `flex-wrap` | ✅ 换行支持（`wrap` 自动折行，空间不足时换新行） |
 | `justify-content` | `start`, `center`, `end`, `space-between`, `space-around`, `space-evenly` |
 | `align-items` | `start`, `center`, `end`, `stretch` |
 | `gap` | flex 子元素间距 |
@@ -169,13 +172,16 @@ HTML (.html 含 <style>)
 
 | 类别 | 标签 | 状态 |
 |:--|:--|:--:|
-| Block 元素 | `html`, `body`, `div`, `p`, `h1`-`h6`, `ul`, `ol`, `li`, `header`, `footer`, `section`, `article`, `nav`, `main`, `form`, `fieldset`, `legend`, `hr`, `pre`, `table`, `tr`, `td`, `th` | ✅ 默认 block |
-| Inline 元素 | `span`, `a`, `em`, `strong`, `b`, `i`, `u`, `code`, `small`, `br`, `img`, `input`, `button` | ✅ 默认 inline |
-| 输入框 | `<input>` | ✅ 聚焦后键盘输入 |
+| Block 元素 | `html`, `body`, `div`, `p`, `h1`-`h6`, `ul`, `ol`, `li`, `header`, `footer`, `section`, `article`, `nav`, `main`, `form`, `fieldset`, `legend`, `hr`, `pre`, `details`, `summary`, `textarea`, `table`, `tr`, `td`, `th` | ✅ 默认 block |
+| Inline 元素 | `span`, `a`, `em`, `strong`, `b`, `i`, `u`, `code`, `small`, `br`, `img`, `input`, `button`, `select` | ✅ 默认 inline |
+| 折叠面板 | `<details>` / `<summary>` | ✅ 点击 `<summary>` 切换展开/折叠（`open` 属性控制默认状态） |
+| 多行输入 | `<textarea>` | ✅ 支持多行文本编辑，Enter 换行 |
+| 下拉选择 | `<select>` / `<option>` | ✅ Tab 聚焦，Enter 循环切换选项 |
+| 输入框 | `<input>` | ✅ 聚焦后键盘输入，支持 `type="password"` 和 `placeholder` |
 | 按钮 | `<button>` | ✅ 背景色 + 粗体，可点击 |
 | 超链接 | `<a href>` | ✅ 默认蓝色 + 下划线 |
 | 图片 | `<img>` | ✅ `[img]` 占位符显示 |
-| 表格 | `<table>` / `<tr>` / `<td>` | ✅ 自动列宽 + 等高等列 |
+| 表格 | `<table>` / `<tr>` / `<td>` / `<th>` | ✅ 自动列宽 + 等高等列，支持 `colspan` |
 | 列表 | `<ul>` / `<ol>` / `<li>` | ✅ `•` 和 `1.` 前缀 |
 | 水平线 | `<hr>` | ✅ `─` 字符横线 |
 | 预格式化 | `<pre>` | ✅ 保留空白和换行 |
@@ -209,7 +215,7 @@ HTML (.html 含 <style>)
 | 选择器 | 说明 |
 |:--|:--|
 | `:not()` | ✅ 已实现（否定伪类，Katana 已解析，支持嵌套选择器） |
-| `::before` / `::after` | 伪元素已解析，但未生成实际内容 |
+| `::before` / `::after` | ✅ 已实现（`content` 属性生成文本内容，前置或附加到元素文本） |
 | `:nth-child(an+b)` 复杂公式 | ✅ 已实现（支持 `3n+1`、`n+2`、`-n+3` 等公式） |
 
 ### CSS 布局属性
@@ -217,16 +223,16 @@ HTML (.html 含 <style>)
 | 属性 | 说明 |
 |:--|:--|
 | `float`, `clear` | 未实现，推荐 Flexbox 替代 |
-| `position: absolute / fixed / relative` | 仅支持静态流定位 |
+| `position: absolute / fixed` | 未实现，仅支持 `static` 和 `relative` |
 | `z-index` | 无层叠上下文，元素顺序依赖 DOM |
 | `grid-template-*` 及 Grid 相关 | Grid 降级为 `block` 处理 |
-| `flex-wrap`, `align-content`, `flex-flow` | 仅支持单行 Flex，未实现换行与多行对齐 |
+| `flex-wrap` | ✅ 已实现（`wrap` 折行支持，`align-content` 未实现） |
 | `flex-shrink` | ✅ 已实现（超出容器时按比例收缩） |
 | `max-width` / `min-width` / `max-height` / `min-height` | ✅ 已实现（尺寸约束，仅支持 `px` 单位） |
 | `box-sizing` | ✅ 已实现（支持 `border-box`，padding/border 从宽高中扣除） |
 | `margin: auto` | ✅ 已实现（水平居中） |
-| 负 `margin` | 已解析（块布局中允许，可产生重叠效果） |
-| margin 折叠 | ⚠️ 回滚：为修复列布局 bug，暂恢复为直接相加（非折叠） |
+| 负 `margin` | ✅ 已实现（块布局中允许，可产生重叠效果） |
+| margin 折叠 | ✅ 已修复（相邻垂直 margin 取最大值） |
 
 ### CSS 视觉样式
 
@@ -280,7 +286,8 @@ HTML (.html 含 <style>)
 
 | 特性 | 说明 |
 |:--|:--|
-| `colspan` / `rowspan` | 跨列/跨行合并未实现 |
+| `colspan` | ✅ 已实现（跨列合并，单元格自动均分列宽） |
+| `rowspan` | 跨行合并未实现 |
 | `<thead>` / `<tbody>` / `<tfoot>` | 表格行组已解析（统一按 `display: table-row` 处理） |
 | `border-collapse` | 始终使用 collapsed 网格绘制模式 |
 
@@ -288,7 +295,7 @@ HTML (.html 含 <style>)
 
 | 特性 | 说明 |
 |:--|:--|
-| `@media` 查询 | 无响应式支持 |
+| `@media` 查询 | ✅ 基础支持（`min-width`/`max-width`，匹配 `screen`/`all` 类型） |
 | `background` 简写（除 `background-color`）| 仅支持纯色背景填充，`background-image` 等不支持 |
 | `border` 部分样式（`groove` / `ridge` / `inset` / `outset`）| 降级为 `solid` 绘制 |
 | `@font-face` | 字体定义无意义 |
@@ -300,7 +307,11 @@ HTML (.html 含 <style>)
 | 功能 | 说明 |
 |:--|:--|
 | `Shift+Tab` | ✅ 已实现（`TB_KEY_BACK_TAB`，反向遍历焦点） |
-| 鼠标悬停 `:hover` | ⚠️ 部分支持：键盘导航会清除悬停，但鼠标离开后无独立事件重置 |
+| `<details>` 折叠 | ✅ 聚焦 `<summary>` 后按 Enter/Space 切换展开/折叠 |
+| `<textarea>` 编辑 | ✅ 多行文本编辑，Enter 换行，方向键导航 |
+| `<select>` 选择 | ✅ 聚焦后按 Enter/Space 循环切换选项 |
+| 鼠标悬停 `:hover` | ✅ 键盘输入自动清除悬停，鼠标离开检测 |
+| 终端 Resize 信号 | ✅ SIGWINCH 信号处理 + 事件轮询双检测 |
 | 键盘/鼠标事件扩展 | 仅支持焦点切换、点击、输入，无拖拽、右键菜单等 |
 | 输入框光标位置 | ✅ 已实现（`←`/`→`/`Home`/`End` 移动，`Delete`/`Backspace` 删除） |
 

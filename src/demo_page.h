@@ -208,8 +208,9 @@ static bool demo_on_button_click(const char* btn_text, int focus_idx,
                 "01-complex-form.html",
                 "02-flex-layout.html",
                 "03-selectors-elements.html",
+                "04-new-features.html",
             };
-            if (page_num >= 1 && page_num <= 3) {
+            if (page_num >= 1 && page_num <= 4) {
                 snprintf(cb->switch_page, sizeof(cb->switch_page),
                          PAGES_DIR "%s", known_pages[page_num - 1]);
                 cb->quit_flag = true;

@@ -593,32 +593,103 @@ static int compare_matched_rules(const void* a, const void* b) {
 }
 
 /** Collect all matching style rules for a node */
+static bool media_query_matches(KatanaMediaQuery* mq, int viewport_w) {
+    if (!mq || !mq->type) return false;
+    /* Simple check: handle "screen", "all", and "(min-width: Npx)" */
+    bool type_ok = (strcasecmp(mq->type, "all") == 0 || strcasecmp(mq->type, "screen") == 0);
+    if (mq->restrictor == KatanaMediaQueryRestrictorNot) type_ok = !type_ok;
+    if (!type_ok) return false;
+    /* Check expressions */
+    if (mq->expressions) {
+        for (unsigned int i = 0; i < mq->expressions->length; i++) {
+            KatanaMediaQueryExp* exp = (KatanaMediaQueryExp*)mq->expressions->data[i];
+            if (exp && exp->feature) {
+                if (strcasecmp(exp->feature, "min-width") == 0) {
+                    int val = 0;
+                    if (exp->values && exp->values->length > 0) {
+                        KatanaValue* v = (KatanaValue*)exp->values->data[0];
+                        if (v->raw) val = (int)strtol(v->raw, NULL, 10);
+                    }
+                    if (viewport_w < val) return false;
+                } else if (strcasecmp(exp->feature, "max-width") == 0) {
+                    int val = 99999;
+                    if (exp->values && exp->values->length > 0) {
+                        KatanaValue* v = (KatanaValue*)exp->values->data[0];
+                        if (v->raw) val = (int)strtol(v->raw, NULL, 10);
+                    }
+                    if (viewport_w > val) return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
+static int g_media_viewport_w = 80; /* default viewport width, set during style tree build */
+
 static void collect_matching_rules(GumboNode* node, KatanaStylesheet* ss,
                                    MatchedRule** out, size_t* out_len) {
     size_t cap = 64;
     size_t len = 0;
     MatchedRule* arr = (MatchedRule*)malloc(cap * sizeof(MatchedRule));
 
+    /* Process top-level rules and @media rules */
     for (unsigned int i = 0; i < ss->rules.length; i++) {
         KatanaRule* base = (KatanaRule*)ss->rules.data[i];
-        if (base->type != KatanaRuleStyle) continue;
 
-        KatanaStyleRule* sr = (KatanaStyleRule*)base;
-        if (!sr->selectors) continue;
+        if (base->type == KatanaRuleStyle) {
+            KatanaStyleRule* sr = (KatanaStyleRule*)base;
+            if (!sr->selectors) continue;
 
-        for (unsigned int j = 0; j < sr->selectors->length; j++) {
-            KatanaSelector* sel = (KatanaSelector*)sr->selectors->data[j];
-            if (selector_matches_node(sel, node)) {
-                if (len >= cap) {
-                    cap *= 2;
-                    arr = (MatchedRule*)realloc(arr, cap * sizeof(MatchedRule));
+            for (unsigned int j = 0; j < sr->selectors->length; j++) {
+                KatanaSelector* sel = (KatanaSelector*)sr->selectors->data[j];
+                if (selector_matches_node(sel, node)) {
+                    if (len >= cap) {
+                        cap *= 2;
+                        arr = (MatchedRule*)realloc(arr, cap * sizeof(MatchedRule));
+                    }
+                    arr[len].rule = sr;
+                    arr[len].specificity = compute_specificity(sel);
+                    arr[len].source_order = i;
+                    len++;
+                    break;
                 }
-                arr[len].rule = sr;
-                arr[len].specificity = compute_specificity(sel);
-                arr[len].source_order = i;
-                len++;
-                /* Only count once per rule (first matching selector) */
-                break;
+            }
+        } else if (base->type == KatanaRuleMedia) {
+            KatanaMediaRule* mr = (KatanaMediaRule*)base;
+            /* Check if media query matches */
+            bool mq_matches = false;
+            if (mr->medias) {
+                for (unsigned int mi = 0; mi < mr->medias->length; mi++) {
+                    KatanaMediaQuery* mq = (KatanaMediaQuery*)mr->medias->data[mi];
+                    if (media_query_matches(mq, g_media_viewport_w)) {
+                        mq_matches = true; break;
+                    }
+                }
+            }
+            if (!mq_matches) continue;
+            /* Extract rules from inside @media */
+            if (mr->rules) {
+                for (unsigned int ri = 0; ri < mr->rules->length; ri++) {
+                    KatanaRule* mr_base = (KatanaRule*)mr->rules->data[ri];
+                    if (mr_base->type != KatanaRuleStyle) continue;
+                    KatanaStyleRule* sr = (KatanaStyleRule*)mr_base;
+                    if (!sr->selectors) continue;
+                    for (unsigned int j = 0; j < sr->selectors->length; j++) {
+                        KatanaSelector* sel = (KatanaSelector*)sr->selectors->data[j];
+                        if (selector_matches_node(sel, node)) {
+                            if (len >= cap) {
+                                cap *= 2;
+                                arr = (MatchedRule*)realloc(arr, cap * sizeof(MatchedRule));
+                            }
+                            arr[len].rule = sr;
+                            arr[len].specificity = compute_specificity(sel);
+                            arr[len].source_order = i * 1000 + ri;
+                            len++;
+                            break;
+                        }
+                    }
+                }
             }
         }
     }

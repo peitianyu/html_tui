@@ -141,6 +141,18 @@ typedef struct LayoutNode {
     /* visibility: hidden — element takes space but is invisible */
     bool visibility_hidden;
 
+    /* details/summary: collapsed state */
+    bool collapsed;
+    bool is_summary;
+    bool details_open;
+
+    /* flex-wrap: 0=nowrap, 1=wrap */
+    int flex_wrap;
+
+    /* position: 0=static, 1=relative */
+    int position_type;
+    int position_top, position_right, position_bottom, position_left;
+
     /* parent pointer for absolute position computation */
     struct LayoutNode* parent;
 
@@ -148,6 +160,11 @@ typedef struct LayoutNode {
     struct LayoutNode** children;
     size_t num_children;
 } LayoutNode;
+
+/* ======================== Global Details State API ======================== */
+/* Used by interact.h to persist details open/close across layout rebuilds */
+void details_set_state(const char* id, bool open);
+bool details_get_state(const char* id);
 
 /* ======================== API ======================== */
 
@@ -180,6 +197,34 @@ void debug_print_layout(LayoutNode* node, int indent);
 #include <string.h>
 #include <ctype.h>
 #include <math.h>
+
+/* ---------- Global details state (toggling across rebuilds) ---------- */
+#define MAX_DETAILS_STATES 32
+static struct { char id[64]; bool open; } g_det_state[MAX_DETAILS_STATES];
+static int g_det_count = 0;
+
+void details_set_state(const char* id, bool open) {
+    if (!id) return;
+    for (int i = 0; i < g_det_count; i++) {
+        if (strcmp(g_det_state[i].id, id) == 0) {
+            g_det_state[i].open = open; return;
+        }
+    }
+    if (g_det_count < MAX_DETAILS_STATES) {
+        strncpy(g_det_state[g_det_count].id, id, 63);
+        g_det_state[g_det_count].open = open;
+        g_det_count++;
+    }
+}
+
+bool details_get_state(const char* id) {
+    if (!id) return true;
+    for (int i = 0; i < g_det_count; i++) {
+        if (strcmp(g_det_state[i].id, id) == 0)
+            return g_det_state[i].open;
+    }
+    return true; /* default open */
+}
 
 /* ---------- value parsing helpers ---------- */
 
@@ -444,6 +489,11 @@ static DisplayType get_default_display(const char* tagname) {
     if (strcmp(tagname, "tr") == 0)     return DISPLAY_TABLE_ROW;
     if (strcmp(tagname, "td") == 0)     return DISPLAY_BLOCK;
     if (strcmp(tagname, "th") == 0)     return DISPLAY_BLOCK;
+    if (strcmp(tagname, "details") == 0) return DISPLAY_BLOCK;
+    if (strcmp(tagname, "summary") == 0) return DISPLAY_BLOCK;
+    if (strcmp(tagname, "textarea") == 0) return DISPLAY_BLOCK;
+    if (strcmp(tagname, "select") == 0)  return DISPLAY_BLOCK;
+    if (strcmp(tagname, "option") == 0)  return DISPLAY_NONE;
 
     /* inline elements */
     if (strcmp(tagname, "span") == 0)   return DISPLAY_INLINE;
@@ -469,6 +519,7 @@ static DisplayType parse_display(const char* str) {
     if (strcmp(str, "none") == 0)      return DISPLAY_NONE;
     if (strcmp(str, "block") == 0)     return DISPLAY_BLOCK;
     if (strcmp(str, "inline") == 0)    return DISPLAY_INLINE;
+    if (strcmp(str, "inline-block") == 0) return DISPLAY_BLOCK; /* treat as block */
     if (strcmp(str, "flex") == 0)      return DISPLAY_FLEX;
     if (strcmp(str, "grid") == 0)      return DISPLAY_GRID;
     if (strcmp(str, "table") == 0)    return DISPLAY_TABLE;
@@ -810,6 +861,21 @@ static void apply_styles(LayoutNode* ln) {
     const char* gp = get_style(sn, "gap");
     if (gp) ln->gap = (int)strtol(gp, NULL, 10);
 
+    /* flex-wrap */
+    ln->flex_wrap = 0;
+    const char* fwrap = get_style(sn, "flex-wrap");
+    if (fwrap && strcmp(fwrap, "wrap") == 0) ln->flex_wrap = 1;
+
+    /* position: relative */
+    ln->position_type = 0;
+    ln->position_top = ln->position_right = ln->position_bottom = ln->position_left = 0;
+    const char* ppos = get_style(sn, "position");
+    if (ppos && strcmp(ppos, "relative") == 0) ln->position_type = 1;
+    const char* ptop = get_style(sn, "top"); if (ptop) ln->position_top = (int)strtol(ptop, NULL, 10);
+    const char* pleft = get_style(sn, "left"); if (pleft) ln->position_left = (int)strtol(pleft, NULL, 10);
+    const char* pright = get_style(sn, "right"); if (pright) ln->position_right = (int)strtol(pright, NULL, 10);
+    const char* pbottom = get_style(sn, "bottom"); if (pbottom) ln->position_bottom = (int)strtol(pbottom, NULL, 10);
+
     /* flex child properties */
     ln->flex_grow = 0;
     const char* fg = get_style(sn, "flex-grow");
@@ -882,6 +948,7 @@ static void layout_block_children(LayoutNode* parent, int content_w) {
 
     /* second pass: position children and compute their heights */
     int inline_cursor = 0;
+    int prev_mb = 0;
     for (size_t i = 0; i < parent->num_children; i++) {
         LayoutNode* child = parent->children[i];
         if (child->display == DISPLAY_NONE) continue;
@@ -930,6 +997,11 @@ static void layout_block_children(LayoutNode* parent, int content_w) {
             inline_cursor += child->width + child->padding_left + child->padding_right +
                              child->border_left + child->border_right +
                              child->margin_left + child->margin_right;
+            /* position: relative offset for inline children */
+            if (child->position_type == 1) {
+                child->x += child->position_left - child->position_right;
+                child->y += child->position_top - child->position_bottom;
+            }
         } else {
             /* Block children: stack vertically, full width */
 
@@ -952,6 +1024,11 @@ static void layout_block_children(LayoutNode* parent, int content_w) {
 
             child->x = child->margin_left + child->border_left + child->padding_left;
             child->y = y_cursor + child->margin_top + child->border_top + child->padding_top;
+            /* position: relative offset */
+            if (child->position_type == 1) {
+                child->x += child->position_left - child->position_right;
+                child->y += child->position_top - child->position_bottom;
+            }
 
             compute_child_layouts(child, child->width);
 
@@ -963,8 +1040,14 @@ static void layout_block_children(LayoutNode* parent, int content_w) {
             if (child->min_height > 0 && child->height < child->min_height) child->height = child->min_height;
             if (child->max_height > 0 && child->height > child->max_height) child->height = child->max_height;
 
-            /* Margin collapse currently not implemented */
-            y_cursor += total_height(child) + child->margin_top + child->margin_bottom;
+            /* Margin collapse: adjacent vertical margins collapse to max */
+            if (child->margin_top > 0 || prev_mb > 0) {
+                int collapsed_mt = (prev_mb > child->margin_top) ? prev_mb : child->margin_top;
+                y_cursor += collapsed_mt + total_height(child);
+            } else {
+                y_cursor += total_height(child) + child->margin_bottom;
+            }
+            prev_mb = child->margin_bottom;
         }
     }
 
@@ -1045,7 +1128,8 @@ static void layout_flex_children(LayoutNode* parent, int content_w, int content_
     int remaining = main_size - used_main;
 
     /* flex-shrink: only shrink when container has definite size (not auto) */
-    if (remaining < 0 && main_size > 0 && visible > 0) {
+    /* NOTE: if flex-wrap is enabled, skip shrink — items should overflow to wrap */
+    if (remaining < 0 && main_size > 0 && visible > 0 && !parent->flex_wrap) {
         int total_shrink_weight = 0;
         for (size_t i = 0; i < parent->num_children; i++) {
             LayoutNode* child = parent->children[i];
@@ -1117,11 +1201,26 @@ static void layout_flex_children(LayoutNode* parent, int content_w, int content_
 
     main_cursor = justify_offset;
 
+    /* flex-wrap tracking */
+    int cross_cursor = 0;
+    int line_max_cross = 0;
+    int* line_starts = (int*)calloc(visible + 1, sizeof(int));
+    int line_count = 0;
+    line_starts[line_count++] = 0;
+
     for (size_t i = 0; i < parent->num_children; i++) {
         LayoutNode* child = parent->children[i];
         if (child->display == DISPLAY_NONE) continue;
 
         int child_main = natural_mains[i];
+
+        /* flex-wrap: if item doesn't fit on current line, start new line */
+        if (parent->flex_wrap && main_cursor + child_main > main_size && main_cursor > 0) {
+            cross_cursor += line_max_cross + parent->gap;
+            main_cursor = justify_offset;
+            line_max_cross = 0;
+            line_starts[line_count++] = i;
+        }
 
         /* flex-grow: distribute remaining */
         if (total_grow > 0 && remaining > 0) {
@@ -1132,13 +1231,13 @@ static void layout_flex_children(LayoutNode* parent, int content_w, int content_
         /* Set position and size */
         if (is_row) {
             child->x = main_cursor + child->margin_left + child->border_left + child->padding_left;
-            child->y = child->margin_top + child->border_top + child->padding_top;
+            child->y = cross_cursor + child->margin_top + child->border_top + child->padding_top;
             child->width = child_main - child->margin_left - child->margin_right -
                            child->padding_left - child->padding_right -
                            child->border_left - child->border_right;
 
             /* cross axis: align-items */
-            int available_cross = cross_size - child->margin_top - child->margin_bottom -
+            int available_cross = cross_size - cross_cursor - child->margin_top - child->margin_bottom -
                                   child->padding_top - child->padding_bottom -
                                   child->border_top - child->border_bottom;
 
@@ -1146,25 +1245,21 @@ static void layout_flex_children(LayoutNode* parent, int content_w, int content_
             ParsedDim hdim = parse_dimension(h_str);
             if (hdim.valid && hdim.unit == 0) {
                 child->height = (int)hdim.value;
-            } else if (parent->align_items == ALIGN_STRETCH) {
+            } else if (parent->align_items == ALIGN_STRETCH && available_cross > 0) {
                 child->height = available_cross;
             } else {
-                /* compute from children */
+                /* compute from children or use default */
                 compute_child_layouts(child, child->width);
-                /* height is auto */
+                if (child->height < 1) child->height = 1;
             }
 
             /* align-items positioning */
-            switch (parent->align_items) {
-                case ALIGN_CENTER:
-                    child->y = (cross_size - total_height(child) - child->margin_top - child->margin_bottom) / 2
-                               + child->margin_top + child->border_top + child->padding_top;
-                    break;
-                case ALIGN_END:
-                    child->y = cross_size - total_height(child) - child->margin_bottom
-                               + child->margin_top + child->border_top + child->padding_top;
-                    break;
-                default: break;
+            if (parent->align_items == ALIGN_CENTER && cross_size > 0) {
+                child->y = (cross_size - total_height(child) - child->margin_top - child->margin_bottom) / 2
+                           + child->margin_top + child->border_top + child->padding_top;
+            } else if (parent->align_items == ALIGN_END && cross_size > 0) {
+                child->y = cross_size - total_height(child) - child->margin_bottom
+                           + child->margin_top + child->border_top + child->padding_top;
             }
 
             main_cursor += child_main + parent->gap;
@@ -1182,7 +1277,7 @@ static void layout_flex_children(LayoutNode* parent, int content_w, int content_
                                   child->padding_left - child->padding_right -
                                   child->border_left - child->border_right;
 
-            if (parent->align_items == ALIGN_STRETCH) {
+            if (parent->align_items == ALIGN_STRETCH && available_cross > 0) {
                 child->width = available_cross;
             } else {
                 const char* w_str = get_style(child->styled, "width");
@@ -1190,6 +1285,7 @@ static void layout_flex_children(LayoutNode* parent, int content_w, int content_
                 if (wdim.valid && wdim.unit == 0) {
                     child->width = (int)wdim.value;
                 }
+                if (child->width < 1) child->width = 1;
             }
 
             /* align-items positioning (for column, controls horizontal) */
@@ -1211,9 +1307,24 @@ static void layout_flex_children(LayoutNode* parent, int content_w, int content_
 
         /* compute child's children after dimensions are set */
         compute_child_layouts(child, child->width);
+
+        /* Track max cross size for flex-wrap */
+        {
+            int ch = child->height + child->padding_top + child->padding_bottom +
+                     child->border_top + child->border_bottom +
+                     child->margin_top + child->margin_bottom;
+            if (ch > line_max_cross) line_max_cross = ch;
+        }
+
+        /* position: relative offset */
+        if (child->position_type == 1) {
+            child->x += child->position_left - child->position_right;
+            child->y += child->position_top - child->position_bottom;
+        }
     }
 
     free(natural_mains);
+    free(line_starts);
 
     /* set parent height (for row) or width+height (for column) */
     if (visible > 0) {
@@ -1292,12 +1403,21 @@ static void layout_table_children(LayoutNode* parent, int content_w) {
 
     if (num_rows == 0) { free(rows); return; }
 
-    /* Count max columns across all rows */
+    /* Count max columns across all rows (considering colspan) */
     size_t max_cols = 0;
     for (size_t i = 0; i < num_rows; i++) {
         size_t n = 0;
-        for (size_t j = 0; j < rows[i]->num_children; j++)
-            if (rows[i]->children[j]->display != DISPLAY_NONE) n++;
+        for (size_t j = 0; j < rows[i]->num_children; j++) {
+            if (rows[i]->children[j]->display == DISPLAY_NONE) continue;
+            int colspan = 1;
+            if (rows[i]->children[j]->styled && rows[i]->children[j]->styled->node &&
+                rows[i]->children[j]->styled->node->type == GUMBO_NODE_ELEMENT) {
+                GumboAttribute* ca = gumbo_get_attribute(
+                    &rows[i]->children[j]->styled->node->v.element.attributes, "colspan");
+                if (ca && ca->value) { int cv = atoi(ca->value); if (cv > 1) colspan = cv; }
+            }
+            n += colspan;
+        }
         if (n > max_cols) max_cols = n;
     }
     if (max_cols == 0) { free(rows); return; }
@@ -1310,11 +1430,20 @@ static void layout_table_children(LayoutNode* parent, int content_w) {
         for (size_t j = 0; j < row->num_children; j++) {
             LayoutNode* cell = row->children[j];
             if (cell->display == DISPLAY_NONE) continue;
+            int colspan = 1;
+            if (cell->styled && cell->styled->node && cell->styled->node->type == GUMBO_NODE_ELEMENT) {
+                GumboAttribute* ca = gumbo_get_attribute(
+                    &cell->styled->node->v.element.attributes, "colspan");
+                if (ca && ca->value) { int cv = atoi(ca->value); if (cv > 1) colspan = cv; }
+            }
             int nat = cell->padding_left + cell->padding_right +
                       cell->border_left + cell->border_right;
             if (cell->text_content) nat += uc_str_width(cell->text_content);
-            if (c < max_cols && nat > (int)col_w[c]) col_w[c] = nat;
-            c++;
+            int per_col = nat / colspan;
+            for (int k = 0; k < colspan && c + k < max_cols; k++) {
+                if (per_col > (int)col_w[c + k]) col_w[c + k] = per_col;
+            }
+            c += colspan;
         }
     }
 
@@ -1338,7 +1467,18 @@ static void layout_table_children(LayoutNode* parent, int content_w) {
             LayoutNode* cell = row->children[j];
             if (cell->display == DISPLAY_NONE) continue;
 
-            int cw = col_w[c] * avail / total_nat;
+            int colspan = 1;
+            if (cell->styled && cell->styled->node && cell->styled->node->type == GUMBO_NODE_ELEMENT) {
+                GumboAttribute* ca = gumbo_get_attribute(
+                    &cell->styled->node->v.element.attributes, "colspan");
+                if (ca && ca->value) { int cv = atoi(ca->value); if (cv > 1) colspan = cv; }
+            }
+
+            /* Sum column widths for colspan */
+            int cw = 0;
+            for (int k = 0; k < colspan && c + k < max_cols; k++) {
+                cw += col_w[c + k] * avail / total_nat;
+            }
             if (cw < 1) cw = 1;
 
             cell->x = cx + cell->border_left + cell->padding_left;
@@ -1355,7 +1495,7 @@ static void layout_table_children(LayoutNode* parent, int content_w) {
             int ch = cell->height + cell->padding_top + cell->padding_bottom;
             if (ch > max_h) max_h = ch;
             cx += cw;
-            c++;
+            c += colspan;
         }
 
         for (size_t j = 0; j < row->num_children; j++) {
@@ -1512,6 +1652,41 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
         }
     }
 
+    /* ::before / ::after pseudo-element content */
+    if (snode->node->type == GUMBO_NODE_ELEMENT) {
+        const char* content_val = get_style(snode, "content");
+        if (content_val && content_val[0] && content_val[0] != 'n' &&
+            strcmp(content_val, "normal") != 0) {
+            /* Strip quotes if present */
+            char content_buf[128];
+            const char* cp = content_val;
+            while (*cp == ' ' || *cp == '\t') cp++;
+            if (*cp == '"' || *cp == '\'') {
+                size_t clen = strlen(cp);
+                if (clen > 2) {
+                    int blen = 0;
+                    cp++; /* skip opening quote */
+                    while (*cp && *cp != '"' && *cp != '\'' && blen < 126) {
+                        content_buf[blen++] = *cp;
+                        cp++;
+                    }
+                    content_buf[blen] = '\0';
+                    /* Prepend or append to text_content with a space */
+                    char* old = ln->text_content;
+                    char* combined = (char*)malloc(strlen(content_buf) + (old ? strlen(old) : 0) + 3);
+                    combined[0] = '\0';
+                    if (old) {
+                        strcat(combined, old);
+                        strcat(combined, " ");
+                    }
+                    strcat(combined, content_buf);
+                    if (old) free(old);
+                    ln->text_content = combined;
+                }
+            }
+        }
+    }
+
     /* build children — interleave styled element children with inline text fragments
        in the original DOM order from Gumbo children */
     if (snode->num_children > 0) {
@@ -1536,6 +1711,13 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
         ln->children = (LayoutNode**)calloc(total, sizeof(LayoutNode*));
         size_t idx = 0, elem_i = 0;
 
+        /* <details> collapse: when closed, only allow summary child and skip others */
+        bool details_closed = false;
+        if (snode->node->type == GUMBO_NODE_ELEMENT &&
+            snode->node->v.element.tag == GUMBO_TAG_DETAILS) {
+            details_closed = (ln->details_open == false);
+        }
+
         /* Walk Gumbo children in DOM order; interleave text fragments and element children */
         if (gchildren) {
             for (unsigned int gi = 0; gi < gchildren->length; gi++) {
@@ -1547,6 +1729,7 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
                     for (const char* cp = gc->v.text.text; *cp; cp++)
                         if (*cp != ' ' && *cp != '\t' && *cp != '\n' && *cp != '\r') { only_ws = false; break; }
                     if (only_ws) continue;
+                    if (details_closed) continue; /* skip text when collapsed */
                     LayoutNode* tn = (LayoutNode*)calloc(1, sizeof(LayoutNode));
                     /* Strip leading/trailing newlines and trim spaces */
                     const char* src = gc->v.text.text;
@@ -1568,8 +1751,20 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
                     /* Element child → use styled tree child */
                     LayoutNode* child = build_layout_tree_recursive(
                         snode->children[elem_i], ln, viewport_w, viewport_h);
-                    if (child) ln->children[idx++] = child;
                     elem_i++;
+                    if (!child) continue;
+                    /* <details> collapse: when closed, only keep the first <summary> child */
+                    if (details_closed) {
+                        if (child->is_summary) {
+                            ln->children[idx++] = child;
+                            /* Keep collapsed; subsequent children after summary are hidden */
+                        } else {
+                            free_layout_tree(child);
+                            continue;
+                        }
+                    } else {
+                        ln->children[idx++] = child;
+                    }
                 }
             }
         } else {
@@ -1699,6 +1894,91 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
         if (ln->height < 1) ln->height = 1;
     }
 
+    /* <details>: check "open" attribute first, then override with saved toggle state */
+    if (snode->node->type == GUMBO_NODE_ELEMENT &&
+        snode->node->v.element.tag == GUMBO_TAG_DETAILS) {
+        GumboAttribute* open_attr = gumbo_get_attribute(
+            &snode->node->v.element.attributes, "open");
+        ln->details_open = (open_attr != NULL);
+        /* Override with saved global toggle state if user has toggled it */
+        GumboAttribute* id_attr = gumbo_get_attribute(
+            &snode->node->v.element.attributes, "id");
+        if (id_attr && id_attr->value) {
+            for (int i = 0; i < g_det_count; i++) {
+                if (strcmp(g_det_state[i].id, id_attr->value) == 0) {
+                    ln->details_open = g_det_state[i].open;
+                    break;
+                }
+            }
+        }
+    }
+
+    /* <summary>: mark as summary */
+    if (snode->node->type == GUMBO_NODE_ELEMENT &&
+        snode->node->v.element.tag == GUMBO_TAG_SUMMARY) {
+        ln->is_summary = true;
+        /* Summary is focusable (like a button) */
+        if (!ln->bg_color.valid) {
+            ln->bg_color.r = 50; ln->bg_color.g = 50; ln->bg_color.b = 70;
+            ln->bg_color.valid = true;
+        }
+        ln->font_bold = true;
+    }
+
+    /* <textarea>: editable text area — handle BEFORE text extraction override */
+    if (snode->node->type == GUMBO_NODE_ELEMENT &&
+        snode->node->v.element.tag == GUMBO_TAG_TEXTAREA) {
+        ln->preserve_ws = true;
+        if (ln->height < 2) ln->height = 3;
+    }
+
+    /* <select>: show placeholder */
+    if (snode->node->type == GUMBO_NODE_ELEMENT &&
+        snode->node->v.element.tag == GUMBO_TAG_SELECT) {
+        /* Show first option or placeholder */
+        const char* val = NULL;
+        GumboAttribute* attr = gumbo_get_attribute(&snode->node->v.element.attributes, "value");
+        if (attr && attr->value) val = attr->value;
+        if (val && val[0]) {
+            if (ln->text_content) free(ln->text_content);
+            ln->text_content = strdup(val);
+        } else {
+            bool found = false;
+            if (snode->node->type == GUMBO_NODE_ELEMENT) {
+                GumboVector* ch = &snode->node->v.element.children;
+                for (unsigned int ci = 0; ci < ch->length; ci++) {
+                    GumboNode* gc = (GumboNode*)ch->data[ci];
+                    if (gc->type == GUMBO_NODE_ELEMENT &&
+                        gc->v.element.tag == GUMBO_TAG_OPTION) {
+                        /* Use value attribute first, or text content */
+                        GumboAttribute* oa = gumbo_get_attribute(&gc->v.element.attributes, "value");
+                        if (oa && oa->value) {
+                            if (ln->text_content) free(ln->text_content);
+                            ln->text_content = strdup(oa->value);
+                            found = true;
+                            break;
+                        }
+                        /* Try option's text content */
+                        char* opt_text = extract_text(gc);
+                        if (opt_text && opt_text[0]) {
+                            if (ln->text_content) free(ln->text_content);
+                            ln->text_content = opt_text;
+                            found = true;
+                            break;
+                        }
+                        free(opt_text);
+                    }
+                }
+            }
+            if (!found) {
+                if (!ln->text_content) ln->text_content = strdup("[Select]");
+            }
+        }
+        ln->color.valid = true;
+        ln->truncate_overflow = true;
+        if (ln->height < 1) ln->height = 1;
+    }
+
     /* <button>: background + bold text */
     if (snode->node->type == GUMBO_NODE_ELEMENT &&
         snode->node->v.element.tag == GUMBO_TAG_BUTTON) {
@@ -1744,6 +2024,9 @@ static void number_list_items(LayoutNode* node) {
 
 LayoutNode* build_layout_tree(StyledNode* styled_root, int viewport_w, int viewport_h) {
     if (!styled_root) return NULL;
+
+    /* Update media query viewport width */
+    g_media_viewport_w = viewport_w;
 
     LayoutNode* root = build_layout_tree_recursive(styled_root, NULL, viewport_w, viewport_h);
     if (!root) return NULL;

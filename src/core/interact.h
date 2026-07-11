@@ -161,6 +161,38 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <signal.h>
+
+/* SIGWINCH flag for terminal resize */
+static volatile sig_atomic_t g_resize_flag = 0;
+static void sigwinch_handler(int sig) { (void)sig; g_resize_flag = 1; }
+
+/* Global details open/close state tracker (by element id, survives rebuilds) */
+#define MAX_DETAILS_STATES 32
+static struct { char id[64]; bool open; } g_details_states[MAX_DETAILS_STATES];
+static int g_details_count = 0;
+
+static void set_details_state(const char* id, bool open) {
+    for (int i = 0; i < g_details_count; i++) {
+        if (strcmp(g_details_states[i].id, id) == 0) {
+            g_details_states[i].open = open;
+            return;
+        }
+    }
+    if (g_details_count < MAX_DETAILS_STATES) {
+        strncpy(g_details_states[g_details_count].id, id, 63);
+        g_details_states[g_details_count].open = open;
+        g_details_count++;
+    }
+}
+
+static bool get_details_state(const char* id) {
+    for (int i = 0; i < g_details_count; i++) {
+        if (strcmp(g_details_states[i].id, id) == 0)
+            return g_details_states[i].open;
+    }
+    return true; /* default: open */
+}
 
 /* ─── Element query helpers ──────────────────────────────────────────── */
 
@@ -268,7 +300,9 @@ static int collect_focus_list(LayoutNode* root, LayoutNode** focus_list, int max
         if (n->styled && n->styled->node &&
             n->styled->node->type == GUMBO_NODE_ELEMENT) {
             GumboTag t = n->styled->node->v.element.tag;
-            if (t == GUMBO_TAG_INPUT || t == GUMBO_TAG_BUTTON) {
+            if (t == GUMBO_TAG_INPUT || t == GUMBO_TAG_BUTTON ||
+                t == GUMBO_TAG_SUMMARY || t == GUMBO_TAG_TEXTAREA ||
+                t == GUMBO_TAG_SELECT) {
                 focus_list[count++] = n;
             }
         }
@@ -278,14 +312,15 @@ static int collect_focus_list(LayoutNode* root, LayoutNode** focus_list, int max
     return count;
 }
 
-/** Patch INPUT text_content from saved input buffers after a layout rebuild. */
+/** Patch INPUT/TEXTAREA text_content from saved input buffers after a layout rebuild. */
 static void patch_input_text(LayoutNode** focus_list, int focus_count,
                               char input_buf[][64], int input_buf_count) {
     for (int fi = 0; fi < focus_count && fi < input_buf_count; fi++) {
         LayoutNode* n = focus_list[fi];
         if (n->styled && n->styled->node &&
             n->styled->node->type == GUMBO_NODE_ELEMENT &&
-            n->styled->node->v.element.tag == GUMBO_TAG_INPUT) {
+            (n->styled->node->v.element.tag == GUMBO_TAG_INPUT ||
+             n->styled->node->v.element.tag == GUMBO_TAG_TEXTAREA)) {
             char buf[128];
             const char* val = input_buf[fi];
             if (val && val[0]) snprintf(buf, sizeof(buf), "%s", val);
@@ -325,12 +360,18 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
         LayoutNode* n = focus_list[fi];
         if (n->styled && n->styled->node &&
             n->styled->node->type == GUMBO_NODE_ELEMENT &&
-            n->styled->node->v.element.tag == GUMBO_TAG_INPUT &&
             input_buf[fi][0] == 0) {
-            GumboAttribute* attr = gumbo_get_attribute(
-                &n->styled->node->v.element.attributes, "value");
-            if (attr && attr->value)
-                strncpy(input_buf[fi], attr->value, sizeof(input_buf[0])-1);
+            GumboTag t = n->styled->node->v.element.tag;
+            if (t == GUMBO_TAG_INPUT) {
+                GumboAttribute* attr = gumbo_get_attribute(
+                    &n->styled->node->v.element.attributes, "value");
+                if (attr && attr->value)
+                    strncpy(input_buf[fi], attr->value, sizeof(input_buf[0])-1);
+            } else if (t == GUMBO_TAG_TEXTAREA) {
+                /* Textarea: use text_content */
+                if (n->text_content && n->text_content[0] && n->text_content[0] != ' ')
+                    strncpy(input_buf[fi], n->text_content, sizeof(input_buf[0])-1);
+            }
         }
     }
     input_buf_count = focus_count;
@@ -344,6 +385,17 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
     StyledNode* saved_st = styled_root;
 
     int vw_cache = vw, vh_cache = vh;
+
+    /* Register SIGWINCH handler for terminal resize */
+    struct sigaction sa_old;
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = sigwinch_handler;
+    sigaction(SIGWINCH, &sa, &sa_old);
+
+    /* Track mouse position for :hover leave detection */
+    int last_mouse_x = -1, last_mouse_y = -1;
+    int mouse_idle_count = 0;
 
     while (running) {
         /* ── Check quit request from callback ── */
@@ -561,12 +613,14 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                 continue;
             }
 
-            /* ── Input editing: when an INPUT is focused ── */
+            /* ── Input editing: when an INPUT or TEXTAREA is focused ── */
             if (focus_idx >= 0 && focus_idx < focus_count &&
                 focus_list[focus_idx]->styled &&
                 focus_list[focus_idx]->styled->node &&
                 focus_list[focus_idx]->styled->node->type == GUMBO_NODE_ELEMENT &&
-                focus_list[focus_idx]->styled->node->v.element.tag == GUMBO_TAG_INPUT) {
+                (focus_list[focus_idx]->styled->node->v.element.tag == GUMBO_TAG_INPUT ||
+                 focus_list[focus_idx]->styled->node->v.element.tag == GUMBO_TAG_TEXTAREA)) {
+                bool is_textarea = (focus_list[focus_idx]->styled->node->v.element.tag == GUMBO_TAG_TEXTAREA);
                 char* buf = input_buf[focus_idx];
                 size_t blen = strlen(buf);
                 int* cpos = &input_cursor[focus_idx];
@@ -595,6 +649,23 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                     if (*cpos < (int)blen) {
                         memmove(buf + *cpos, buf + *cpos + 1, blen - *cpos);
                     }
+                } else if (ev.key == TB_KEY_ENTER && is_textarea) {
+                    /* Textarea: Enter inserts newline */
+                    if (blen < (int)sizeof(input_buf[0]) - 2) {
+                        memmove(buf + *cpos + 1, buf + *cpos, blen - *cpos + 1);
+                        buf[*cpos] = '\n';
+                        (*cpos)++;
+                    }
+                } else if (ev.key == TB_KEY_ENTER && !is_textarea) {
+                    /* Input: Enter = go to next focus */
+                    if (focus_count > 0) {
+                        focus_idx = (focus_idx + 1) % focus_count;
+                        if (focus_idx >= 0 && focus_list[focus_idx]->styled)
+                            g_interact_focus = focus_list[focus_idx]->styled->node;
+                        else g_interact_focus = NULL;
+                        restyle = true;
+                    }
+                    continue;
                 } else if (ev.ch >= 0x20 && ev.ch <= 0x7e) {
                     if (blen < (int)sizeof(input_buf[0]) - 2) {
                         char add[8];
@@ -610,15 +681,6 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                         buf[*cpos] = ' ';
                         (*cpos)++;
                     }
-                } else if (ev.key == TB_KEY_ENTER) {
-                    if (focus_count > 0) {
-                        focus_idx = (focus_idx + 1) % focus_count;
-                        if (focus_idx >= 0 && focus_list[focus_idx]->styled)
-                            g_interact_focus = focus_list[focus_idx]->styled->node;
-                        else g_interact_focus = NULL;
-                        restyle = true;
-                    }
-                    continue;
                 } else {
                     goto handle_scroll_keys;
                 }
@@ -632,7 +694,7 @@ input_update_text:
                 continue;
             }
 
-            /* ── Button click: Enter/Space on focused BUTTON ── */
+            /* ── Button click: Enter/Space on focused BUTTON / SUMMARY / SELECT ── */
             if (focus_idx >= 0 && focus_idx < focus_count &&
                 (ev.key == TB_KEY_ENTER || ev.key == TB_KEY_SPACE) &&
                 focus_list[focus_idx]->styled &&
@@ -647,6 +709,35 @@ input_update_text:
                                          focus_list, focus_count,
                                          input_buf, input_buf_count, cb)) {
                     restyle = true;
+                }
+                continue;
+            }
+
+            /* ── <summary> click: toggle parent <details> ── */
+            if (focus_idx >= 0 && focus_idx < focus_count &&
+                (ev.key == TB_KEY_ENTER || ev.key == TB_KEY_SPACE) &&
+                focus_list[focus_idx]->styled &&
+                focus_list[focus_idx]->styled->node &&
+                focus_list[focus_idx]->styled->node->type == GUMBO_NODE_ELEMENT &&
+                focus_list[focus_idx]->styled->node->v.element.tag == GUMBO_TAG_SUMMARY) {
+                /* Find parent <details> by walking up the layout tree */
+                for (LayoutNode* det = focus_list[focus_idx]->parent; det; det = det->parent) {
+                    /* Check if this is a details node */
+                    if (det->styled && det->styled->node &&
+                        det->styled->node->type == GUMBO_NODE_ELEMENT &&
+                        det->styled->node->v.element.tag == GUMBO_TAG_DETAILS) {
+                        bool new_state = !det->details_open;
+                        /* Save to global state (survives layout rebuild) */
+                        GumboAttribute* id_attr = gumbo_get_attribute(
+                            &det->styled->node->v.element.attributes, "id");
+                        if (id_attr && id_attr->value)
+                            details_set_state(id_attr->value, new_state);
+                        det->details_open = new_state;
+                        snprintf(cb->status_msg, sizeof(cb->status_msg),
+                                 new_state ? "▾ Expanded" : "▸ Collapsed");
+                        restyle = true;
+                        break;
+                    }
                 }
                 continue;
             }
@@ -710,20 +801,93 @@ handle_scroll_keys:
                 g_interact_active = g_interact_focus;
                 restyle = true;
             }
+
+            /* ── <select> cycling: Enter on focused SELECT rotates options ── */
+            if (focus_idx >= 0 && focus_idx < focus_count &&
+                (ev.key == TB_KEY_ENTER || ev.key == TB_KEY_SPACE) &&
+                focus_list[focus_idx]->styled &&
+                focus_list[focus_idx]->styled->node &&
+                focus_list[focus_idx]->styled->node->type == GUMBO_NODE_ELEMENT &&
+                focus_list[focus_idx]->styled->node->v.element.tag == GUMBO_TAG_SELECT) {
+                /* Cycle through <option> children */
+                GumboVector* ch = &focus_list[focus_idx]->styled->node->v.element.children;
+                int num_opts = 0, cur_opt = -1;
+                const char* cur_val = focus_list[focus_idx]->text_content;
+                for (unsigned int oi = 0; oi < ch->length; oi++) {
+                    GumboNode* oc = (GumboNode*)ch->data[oi];
+                    if (oc->type == GUMBO_NODE_ELEMENT && oc->v.element.tag == GUMBO_TAG_OPTION) {
+                        GumboAttribute* oa = gumbo_get_attribute(&oc->v.element.attributes, "value");
+                        if (oa && oa->value) {
+                            if (cur_val && strcmp(oa->value, cur_val) == 0) cur_opt = num_opts;
+                            num_opts++;
+                        }
+                    }
+                }
+                if (num_opts > 0) {
+                    int next_opt = (cur_opt + 1) % num_opts;
+                    int oi2 = 0, ocount = 0;
+                    for (unsigned int oi = 0; oi < ch->length; oi++) {
+                        GumboNode* oc = (GumboNode*)ch->data[oi];
+                        if (oc->type == GUMBO_NODE_ELEMENT && oc->v.element.tag == GUMBO_TAG_OPTION) {
+                            GumboAttribute* oa = gumbo_get_attribute(&oc->v.element.attributes, "value");
+                            if (oa && oa->value) {
+                                if (ocount == next_opt) {
+                                    char val_buf[64];
+                                    snprintf(val_buf, sizeof(val_buf), "%s", oa->value);
+                                    node_set_text(focus_list[focus_idx], val_buf);
+                                    GumboAttribute* id_a = gumbo_get_attribute(
+                                        &focus_list[focus_idx]->styled->node->v.element.attributes, "id");
+                                    if (id_a && id_a->value)
+                                        node_override_text(cb, id_a->value, val_buf);
+                                    snprintf(cb->status_msg, sizeof(cb->status_msg),
+                                             "✓ Selected: %s", val_buf);
+                                    break;
+                                }
+                                ocount++;
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
         }
 
         /* Mouse wheel */
         if (ev.type == TB_EVENT_MOUSE) {
             if (ev.key == TB_KEY_MOUSE_WHEEL_UP) { scroll_y -= 3; }
             else if (ev.key == TB_KEY_MOUSE_WHEEL_DOWN) { scroll_y += 3; }
+            /* Track mouse position for :hover leave detection */
+            last_mouse_x = ev.x; last_mouse_y = ev.y;
+            mouse_idle_count = 0;
         }
 
-        /* Resize */
+        /* :hover mouse leave: clear hover if keyboard input without mouse */
+        if (ev.type == TB_EVENT_KEY && g_interact_hover) {
+            mouse_idle_count++;
+            if (mouse_idle_count > 3) {
+                g_interact_hover = NULL;
+                restyle = true;
+                mouse_idle_count = 0;
+            }
+        }
+
+        /* Resize via event */
         if (ev.type == TB_EVENT_RESIZE) {
             vw = ev.w; vh = ev.h;
             screen_free(s); s = screen_create(vw, vh);
             vw_cache = vw; vh_cache = vh;
             restyle = true;
+        }
+
+        /* SIGWINCH resize handler */
+        if (g_resize_flag) {
+            g_resize_flag = 0;
+            render_size(&vw, &vh);
+            if (vw != vw_cache || vh != vh_cache) {
+                screen_free(s); s = screen_create(vw, vh);
+                vw_cache = vw; vh_cache = vh;
+                restyle = true;
+            }
         }
 
         /* If hover/focus/active changed, rebuild styles and layout */

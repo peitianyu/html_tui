@@ -85,6 +85,14 @@ struct InteractCallbacks {
      * This is how input_buf survives rebuilds — but for any element. */
     struct { char id[64]; char text[128]; } text_overrides[16];
     int text_override_count;
+
+    /* ─── Scrollbar configuration ─── */
+    /**
+     * Set to true to show visual side scrollbars (vertical on right edge, horizontal above status bar).
+     * Scrollbars only appear when content exceeds viewport size.
+     * Supports click-to-jump and drag-to-scroll interactions.
+     */
+    bool show_scrollbars;
 };
 
 /* ======================== Element Query Helpers ======================== */
@@ -402,6 +410,9 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
 
     /* Track scrollbar drag state: textarea index being dragged, -1 = not dragging */
     int textarea_scrollbar_drag = -1;
+    /* Global scrollbar drag state: -1 = not dragging, 0/1 = dragging */
+    int global_sb_drag_v = -1;
+    int global_sb_drag_h = -1;
 
     /* Track previous hover/active for style recomputation */
     GumboNode* prev_hover = NULL;
@@ -497,6 +508,12 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                     }
                 }
             }
+        }
+
+        /* Draw global scrollbars: hscroll first so vscroll draws on top at corner */
+        if (cb && cb->show_scrollbars && current_root) {
+            screen_draw_hscrollbar(s, current_root->width, scroll_x);
+            screen_draw_vscrollbar(s, current_root->height, scroll_y);
         }
 
         /* Draw status bar at bottom */
@@ -684,6 +701,8 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                 /* Mouse release → clear active and drag state */
                 if (ev.key == TB_KEY_MOUSE_RELEASE) {
                     textarea_scrollbar_drag = -1;
+                    global_sb_drag_v = -1;
+                    global_sb_drag_h = -1;
                     if (g_interact_active) {
                         prev_active = g_interact_active;
                         g_interact_active = NULL;
@@ -743,6 +762,64 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                                 restyle = true;
                             }
                         }
+                    }
+                }
+
+                /* ── Global scrollbar click: vertical (rightmost column) ── */
+                if (ev.key == TB_KEY_MOUSE_LEFT && !(ev.mod & TB_MOD_MOTION) &&
+                    cb && cb->show_scrollbars && current_root &&
+                    ev.x == s->cols - 1 && ev.y < s->rows - 1) {
+                    int track_h = s->rows - 1;
+                    int content_h = current_root->height;
+                    if (content_h > track_h) {
+                        int scroll_range = content_h - track_h;
+                        scroll_y = (ev.y * scroll_range) / track_h;
+                        if (scroll_y < 0) scroll_y = 0;
+                        if (scroll_y > scroll_range) scroll_y = scroll_range;
+                        global_sb_drag_v = 1;
+                        restyle = true;
+                    }
+                }
+                /* ── Global scrollbar click: horizontal (row above status bar) ── */
+                if (ev.key == TB_KEY_MOUSE_LEFT && !(ev.mod & TB_MOD_MOTION) &&
+                    cb && cb->show_scrollbars && current_root &&
+                    ev.y == s->rows - 2 && ev.x < s->cols - 1) {
+                    int track_w = s->cols - 1;
+                    int content_w = current_root->width;
+                    if (content_w > track_w) {
+                        int scroll_range = content_w - track_w;
+                        scroll_x = (ev.x * scroll_range) / track_w;
+                        if (scroll_x < 0) scroll_x = 0;
+                        if (scroll_x > scroll_range) scroll_x = scroll_range;
+                        global_sb_drag_h = 1;
+                        restyle = true;
+                    }
+                }
+
+                /* ── Global scrollbar drag: vertical ── */
+                if ((ev.mod & TB_MOD_MOTION) && global_sb_drag_v >= 0 &&
+                    cb && cb->show_scrollbars && current_root) {
+                    int track_h = s->rows - 1;
+                    int content_h = current_root->height;
+                    if (content_h > track_h) {
+                        int scroll_range = content_h - track_h;
+                        scroll_y = (ev.y * scroll_range) / track_h;
+                        if (scroll_y < 0) scroll_y = 0;
+                        if (scroll_y > scroll_range) scroll_y = scroll_range;
+                        restyle = true;
+                    }
+                }
+                /* ── Global scrollbar drag: horizontal ── */
+                if ((ev.mod & TB_MOD_MOTION) && global_sb_drag_h >= 0 &&
+                    cb && cb->show_scrollbars && current_root) {
+                    int track_w = s->cols - 1;
+                    int content_w = current_root->width;
+                    if (content_w > track_w) {
+                        int scroll_range = content_w - track_w;
+                        scroll_x = (ev.x * scroll_range) / track_w;
+                        if (scroll_x < 0) scroll_x = 0;
+                        if (scroll_x > scroll_range) scroll_x = scroll_range;
+                        restyle = true;
                     }
                 }
 

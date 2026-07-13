@@ -33,6 +33,11 @@ void screen_render_tree(Screen* s, LayoutNode* root);
 void screen_flush(Screen* s);
 void screen_scroll_clamp(Screen* s, int content_w, int content_h);
 
+/** Draw a vertical scrollbar on the right edge of the screen. */
+void screen_draw_vscrollbar(Screen* s, int content_h, int scroll_y);
+/** Draw a horizontal scrollbar at the bottom (above status bar). */
+void screen_draw_hscrollbar(Screen* s, int content_w, int scroll_x);
+
 /* ======================== Interactive Loop (termbox2) ======================== */
 
 /** Initialize terminal (termbox2 raw mode + truecolor + mouse). Returns 0 on success. */
@@ -634,6 +639,59 @@ void screen_scroll_clamp(Screen* s, int cw, int ch) {
     int mx=cw-s->cols, my=ch-s->rows;
     if(s->scroll_x>mx) s->scroll_x = mx>0 ? mx : 0;
     if(s->scroll_y>my) s->scroll_y = my>0 ? my : 0;
+}
+
+/* ─── Global scrollbar drawing ────────────────────────────── */
+void screen_draw_vscrollbar(Screen* s, int content_h, int scroll_y) {
+    int track_h = s->rows - 1; /* leave last row for status bar */
+    if (track_h < 2) return;
+    int col = s->cols - 1;
+    if (col < 0) return;
+    if (content_h <= track_h) return;
+    int thumb_h = track_h * track_h / content_h;
+    if (thumb_h < 1) thumb_h = 1;
+    if (thumb_h > track_h) thumb_h = track_h;
+    int scroll_range = content_h - track_h;
+    int thumb_pos = (scroll_y * (track_h - thumb_h)) / scroll_range;
+    if (thumb_pos < 0) thumb_pos = 0;
+    if (thumb_pos > track_h - thumb_h) thumb_pos = track_h - thumb_h;
+    for (int r = 0; r < track_h; r++) {
+        if (r >= thumb_pos && r < thumb_pos + thumb_h) {
+            scr_set(s, col, r, 0x2592); /* ▒ thumb */
+            scr_fg(s, col, r, 120, 180, 255);
+            scr_bg(s, col, r, 30, 30, 50);
+        } else {
+            scr_set(s, col, r, 0x2502); /* │ track */
+            scr_fg(s, col, r, 50, 80, 120);
+            scr_bg(s, col, r, 0, 0, 0);
+        }
+    }
+}
+
+void screen_draw_hscrollbar(Screen* s, int content_w, int scroll_x) {
+    int sb_row = s->rows - 2; /* row above status bar */
+    if (sb_row < 0) return;
+    int track_w = s->cols; /* full width; vscrollbar overwrites corner if visible */
+    if (track_w < 2) return;
+    if (content_w <= track_w) return;
+    int thumb_w = track_w * track_w / content_w;
+    if (thumb_w < 1) thumb_w = 1;
+    if (thumb_w > track_w) thumb_w = track_w;
+    int scroll_range = content_w - track_w;
+    int thumb_pos = (scroll_x * (track_w - thumb_w)) / scroll_range;
+    if (thumb_pos < 0) thumb_pos = 0;
+    if (thumb_pos > track_w - thumb_w) thumb_pos = track_w - thumb_w;
+    for (int c = 0; c < track_w; c++) {
+        if (c >= thumb_pos && c < thumb_pos + thumb_w) {
+            scr_set(s, c, sb_row, 0x2592); /* ▒ thumb */
+            scr_fg(s, c, sb_row, 120, 180, 255);
+            scr_bg(s, c, sb_row, 30, 30, 50);
+        } else {
+            scr_set(s, c, sb_row, 0x2500); /* ─ track */
+            scr_fg(s, c, sb_row, 50, 80, 120);
+            scr_bg(s, c, sb_row, 0, 0, 0);
+        }
+    }
 }
 
 #include <locale.h>

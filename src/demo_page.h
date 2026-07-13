@@ -343,6 +343,7 @@ static void demo_run(const char* filepath) {
         cb.status_msg[0] = '\0';
         cb.switch_page[0] = '\0';
         cb.layout_root = lt;
+        cb.show_scrollbars = true; /* enable visual side scrollbars */
 
         /* Status: show page name */
         const char* basename = strrchr(current_path, '/');

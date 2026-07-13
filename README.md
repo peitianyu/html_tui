@@ -39,9 +39,10 @@ pages/
 
 | 按键 | 功能 |
 |:--|:--|
-| `Tab` | 下一个可聚焦元素（按钮 / 输入框） |
+| `Tab` | 下一个可聚焦元素（按钮 / 输入框 / select / textarea / summary） |
 | `Shift+Tab` | 上一个可聚焦元素 |
-| `Enter` | 点击当前聚焦的按钮 |
+| `Enter` | 点击当前聚焦的按钮 / 切换 `<summary>` 折叠 / 循环 `<select>` 选项 |
+| `Enter`（textarea） | 输入框中换行 |
 | `q` / `Q` / `Esc` | 退出 |
 | 任意字符键 | 在输入框中输入文本 |
 | `←` / `→` | 输入框中光标左/右移动 |
@@ -52,7 +53,7 @@ pages/
 
 ### 页面跳转
 
-- 按钮 `id` 为 `btn-page-NN` 时，自动跳转到 `pages/NN-*.html`
+- 按钮 `id` 为 `btn-page-NN` 时，自动跳转到 `pages/NN-*.html`（当前支持 01~04）
 - 按钮 `id` 为 `btn-back` 或 `btn-back-N` 时，返回菜单 `00-menu.html`
 
 ---
@@ -172,11 +173,12 @@ HTML (.html 含 <style>)
 
 | 类别 | 标签 | 状态 |
 |:--|:--|:--:|
-| Block 元素 | `html`, `body`, `div`, `p`, `h1`-`h6`, `ul`, `ol`, `li`, `header`, `footer`, `section`, `article`, `nav`, `main`, `form`, `fieldset`, `legend`, `hr`, `pre`, `details`, `summary`, `textarea`, `table`, `tr`, `td`, `th` | ✅ 默认 block |
-| Inline 元素 | `span`, `a`, `em`, `strong`, `b`, `i`, `u`, `code`, `small`, `br`, `img`, `input`, `button`, `select` | ✅ 默认 inline |
+| Block 元素 | `html`, `body`, `div`, `p`, `h1`-`h6`, `ul`, `ol`, `li`, `header`, `footer`, `section`, `article`, `nav`, `main`, `form`, `fieldset`, `legend`, `hr`, `pre`, `details`, `summary`, `textarea`, `select`, `table`, `tr`, `td`, `th` | ✅ 默认 block |
+| Inline 元素 | `span`, `a`, `em`, `strong`, `b`, `i`, `u`, `code`, `small`, `br`, `img`, `input`, `button` | ✅ 默认 inline |
+| Block 元素 | `select` | ✅ 默认 block（经调整，确保 block 流中正确换行） |
 | 折叠面板 | `<details>` / `<summary>` | ✅ 点击 `<summary>` 切换展开/折叠（`open` 属性控制默认状态） |
 | 多行输入 | `<textarea>` | ✅ 支持多行文本编辑，Enter 换行 |
-| 下拉选择 | `<select>` / `<option>` | ✅ Tab 聚焦，Enter 循环切换选项 |
+| 下拉选择 | `<select>` / `<option>` | ✅ Tab 聚焦，Enter 循环切换选项，`<option>` 隐藏 |
 | 输入框 | `<input>` | ✅ 聚焦后键盘输入，支持 `type="password"` 和 `placeholder` |
 | 按钮 | `<button>` | ✅ 背景色 + 粗体，可点击 |
 | 超链接 | `<a href>` | ✅ 默认蓝色 + 下划线 |
@@ -264,10 +266,10 @@ HTML (.html 含 <style>)
 
 | 功能 | 说明 |
 |:--|:--|
-| `display: inline-block` | 该中间模式未实现 |
+| `display: inline-block` | 该中间模式未实现（降级为 block 处理） |
 | 独立滚动容器（`overflow: auto / scroll`） | ✅ 已实现（`overflow: auto/scroll` 裁剪+状态栏滚动指示 `▲▼`） |
 | 层叠顺序 | 重叠元素仅按 DOM 顺序，无真正层叠 |
-| 终端 resize 信号 | 依赖 `tb_poll_event` 轮询检测（`SIGWINCH` 无独立 handler） |
+| 终端 resize 信号 | ✅ SIGWINCH 信号处理 + 事件轮询双检测 |
 | 文本选中/复制 | 终端 TUI 无选择复制机制 |
 | `<img>` 的 `alt` 属性 | ✅ 已实现（读取 `alt` 属性，显示 `[alt文本]`） |
 
@@ -276,11 +278,14 @@ HTML (.html 含 <style>)
 | 标签 | 说明 |
 |:--|:--|
 | `<iframe>`, `<video>`, `<audio>`, `<canvas>` | 嵌入/多媒体/绘图元素不支持 |
-| `<select>`, `<textarea>`, `<input type="radio/checkbox/email/password/number/range/date">` 等 | 仅支持 `type="text"` 和 `type="password"`（`•` 掩码），支持 `placeholder` 属性 |
-| `<details>`, `<dialog>`, `<summary>` 等语义标签 | 不支持 |
+| `<input type="radio/checkbox/email/password/number/range/date">` 等 | 仅支持 `type="text"` 和 `type="password"`（`•` 掩码），支持 `placeholder` 属性 |
+| 折叠面板 | `<details>` / `<summary>` | ✅ 已实现（Tab+Enter 切换展开/折叠，`open` 属性控制默认状态） |
+| 多行输入 | `<textarea>` | ✅ 已实现（Enter 换行，多行编辑） |
+| 下拉选择 | `<select>` / `<option>` | ✅ 已实现（Tab 聚焦，Enter 循环选项） |
+| 语义标签 | `<dialog>`, `<figure>` 等 | 不支持 |
 | `<label for>` | ✅ 已实现（点击 `<label for="id">` 自动聚焦目标输入框） |
 | `<fieldset>`, `<legend>` | 已解析（默认 block 渲染，legend 自动放到 fieldset 顶部） |
-| `<optgroup>`, `<option>` | 下拉选择相关不支持 |
+| `<optgroup>` | 不支持 |
 
 ### 表格
 

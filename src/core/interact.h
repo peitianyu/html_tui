@@ -347,6 +347,7 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
     /* Input buffers: keyed by the same order as focus_list */
     char input_buf[256][64] = {{{0}}};
     int  input_cursor[256] = {0}; /* cursor position within each input */
+    int  textarea_target_col[256] = {0}; /* target visual column for textarea up/down nav */
     int  input_buf_count = 0;
 
     /* Collect interactive nodes (INPUT/BUTTON) for focus */
@@ -397,6 +398,10 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
     int last_mouse_x = -1, last_mouse_y = -1;
     int mouse_idle_count = 0;
 
+    /* Track previous hover/active for style recomputation */
+    GumboNode* prev_hover = NULL;
+    GumboNode* prev_active = NULL;
+
     while (running) {
         /* ── Check quit request from callback ── */
         if (cb && cb->quit_flag) { running = false; break; }
@@ -429,16 +434,43 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                 }
             }
             if (f->styled && f->styled->node && f->styled->node->type == GUMBO_NODE_ELEMENT &&
-                f->styled->node->v.element.tag == GUMBO_TAG_INPUT &&
-                f->text_content) {
-                int cu = bx + f->border_left + f->padding_left;
-                /* Use cursor position for rendering */
+                f->text_content &&
+                (f->styled->node->v.element.tag == GUMBO_TAG_INPUT ||
+                 f->styled->node->v.element.tag == GUMBO_TAG_TEXTAREA)) {
                 int cursor_pos = (focus_idx >= 0 && focus_idx < input_buf_count) ? input_cursor[focus_idx] : 0;
-                if (cursor_pos > 0) cu += uc_str_width_len(input_buf[focus_idx], cursor_pos);
+                int cu = bx + f->border_left + f->padding_left;
                 int cursor_row = by + f->border_top + f->padding_top;
+
+                if (f->styled->node->v.element.tag == GUMBO_TAG_TEXTAREA) {
+                    /* For textarea, compute cursor row and column from \n-delimited text */
+                    const char* txt = input_buf[focus_idx];
+                    int bo = 0; /* byte offset in input_buf */
+                    int line_idx = 0;
+                    int line_start_bo = 0;
+                    /* Find which line the cursor falls on */
+                    while (bo < cursor_pos && txt[bo]) {
+                        if (txt[bo] == '\n') {
+                            line_idx++;
+                            line_start_bo = bo + 1;
+                        }
+                        bo++;
+                    }
+                    int col_in_line = cursor_pos - line_start_bo;
+                    int visual_col = uc_str_width_len(txt + line_start_bo, col_in_line);
+                    cu += visual_col;
+                    cursor_row += line_idx;
+                } else {
+                    /* INPUT: single-line, all on one row */
+                    if (cursor_pos > 0) cu += uc_str_width_len(input_buf[focus_idx], cursor_pos);
+                }
+
                 if (cu >= 0 && cu < s->cols && cursor_row >= 0 && cursor_row < s->rows) {
-                    screen_scr_set(s, cu, cursor_row, ' '); screen_scr_bg(s, cu, cursor_row, 200, 200, 80);
-                    screen_scr_set(s, cu, cursor_row, '|'); screen_scr_fg(s, cu, cursor_row, 0, 0, 0);
+                    /* Terminal-style block cursor: invert fg↔bg colors */
+                    Cell* cur_cell = &s->cells[cursor_row * s->cols + cu];
+                    int cf_r = cur_cell->fg_r, cf_g = cur_cell->fg_g, cf_b = cur_cell->fg_b;
+                    int cb_r = cur_cell->bg_r, cb_g = cur_cell->bg_g, cb_b = cur_cell->bg_b;
+                    screen_scr_fg(s, cu, cursor_row, cb_r, cb_g, cb_b);
+                    screen_scr_bg(s, cu, cursor_row, cf_r, cf_g, cf_b);
                 }
             }
         }
@@ -508,12 +540,13 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                 }
 
                 if (hover_node != g_interact_hover) {
+                    prev_hover = g_interact_hover;
                     g_interact_hover = hover_node;
                     restyle = true;
                 }
 
-                /* Left click → focus + active */
-                if (ev.key == TB_KEY_MOUSE_LEFT) {
+                /* Left click → focus + active (not pure motion) */
+                if (ev.key == TB_KEY_MOUSE_LEFT && !(ev.mod & TB_MOD_MOTION)) {
                     focus_idx = -1;
                     /* First check if clicked on a <label> — redirect to its for= target */
                     GumboNode* clicked_elem = NULL;
@@ -571,12 +604,22 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                         g_interact_focus = (focus_idx >= 0 && focus_list[focus_idx]->styled) ? focus_list[focus_idx]->styled->node : NULL;
                         restyle = true;
                     }
+                    prev_active = g_interact_active;
                     g_interact_active = g_interact_focus;
                     restyle = true;
                 }
 
-                /* Left click on BUTTON: trigger click action via callback */
-                if (ev.key == TB_KEY_MOUSE_LEFT && cb && cb->on_button_click) {
+                /* Mouse release → clear active state */
+                if (ev.key == TB_KEY_MOUSE_RELEASE) {
+                    if (g_interact_active) {
+                        prev_active = g_interact_active;
+                        g_interact_active = NULL;
+                        restyle = true;
+                    }
+                }
+
+                /* Left click on BUTTON: trigger click action via callback (not pure motion) */
+                if (ev.key == TB_KEY_MOUSE_LEFT && !(ev.mod & TB_MOD_MOTION) && cb && cb->on_button_click) {
                     LayoutNode* clicked_btn = NULL;
                     int clicked_focus_idx = -1;
                     for (int fi = 0; fi < focus_count; fi++) {
@@ -628,11 +671,83 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                 if (*cpos < 0) *cpos = 0;
                 if ((size_t)*cpos > blen) *cpos = (int)blen;
 
-                if (ev.key == TB_KEY_ARROW_LEFT) {
-                    if (*cpos > 0) (*cpos)--;
+                if (ev.key == TB_KEY_ARROW_UP && is_textarea) {
+                    /* Move cursor up one line */
+                    if (*cpos > 0) {
+                        /* Find start of current line */
+                        int line_start = *cpos;
+                        while (line_start > 0 && buf[line_start - 1] != '\n')
+                            line_start--;
+                        /* Find target visual column = width of text from line_start to cursor */
+                        int target_col = uc_str_width_len(buf + line_start, *cpos - line_start);
+                        textarea_target_col[focus_idx] = target_col;
+                        /* Find start of previous line */
+                        if (line_start > 0) {
+                            int prev_end = line_start - 1; /* the \n we just crossed */
+                            int prev_start = prev_end;
+                            while (prev_start > 0 && buf[prev_start - 1] != '\n')
+                                prev_start--;
+                            /* Find byte offset in prev line closest to target_col */
+                            int new_pos = prev_start;
+                            int cur_col = 0;
+                            while (new_pos < prev_end) {
+                                int next_w = uc_str_width_len(buf + new_pos,
+                                    uc_utf8_length[(unsigned char)buf[new_pos]]);
+                                if (cur_col + next_w > target_col) break;
+                                cur_col += next_w;
+                                new_pos += uc_utf8_length[(unsigned char)buf[new_pos]];
+                            }
+                            *cpos = new_pos;
+                        }
+                    }
+                    goto input_update_text;
+                } else if (ev.key == TB_KEY_ARROW_DOWN && is_textarea) {
+                    /* Move cursor down one line */
+                    /* Find end of current line */
+                    int line_end = *cpos;
+                    while (buf[line_end] && buf[line_end] != '\n')
+                        line_end++;
+                    if (buf[line_end] == '\n') {
+                        /* Find start of current line for target column */
+                        int line_start = *cpos;
+                        while (line_start > 0 && buf[line_start - 1] != '\n')
+                            line_start--;
+                        int target_col = uc_str_width_len(buf + line_start, *cpos - line_start);
+                        textarea_target_col[focus_idx] = target_col;
+                        /* Move past \n to next line */
+                        int next_start = line_end + 1;
+                        if (next_start < (int)blen) {
+                            /* Find end of next line */
+                            int next_end = next_start;
+                            while (buf[next_end] && buf[next_end] != '\n')
+                                next_end++;
+                            /* Find byte offset in next line closest to target_col */
+                            int new_pos = next_start;
+                            int cur_col = 0;
+                            while (new_pos < next_end) {
+                                int next_w = uc_str_width_len(buf + new_pos,
+                                    uc_utf8_length[(unsigned char)buf[new_pos]]);
+                                if (cur_col + next_w > target_col) break;
+                                cur_col += next_w;
+                                new_pos += uc_utf8_length[(unsigned char)buf[new_pos]];
+                            }
+                            *cpos = new_pos;
+                        }
+                    }
+                    goto input_update_text;
+                } else if (ev.key == TB_KEY_ARROW_LEFT) {
+                    if (*cpos > 0) {
+                        (*cpos)--;
+                        while (*cpos > 0 && (buf[*cpos] & 0xC0) == 0x80)
+                            (*cpos)--;
+                    }
                     goto input_update_text;
                 } else if (ev.key == TB_KEY_ARROW_RIGHT) {
-                    if (*cpos < (int)blen) (*cpos)++;
+                    if (*cpos < (int)blen) {
+                        (*cpos)++;
+                        while (*cpos < (int)blen && (buf[*cpos] & 0xC0) == 0x80)
+                            (*cpos)++;
+                    }
                     goto input_update_text;
                 } else if (ev.key == TB_KEY_HOME) {
                     *cpos = 0;
@@ -642,13 +757,25 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                     goto input_update_text;
                 } else if (ev.key == TB_KEY_BACKSPACE2 || ev.key == TB_KEY_BACKSPACE) {
                     if (*cpos > 0) {
-                        memmove(buf + *cpos - 1, buf + *cpos, blen - *cpos + 1);
-                        (*cpos)--;
+                        /* Walk back to the start of the UTF-8 character */
+                        int start = *cpos - 1;
+                        while (start > 0 && (buf[start] & 0xC0) == 0x80)
+                            start--;
+                        int char_bytes = *cpos - start;
+                        memmove(buf + start, buf + *cpos, blen - *cpos + 1);
+                        *cpos = start;
                     }
+                    goto input_update_text;
                 } else if (ev.key == TB_KEY_DELETE) {
                     if (*cpos < (int)blen) {
-                        memmove(buf + *cpos, buf + *cpos + 1, blen - *cpos);
+                        /* Find the full UTF-8 character at cursor */
+                        int end = *cpos + 1;
+                        while (end < (int)blen && (buf[end] & 0xC0) == 0x80)
+                            end++;
+                        int char_bytes = end - *cpos;
+                        memmove(buf + *cpos, buf + end, blen - end + 1);
                     }
+                    goto input_update_text;
                 } else if (ev.key == TB_KEY_ENTER && is_textarea) {
                     /* Textarea: Enter inserts newline */
                     if (blen < (int)sizeof(input_buf[0]) - 2) {
@@ -666,14 +793,20 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                         restyle = true;
                     }
                     continue;
-                } else if (ev.ch >= 0x20 && ev.ch <= 0x7e) {
+                } else if (ev.ch >= 0x20) {
+                    /* Accept any printable Unicode codepoint (ASCII + CJK + other scripts).
+                       termbox2 decodes UTF-8 input into ev.ch as a proper Unicode codepoint,
+                       and uc_enc() encodes it back to UTF-8 for the input buffer. */
                     if (blen < (int)sizeof(input_buf[0]) - 2) {
                         char add[8];
                         int nch = uc_enc(ev.ch, add); add[nch] = '\0';
                         size_t addlen = strlen(add);
-                        memmove(buf + *cpos + addlen, buf + *cpos, blen - *cpos + 1);
-                        memcpy(buf + *cpos, add, addlen);
-                        *cpos += (int)addlen;
+                        /* Ensure buffer doesn't overflow */
+                        if (blen + addlen < sizeof(input_buf[0]) - 1) {
+                            memmove(buf + *cpos + addlen, buf + *cpos, blen - *cpos + 1);
+                            memcpy(buf + *cpos, add, addlen);
+                            *cpos += (int)addlen;
+                        }
                     }
                 } else if (ev.key == TB_KEY_SPACE) {
                     if (blen < (int)sizeof(input_buf[0]) - 2) {
@@ -892,6 +1025,11 @@ handle_scroll_keys:
 
         /* If hover/focus/active changed, rebuild styles and layout */
         if (restyle && saved_css && saved_st) {
+            /* Recompute previous hover node (remove old :hover styles) */
+            if (prev_hover && prev_hover != g_interact_hover && prev_hover != g_interact_focus) {
+                StyledNode* sn = find_styled_node(saved_st, prev_hover);
+                if (sn) recompute_style_subtree(sn, saved_css, NULL);
+            }
             if (g_interact_hover) {
                 StyledNode* sn = find_styled_node(saved_st, g_interact_hover);
                 if (sn) recompute_style_subtree(sn, saved_css, NULL);
@@ -900,6 +1038,13 @@ handle_scroll_keys:
                 StyledNode* sn = find_styled_node(saved_st, g_interact_focus);
                 if (sn) recompute_style_subtree(sn, saved_css, NULL);
             }
+            /* Recompute previous active node (remove old :active styles) */
+            if (prev_active && prev_active != g_interact_hover && prev_active != g_interact_focus && prev_active != g_interact_active) {
+                StyledNode* sn = find_styled_node(saved_st, prev_active);
+                if (sn) recompute_style_subtree(sn, saved_css, NULL);
+            }
+            prev_hover = NULL;
+            prev_active = NULL;
             LayoutNode* new_root = build_layout_tree(saved_st, vw_cache, vh_cache);
             if (new_root) {
                 /* Free old root */

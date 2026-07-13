@@ -183,11 +183,65 @@ td, th {
   color: #888;
   margin-top: 2;
 }
+
+/* ─── Menu Bar ─── */
+.menubar {
+  display: flex;
+  background-color: #16213e;
+  margin: 0 1 1 1;
+  border: 1;
+  border-style: solid;
+  border-color: #53a8b6;
+  padding: 0;
+}
+
+.menubar select {
+  width: 8;
+  background-color: #16213e;
+  color: #e0e0e0;
+  border: none;
+  margin: 0;
+  padding: 0 1;
+  text-align: center;
+  border-style: none;
+}
+
+.menubar select:focus {
+  background-color: #0f3460;
+  color: #f9e069;
+  border-style: none;
+}
 </style>
 </head>
 <body>
 
 <h1>🆕 New Features Demo</h1>
+
+<!-- Menu Bar -->
+<div class="menubar">
+  <select value="  File  " id="menu-file">
+    <option value="  New">         New</option>
+    <option value="  Open">        Open</option>
+    <option value="  Save">        Save</option>
+    <option value="  Exit">        Exit</option>
+  </select>
+  <select value="  Edit  " id="menu-edit">
+    <option value="  Undo">        Undo</option>
+    <option value="  Redo">        Redo</option>
+    <option value="  Cut">         Cut</option>
+    <option value="  Copy">        Copy</option>
+    <option value="  Paste">       Paste</option>
+  </select>
+  <select value="  View  " id="menu-view">
+    <option value="  Zoom">        Zoom</option>
+    <option value="  Fullscreen">  Fullscreen</option>
+    <option value="  Sidebar">     Sidebar</option>
+  </select>
+  <select value="  Help  " id="menu-help">
+    <option value="  About">       About</option>
+    <option value="  Docs">        Docs</option>
+  </select>
+</div>
 
 <!-- Details / Summary -->
 <div class="section">
@@ -217,7 +271,7 @@ textarea input.</textarea>
 <!-- Select -->
 <div class="section">
   <h2>Select</h2>
-  <p>Tab to focus, Enter to cycle options.</p>
+  <p>Tab to focus, Enter for popup selection.</p>
   <select id="demo-select">
     <option value="Option A">Option A</option>
     <option value="Option B">Option B</option>

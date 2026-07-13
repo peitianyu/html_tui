@@ -360,6 +360,14 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
     int  textarea_scroll_x[256] = {0}; /* horizontal scroll offset for textarea content */
     int  input_buf_count = 0;
 
+    /* ─── Select popup state ─── */
+    int  select_popup_active = 0;       /* 0=closed, 1=open */
+    int  select_popup_focus_idx = -1;   /* focus_list index of the <select> */
+    int  select_popup_sel = 0;          /* currently highlighted option index */
+    int  select_popup_count = 0;        /* total option count */
+    char select_popup_vals[32][64];     /* option display labels */
+    int  select_popup_scroll = 0;       /* vertical scroll offset in popup list */
+
     /* Collect interactive nodes (INPUT/BUTTON) for focus */
     LayoutNode* focus_list[256];
     int focus_count = 0;
@@ -547,6 +555,117 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
             }
         }
 
+        /* ── Draw select popup overlay ── */
+        if (select_popup_active && select_popup_focus_idx >= 0 && select_popup_focus_idx < focus_count) {
+            LayoutNode* sel_node = focus_list[select_popup_focus_idx];
+            int sx, sy, sw, sh;
+            node_abs_box(sel_node, scroll_x, scroll_y, &sx, &sy, &sw, &sh);
+            /* Popup appears below the select element, aligned to left edge */
+            int pop_x = sx;
+            int pop_y = sy + sh; /* just below the select */
+            int max_vis = select_popup_count;
+            if (max_vis > s->rows - pop_y - 1) max_vis = s->rows - pop_y - 1;
+            /* Compute max label width */
+            int max_w = 0;
+            for (int oi = 0; oi < select_popup_count; oi++) {
+                int w = (int)strlen(select_popup_vals[oi]);
+                if (w > max_w) max_w = w;
+            }
+            int pop_w = max_w + 2; /* 1 space padding each side */
+            if (pop_w > s->cols - pop_x) pop_w = s->cols - pop_x;
+            if (pop_w < 4) pop_w = 4;
+            /* Clamp pop_y to screen */
+            if (pop_y < 0) pop_y = 0;
+            if (pop_y + max_vis > s->rows) max_vis = s->rows - pop_y;
+            if (max_vis > select_popup_count) max_vis = select_popup_count;
+            if (max_vis < 1 && select_popup_count > 0) max_vis = 1;
+            /* Draw border */
+            int border_color = 100;
+            for (int ci = pop_x; ci < pop_x + pop_w && ci < s->cols; ci++) {
+                for (int ri = pop_y; ri < pop_y + max_vis + 2 && ri < s->rows; ri++) {
+                    screen_scr_set(s, ci, ri, ' ');
+                    screen_scr_bg(s, ci, ri, 20, 20, 40);
+                }
+            }
+            /* Top border */
+            if (pop_y < s->rows) {
+                for (int ci = pop_x; ci < pop_x + pop_w && ci < s->cols; ci++) {
+                    screen_scr_set(s, ci, pop_y, 0x2500);
+                    screen_scr_fg(s, ci, pop_y, border_color, border_color, border_color);
+                    screen_scr_bg(s, ci, pop_y, 20, 20, 40);
+                }
+                if (pop_x < s->cols) { screen_scr_set(s, pop_x, pop_y, 0x250C); screen_scr_fg(s, pop_x, pop_y, border_color, border_color, border_color); }
+                int rgt = pop_x + pop_w - 1;
+                if (rgt < s->cols) { screen_scr_set(s, rgt, pop_y, 0x2510); screen_scr_fg(s, rgt, pop_y, border_color, border_color, border_color); }
+            }
+            /* Bottom border */
+            int bottom_row = pop_y + max_vis + 1;
+            if (bottom_row < s->rows) {
+                for (int ci = pop_x; ci < pop_x + pop_w && ci < s->cols; ci++) {
+                    screen_scr_set(s, ci, bottom_row, 0x2500);
+                    screen_scr_fg(s, ci, bottom_row, border_color, border_color, border_color);
+                    screen_scr_bg(s, ci, bottom_row, 20, 20, 40);
+                }
+                if (pop_x < s->cols) { screen_scr_set(s, pop_x, bottom_row, 0x2514); screen_scr_fg(s, pop_x, bottom_row, border_color, border_color, border_color); }
+                int rgt = pop_x + pop_w - 1;
+                if (rgt < s->cols) { screen_scr_set(s, rgt, bottom_row, 0x2518); screen_scr_fg(s, rgt, bottom_row, border_color, border_color, border_color); }
+            }
+            /* Left/right borders */
+            for (int ri = pop_y + 1; ri < pop_y + max_vis + 1 && ri < s->rows; ri++) {
+                if (pop_x < s->cols) { screen_scr_set(s, pop_x, ri, 0x2502); screen_scr_fg(s, pop_x, ri, border_color, border_color, border_color); }
+                int rgt = pop_x + pop_w - 1;
+                if (rgt < s->cols) { screen_scr_set(s, rgt, ri, 0x2502); screen_scr_fg(s, rgt, ri, border_color, border_color, border_color); }
+            }
+            /* Draw option items */
+            for (int oi = 0; oi < max_vis; oi++) {
+                int idx = select_popup_scroll + oi;
+                if (idx >= select_popup_count) break;
+                int row = pop_y + 1 + oi;
+                if (row >= s->rows) break;
+                bool is_sel = (idx == select_popup_sel);
+                /* Background: highlighted vs normal */
+                int bg_r = is_sel ? 80 : 20, bg_g = is_sel ? 80 : 20, bg_b = is_sel ? 140 : 40;
+                /* Paint the option row */
+                int col = pop_x + 1;
+                const char* label = select_popup_vals[idx];
+                screen_scr_bg(s, col - 1, row, bg_r, bg_g, bg_b);
+                screen_scr_set(s, col - 1, row, ' ');
+                /* Selection indicator */
+                if (is_sel) {
+                    screen_scr_set(s, col - 1, row, 0x25B6); /* ▶ */
+                    screen_scr_fg(s, col - 1, row, 200, 200, 255);
+                }
+                int ci = col;
+                const char* lp = label;
+                while (*lp && ci < pop_x + pop_w - 1 && ci < s->cols) {
+                    uint32_t cp = uc_dec(&lp);
+                    if (cp == 0) break;
+                    screen_scr_set(s, ci, row, cp);
+                    screen_scr_fg(s, ci, row, 220, 220, 220);
+                    screen_scr_bg(s, ci, row, bg_r, bg_g, bg_b);
+                    int w = uc_wid((int)cp);
+                    ci += w;
+                    if (w == 2 && ci < s->cols) screen_scr_set(s, ci, row, 0);
+                }
+                /* Fill remaining */
+                while (ci < pop_x + pop_w - 1 && ci < s->cols) {
+                    screen_scr_set(s, ci, row, ' ');
+                    screen_scr_bg(s, ci, row, bg_r, bg_g, bg_b);
+                    ci++;
+                }
+                if (ci < s->cols) screen_scr_bg(s, ci, row, bg_r, bg_g, bg_b);
+            }
+            /* Scroll indicators if list is clipped */
+            if (select_popup_scroll > 0 && pop_y + 1 < s->rows) {
+                screen_scr_set(s, pop_x + pop_w - 2, pop_y + 1, 0x25B2);
+                screen_scr_fg(s, pop_x + pop_w - 2, pop_y + 1, 100, 180, 255);
+            }
+            if (select_popup_scroll + max_vis < select_popup_count && pop_y + max_vis < s->rows) {
+                screen_scr_set(s, pop_x + pop_w - 2, pop_y + max_vis, 0x25BC);
+                screen_scr_fg(s, pop_x + pop_w - 2, pop_y + max_vis, 100, 180, 255);
+            }
+        }
+
         screen_flush(s);
 
         /* Poll input */
@@ -558,6 +677,20 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
         bool restyle = false;
 
         if (ev.type == TB_EVENT_MOUSE) {
+            /* If popup is active, skip hover/wheel; let left-click through to popup handler */
+            if (select_popup_active) {
+                if (ev.key == TB_KEY_MOUSE_RELEASE) {
+                    textarea_scrollbar_drag = -1;
+                    global_sb_drag_v = -1;
+                    global_sb_drag_h = -1;
+                }
+                last_mouse_x = ev.x; last_mouse_y = ev.y;
+                mouse_idle_count = 0;
+                /* Allow plain left-click (no drag) to fall through → handled below */
+                if (ev.key != TB_KEY_MOUSE_LEFT || (ev.mod & TB_MOD_MOTION)) {
+                    goto skip_mouse_processing;
+                }
+            }
             if (ev.key != TB_KEY_MOUSE_WHEEL_UP && ev.key != TB_KEY_MOUSE_WHEEL_DOWN) {
                 /* Find node under mouse for hover (deepest match) */
                 GumboNode* hover_node = NULL;
@@ -588,6 +721,54 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
 
                 /* Left click → focus + active (not pure motion) */
                 if (ev.key == TB_KEY_MOUSE_LEFT && !(ev.mod & TB_MOD_MOTION)) {
+                    /* ── Select popup mouse click ── */
+                    if (select_popup_active) {
+                        /* Compute popup dimensions (same as rendering section) */
+                        LayoutNode* _psn = focus_list[select_popup_focus_idx];
+                        int _psx, _psy, _psw, _psh;
+                        node_abs_box(_psn, scroll_x, scroll_y, &_psx, &_psy, &_psw, &_psh);
+                        int _pp_x = _psx;
+                        int _pp_y = _psy + _psh;
+                        int _max_w = 0;
+                        for (int _oi = 0; _oi < select_popup_count; _oi++) {
+                            int _w = (int)strlen(select_popup_vals[_oi]);
+                            if (_w > _max_w) _max_w = _w;
+                        }
+                        int _pp_w = _max_w + 4; /* 2 padding + 2 borders */
+                        if (_pp_w > s->cols - _pp_x) _pp_w = s->cols - _pp_x;
+                        if (_pp_w < 4) _pp_w = 4;
+                        int _pp_h = select_popup_count < (s->rows - _pp_y - 1) ? select_popup_count : (s->rows - _pp_y - 1);
+                        if (_pp_h < 1 && select_popup_count > 0) _pp_h = 1;
+                        /* Check if click is inside popup area */
+                        if (ev.x >= _pp_x && ev.x < _pp_x + _pp_w &&
+                            ev.y > _pp_y && ev.y <= _pp_y + _pp_h) {
+                            int oi = (ev.y - _pp_y - 1) + select_popup_scroll;
+                            if (oi >= 0 && oi < select_popup_count) {
+                                select_popup_sel = oi;
+                                /* Confirm selection (unless select has its own value=header) */
+                                LayoutNode* _sel = focus_list[select_popup_focus_idx];
+                                const char* _val = select_popup_vals[select_popup_sel];
+                                GumboAttribute* _sel_va = gumbo_get_attribute(
+                                    &_sel->styled->node->v.element.attributes, "value");
+                                if (!_sel_va || !_sel_va->value || !_sel_va->value[0]) {
+                                    node_set_text(_sel, _val);
+                                    GumboAttribute* _id_a = gumbo_get_attribute(
+                                        &_sel->styled->node->v.element.attributes, "id");
+                                    if (_id_a && _id_a->value)
+                                        node_override_text(cb, _id_a->value, _val);
+                                }
+                                snprintf(cb->status_msg, sizeof(cb->status_msg), "✓ Selected: %s", _val);
+                                select_popup_active = 0;
+                            }
+                        } else {
+                            /* Click outside popup → cancel */
+                            select_popup_active = 0;
+                            snprintf(cb->status_msg, sizeof(cb->status_msg), "✗ Cancelled");
+                        }
+                        focus_idx = select_popup_focus_idx;
+                        g_interact_focus = focus_list[focus_idx]->styled->node;
+                        goto end_mouse_left;
+                    }
                     focus_idx = -1;
                     /* First check if clicked on a <label> — redirect to its for= target */
                     GumboNode* clicked_elem = NULL;
@@ -638,6 +819,12 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                             node_abs_box(n, scroll_x, scroll_y, &nx, &ny, &nw, &nh);
                             if (ev.x >= nx && ev.x < nx + nw && ev.y >= ny && ev.y < ny + nh) {
                                 focus_idx = fi;
+                                /* If clicked on SELECT (or its child OPTION), open popup */
+                                if (n->styled && n->styled->node &&
+                                    n->styled->node->type == GUMBO_NODE_ELEMENT &&
+                                    n->styled->node->v.element.tag == GUMBO_TAG_SELECT) {
+                                    goto click_handle_select_popup;
+                                }
                                 /* If clicked on INPUT or TEXTAREA, set cursor to click position */
                                 if (n->styled && n->styled->node &&
                                     n->styled->node->type == GUMBO_NODE_ELEMENT &&
@@ -689,6 +876,38 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                             }
                         }
                     }
+click_handle_select_popup:
+                    /* If the clicked (or focused) element is a <select>, open popup immediately */
+                    if (focus_idx >= 0 && focus_idx < focus_count &&
+                        !select_popup_active &&
+                        focus_list[focus_idx]->styled &&
+                        focus_list[focus_idx]->styled->node &&
+                        focus_list[focus_idx]->styled->node->type == GUMBO_NODE_ELEMENT &&
+                        focus_list[focus_idx]->styled->node->v.element.tag == GUMBO_TAG_SELECT) {
+                        select_popup_focus_idx = focus_idx;
+                        select_popup_count = 0;
+                        select_popup_sel = 0;
+                        select_popup_scroll = 0;
+                        const char* cur_val = focus_list[focus_idx]->text_content;
+                        GumboVector* ch = &focus_list[focus_idx]->styled->node->v.element.children;
+                        for (unsigned int oi = 0; oi < ch->length && select_popup_count < 32; oi++) {
+                            GumboNode* oc = (GumboNode*)ch->data[oi];
+                            if (oc->type == GUMBO_NODE_ELEMENT && oc->v.element.tag == GUMBO_TAG_OPTION) {
+                                GumboAttribute* oa = gumbo_get_attribute(&oc->v.element.attributes, "value");
+                                if (oa && oa->value) {
+                                    snprintf(select_popup_vals[select_popup_count], 64, "%s", oa->value);
+                                    if (cur_val && strcmp(oa->value, cur_val) == 0)
+                                        select_popup_sel = select_popup_count;
+                                    select_popup_count++;
+                                }
+                            }
+                        }
+                        if (select_popup_count > 0) {
+                            select_popup_active = 1;
+                            snprintf(cb->status_msg, sizeof(cb->status_msg),
+                                     "▲ Select an option (↑↓ enter, Esc cancel)");
+                        }
+                    }
                     if (g_interact_focus != (focus_idx >= 0 ? focus_list[focus_idx]->styled->node : NULL)) {
                         g_interact_focus = (focus_idx >= 0 && focus_list[focus_idx]->styled) ? focus_list[focus_idx]->styled->node : NULL;
                         restyle = true;
@@ -698,6 +917,7 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                     restyle = true;
                 }
 
+end_mouse_left:
                 /* Mouse release → clear active and drag state */
                 if (ev.key == TB_KEY_MOUSE_RELEASE) {
                     textarea_scrollbar_drag = -1;
@@ -856,6 +1076,58 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
         }
 
         if (ev.type == TB_EVENT_KEY) {
+            /* ── Select popup key handling ── */
+            if (select_popup_active) {
+                if (ev.key == TB_KEY_ESC) {
+                    select_popup_active = 0;
+                    snprintf(cb->status_msg, sizeof(cb->status_msg), "✗ Cancelled");
+                    continue;
+                }
+                if (ev.key == TB_KEY_ENTER || ev.key == TB_KEY_SPACE) {
+                    /* Confirm selection */
+                    if (select_popup_focus_idx >= 0 && select_popup_focus_idx < focus_count &&
+                        select_popup_sel >= 0 && select_popup_sel < select_popup_count) {
+                        LayoutNode* sel_node = focus_list[select_popup_focus_idx];
+                        /* If select has its own value=header, keep display text unchanged */
+                        GumboAttribute* sel_va = gumbo_get_attribute(
+                            &sel_node->styled->node->v.element.attributes, "value");
+                        bool is_header = (sel_va && sel_va->value && sel_va->value[0]);
+                        const char* val = select_popup_vals[select_popup_sel];
+                        if (!is_header) {
+                            node_set_text(sel_node, val);
+                            GumboAttribute* id_a = gumbo_get_attribute(
+                                &sel_node->styled->node->v.element.attributes, "id");
+                            if (id_a && id_a->value)
+                                node_override_text(cb, id_a->value, val);
+                        }
+                        snprintf(cb->status_msg, sizeof(cb->status_msg),
+                                 "✓ Selected: %s", val);
+                    }
+                    select_popup_active = 0;
+                    continue;
+                }
+                if (ev.key == TB_KEY_ARROW_UP) {
+                    if (select_popup_sel > 0) {
+                        select_popup_sel--;
+                        /* Auto-scroll: if selection goes above visible range */
+                        if (select_popup_sel < select_popup_scroll)
+                            select_popup_scroll = select_popup_sel;
+                    }
+                    continue;
+                }
+                if (ev.key == TB_KEY_ARROW_DOWN) {
+                    if (select_popup_sel < select_popup_count - 1) {
+                        select_popup_sel++;
+                        /* Auto-scroll: if selection goes below visible range */
+                        int popup_h = select_popup_count < (s->rows - 2) ? select_popup_count : (s->rows - 2);
+                        if (select_popup_sel >= select_popup_scroll + popup_h)
+                            select_popup_scroll = select_popup_sel - popup_h + 1;
+                    }
+                    continue;
+                }
+                continue; /* block other keys while popup is open */
+            }
+
             /* ── User key handler (overrides defaults) ── */
             if (cb && cb->on_key && cb->on_key(&ev, cb)) {
                 continue;
@@ -1182,51 +1454,37 @@ handle_scroll_keys:
                 restyle = true;
             }
 
-            /* ── <select> cycling: Enter on focused SELECT rotates options ── */
+            /* ── <select> popup: Enter on focused SELECT opens popup ── */
             if (focus_idx >= 0 && focus_idx < focus_count &&
                 (ev.key == TB_KEY_ENTER || ev.key == TB_KEY_SPACE) &&
                 focus_list[focus_idx]->styled &&
                 focus_list[focus_idx]->styled->node &&
                 focus_list[focus_idx]->styled->node->type == GUMBO_NODE_ELEMENT &&
-                focus_list[focus_idx]->styled->node->v.element.tag == GUMBO_TAG_SELECT) {
-                /* Cycle through <option> children */
-                GumboVector* ch = &focus_list[focus_idx]->styled->node->v.element.children;
-                int num_opts = 0, cur_opt = -1;
+                focus_list[focus_idx]->styled->node->v.element.tag == GUMBO_TAG_SELECT &&
+                !select_popup_active) {
+                /* Collect option values from the <select>'s <option> children */
+                select_popup_focus_idx = focus_idx;
+                select_popup_count = 0;
+                select_popup_sel = 0;
+                select_popup_scroll = 0;
                 const char* cur_val = focus_list[focus_idx]->text_content;
-                for (unsigned int oi = 0; oi < ch->length; oi++) {
+                GumboVector* ch = &focus_list[focus_idx]->styled->node->v.element.children;
+                for (unsigned int oi = 0; oi < ch->length && select_popup_count < 32; oi++) {
                     GumboNode* oc = (GumboNode*)ch->data[oi];
                     if (oc->type == GUMBO_NODE_ELEMENT && oc->v.element.tag == GUMBO_TAG_OPTION) {
                         GumboAttribute* oa = gumbo_get_attribute(&oc->v.element.attributes, "value");
                         if (oa && oa->value) {
-                            if (cur_val && strcmp(oa->value, cur_val) == 0) cur_opt = num_opts;
-                            num_opts++;
+                            snprintf(select_popup_vals[select_popup_count], 64, "%s", oa->value);
+                            if (cur_val && strcmp(oa->value, cur_val) == 0)
+                                select_popup_sel = select_popup_count;
+                            select_popup_count++;
                         }
                     }
                 }
-                if (num_opts > 0) {
-                    int next_opt = (cur_opt + 1) % num_opts;
-                    int oi2 = 0, ocount = 0;
-                    for (unsigned int oi = 0; oi < ch->length; oi++) {
-                        GumboNode* oc = (GumboNode*)ch->data[oi];
-                        if (oc->type == GUMBO_NODE_ELEMENT && oc->v.element.tag == GUMBO_TAG_OPTION) {
-                            GumboAttribute* oa = gumbo_get_attribute(&oc->v.element.attributes, "value");
-                            if (oa && oa->value) {
-                                if (ocount == next_opt) {
-                                    char val_buf[64];
-                                    snprintf(val_buf, sizeof(val_buf), "%s", oa->value);
-                                    node_set_text(focus_list[focus_idx], val_buf);
-                                    GumboAttribute* id_a = gumbo_get_attribute(
-                                        &focus_list[focus_idx]->styled->node->v.element.attributes, "id");
-                                    if (id_a && id_a->value)
-                                        node_override_text(cb, id_a->value, val_buf);
-                                    snprintf(cb->status_msg, sizeof(cb->status_msg),
-                                             "✓ Selected: %s", val_buf);
-                                    break;
-                                }
-                                ocount++;
-                            }
-                        }
-                    }
+                if (select_popup_count > 0) {
+                    select_popup_active = 1;
+                    snprintf(cb->status_msg, sizeof(cb->status_msg),
+                             "▲ Select an option (↑↓ enter, Esc cancel)");
                 }
                 continue;
             }
@@ -1273,6 +1531,7 @@ handle_scroll_keys:
             mouse_idle_count = 0;
         }
 
+skip_mouse_processing:
         /* :hover mouse leave: clear hover if keyboard input without mouse */
         if (ev.type == TB_EVENT_KEY && g_interact_hover) {
             mouse_idle_count++;

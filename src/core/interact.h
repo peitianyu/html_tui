@@ -479,13 +479,22 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                     if (cursor_pos > 0) cu += uc_str_width_len(input_buf[focus_idx], cursor_pos);
                 }
 
-                if (cu >= 0 && cu < s->cols && cursor_row >= 0 && cursor_row < s->rows) {
-                    /* Terminal-style block cursor: invert fg↔bg colors */
-                    Cell* cur_cell = &s->cells[cursor_row * s->cols + cu];
-                    int cf_r = cur_cell->fg_r, cf_g = cur_cell->fg_g, cf_b = cur_cell->fg_b;
-                    int cb_r = cur_cell->bg_r, cb_g = cur_cell->bg_g, cb_b = cur_cell->bg_b;
-                    screen_scr_fg(s, cu, cursor_row, cb_r, cb_g, cb_b);
-                    screen_scr_bg(s, cu, cursor_row, cf_r, cf_g, cf_b);
+                {
+                    /* Content area bounds — prevent cursor drawing outside textarea/input */
+                    int ca_left = bx + f->border_left + f->padding_left;
+                    int ca_top  = by + f->border_top  + f->padding_top;
+                    int ca_right = ca_left + f->width;
+                    int ca_bottom = ca_top + f->height;
+                    if (cu >= 0 && cu < s->cols && cursor_row >= 0 && cursor_row < s->rows &&
+                        cu >= ca_left && cu < ca_right &&
+                        cursor_row >= ca_top && cursor_row < ca_bottom) {
+                        /* Terminal-style block cursor: invert fg↔bg colors */
+                        Cell* cur_cell = &s->cells[cursor_row * s->cols + cu];
+                        int cf_r = cur_cell->fg_r, cf_g = cur_cell->fg_g, cf_b = cur_cell->fg_b;
+                        int cb_r = cur_cell->bg_r, cb_g = cur_cell->bg_g, cb_b = cur_cell->bg_b;
+                        screen_scr_fg(s, cu, cursor_row, cb_r, cb_g, cb_b);
+                        screen_scr_bg(s, cu, cursor_row, cf_r, cf_g, cf_b);
+                    }
                 }
             }
         }
@@ -611,7 +620,55 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                             int nx, ny, nw, nh;
                             node_abs_box(n, scroll_x, scroll_y, &nx, &ny, &nw, &nh);
                             if (ev.x >= nx && ev.x < nx + nw && ev.y >= ny && ev.y < ny + nh) {
-                                focus_idx = fi; break;
+                                focus_idx = fi;
+                                /* If clicked on INPUT or TEXTAREA, set cursor to click position */
+                                if (n->styled && n->styled->node &&
+                                    n->styled->node->type == GUMBO_NODE_ELEMENT &&
+                                    (n->styled->node->v.element.tag == GUMBO_TAG_INPUT ||
+                                     n->styled->node->v.element.tag == GUMBO_TAG_TEXTAREA)) {
+                                    int ca_left = nx + n->border_left + n->padding_left;
+                                    int ca_top = ny + n->border_top + n->padding_top;
+                                    char* buf = input_buf[fi];
+                                    int blen = (int)strlen(buf);
+                                    int click_row = ev.y - ca_top;
+                                    int click_col = ev.x - ca_left;
+                                    if (n->styled->node->v.element.tag == GUMBO_TAG_TEXTAREA) {
+                                        click_row += textarea_scroll_y[fi];
+                                        click_col += textarea_scroll_x[fi];
+                                        /* Find the target line in buffer */
+                                        int bo = 0, line_idx = 0;
+                                        int line_start = 0;
+                                        while (bo < blen && line_idx < click_row) {
+                                            if (buf[bo] == '\n') { line_idx++; line_start = bo + 1; }
+                                            bo++;
+                                        }
+                                        /* Find byte offset closest to click_col */
+                                        int new_pos = line_start;
+                                        int cur_col = 0;
+                                        while (new_pos < blen && buf[new_pos] != '\n') {
+                                            int cw = uc_str_width_len(buf + new_pos,
+                                                uc_utf8_length[(unsigned char)buf[new_pos]]);
+                                            if (cur_col + cw > click_col) break;
+                                            cur_col += cw;
+                                            new_pos += uc_utf8_length[(unsigned char)buf[new_pos]];
+                                        }
+                                        input_cursor[fi] = new_pos;
+                                    } else {
+                                        /* INPUT: single-line */
+                                        if (click_col < 0) click_col = 0;
+                                        int new_pos = 0;
+                                        int cur_col = 0;
+                                        while (new_pos < blen) {
+                                            int cw = uc_str_width_len(buf + new_pos,
+                                                uc_utf8_length[(unsigned char)buf[new_pos]]);
+                                            if (cur_col + cw > click_col) break;
+                                            cur_col += cw;
+                                            new_pos += uc_utf8_length[(unsigned char)buf[new_pos]];
+                                        }
+                                        input_cursor[fi] = new_pos;
+                                    }
+                                }
+                                break;
                             }
                         }
                     }

@@ -34,6 +34,7 @@ struct StyledNode {
     StyleMap styles;               /* computed style properties */
     StyledNode** children;         /* styled children */
     size_t num_children;           /* number of children */
+    struct StyledNode* parent;     /* parent in style tree (for inheritance during restyle) */
 };
 
 /* ======================== StyleMap API ======================== */
@@ -870,6 +871,7 @@ static StyledNode* build_style_tree_recursive(GumboNode* dom, KatanaStylesheet* 
 
     StyledNode* snode = (StyledNode*)calloc(1, sizeof(StyledNode));
     snode->node = dom;
+    snode->parent = parent_snode;
 
     /* Compute styles for this node */
     compute_styles_for_node(dom, ss, parent_snode, &snode->styles);
@@ -943,9 +945,10 @@ StyledNode* find_styled_node(StyledNode* st, GumboNode* gn) {
  */
 void recompute_style_subtree(StyledNode* node, KatanaStylesheet* ss, StyledNode* parent) {
     if (!node) return;
-    /* Recompute this node's styles */
+    /* Recompute this node's styles — use node->parent if caller didn't provide one */
+    StyledNode* eff_parent = parent ? parent : node->parent;
     style_map_free(&node->styles);
-    compute_styles_for_node(node->node, ss, parent ? parent : NULL, &node->styles);
+    compute_styles_for_node(node->node, ss, eff_parent, &node->styles);
 
     /* Recurse into children */
     for (size_t i = 0; i < node->num_children; i++) {

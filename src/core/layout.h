@@ -153,6 +153,10 @@ typedef struct LayoutNode {
     int position_type;
     int position_top, position_right, position_bottom, position_left;
 
+    /* scroll offset within element's content (e.g. textarea) */
+    int content_scroll_y;
+    int content_scroll_x;
+
     /* parent pointer for absolute position computation */
     struct LayoutNode* parent;
 

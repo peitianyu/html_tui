@@ -237,31 +237,103 @@ void screen_render_node(Screen* s, LayoutNode* n) {
         }
 
         if (n->preserve_ws) {
-            /* <pre> mode: preserve whitespace, no word-wrap */
+            /* <pre> / <textarea> mode: preserve whitespace, no word-wrap, with scroll */
+            /* Determine visible height for scroll clipping */
+            int scroll_h = 0;
+            bool is_textarea_for_scroll = false;
+            if (n->styled && n->styled->node && n->styled->node->type == GUMBO_NODE_ELEMENT &&
+                n->styled->node->v.element.tag == GUMBO_TAG_TEXTAREA) {
+                scroll_h = n->height; /* content area height */
+                is_textarea_for_scroll = true;
+            }
+            int scroll_skip = n->content_scroll_y;
+            int scroll_left = n->content_scroll_x; /* chars to skip on the left */
+
             while (*p && cy < s->rows) {
-                if (*p == '\n') { cy += lh; cx = lnx; p++; continue; }
+                if (*p == '\n') {
+                    if (is_textarea_for_scroll) {
+                        if (scroll_skip > 0) {
+                            scroll_skip--;
+                            p++;
+                            cx = lnx;
+                            continue;
+                        }
+                        /* Check if we've filled the visible area */
+                        if ((cy - (scr_y + n->border_top + n->padding_top)) / lh >= scroll_h)
+                            break;
+                    }
+                    cy += lh; cx = lnx; p++; continue;
+                }
                 if (*p == '\t') { cx = ((cx - lnx) / 4 + 1) * 4 + lnx; p++; continue; }
                 uint32_t cp = uc_dec(&p);
                 if (cp == 0 || cp == 0xFFFD) continue;
                 int w = uc_wid((int)cp);
-                if (cx >= 0 && cx < s->cols) {
-                    scr_set(s, cx, cy, cp);
-                    scr_fg(s, cx, cy, n->color.r, n->color.g, n->color.b);
-                    if (n->font_bold) scr_bold(s, cx, cy, true);
-                    if (n->font_underline == 1) scr_uline(s, cx, cy, true);
-                    else if (n->font_underline == 2 && cx >= 0 && cx < s->cols) {
+                /* Skip characters on scrolled-off-the-top lines */
+                if (is_textarea_for_scroll && scroll_skip > 0) {
+                    cx += w + n->letter_spacing;
+                    continue;
+                }
+                int render_cx = cx - scroll_left;
+                /* Horizontal scroll: skip chars past visible width to the right */
+                if (is_textarea_for_scroll && render_cx >= n->width) {
+                    cx += w + n->letter_spacing;
+                    continue;
+                }
+                /* Horizontal scroll: skip chars that are scrolled off to the left */
+                if (is_textarea_for_scroll && render_cx + w <= 0) {
+                    cx += w + n->letter_spacing;
+                    continue;
+                }
+                if (render_cx >= 0 && render_cx < s->cols) {
+                    scr_set(s, render_cx, cy, cp);
+                    scr_fg(s, render_cx, cy, n->color.r, n->color.g, n->color.b);
+                    if (n->font_bold) scr_bold(s, render_cx, cy, true);
+                    if (n->font_underline == 1) scr_uline(s, render_cx, cy, true);
+                    else if (n->font_underline == 2 && render_cx >= 0 && render_cx < s->cols) {
                         /* overline: macron above */
-                        scr_set(s, cx, cy, 0x00AF);
-                        scr_fg(s, cx, cy, n->color.r, n->color.g, n->color.b);
+                        scr_set(s, render_cx, cy, 0x00AF);
+                        scr_fg(s, render_cx, cy, n->color.r, n->color.g, n->color.b);
                     }
-                    else if (n->font_underline == 3 && cx >= 0 && cx < s->cols) {
+                    else if (n->font_underline == 3 && render_cx >= 0 && render_cx < s->cols) {
                         /* line-through: strike with - */
-                        scr_set(s, cx, cy, 0x002D);
-                        scr_fg(s, cx, cy, n->color.r, n->color.g, n->color.b);
+                        scr_set(s, render_cx, cy, 0x002D);
+                        scr_fg(s, render_cx, cy, n->color.r, n->color.g, n->color.b);
                     }
-                    if (w == 2 && cx + 1 < s->cols) scr_set(s, cx + 1, cy, 0);
+                    if (w == 2 && render_cx + 1 < s->cols) scr_set(s, render_cx + 1, cy, 0);
                 }
                 cx += w + n->letter_spacing;
+            }
+            /* ── Draw textarea scrollbar if content overflows visible area ── */
+            if (is_textarea_for_scroll) {
+                int _total = 1;
+                const char* _cp = n->text_content;
+                while (_cp && *_cp) { if (*_cp == '\n') _total++; _cp++; }
+                int _sb_right = scr_x + n->border_left + n->padding_left + n->width;
+                if (_total > scroll_h && _sb_right >= 0 && _sb_right < s->cols) {
+                    int _track_h = scroll_h;
+                    int _thumb_h = _track_h * _track_h / _total;
+                    if (_thumb_h < 1) _thumb_h = 1;
+                    if (_thumb_h > _track_h) _thumb_h = _track_h;
+                    int _scroll_range = _total - scroll_h;
+                    int _thumb_pos = _scroll_range > 0 ? (n->content_scroll_y * (_track_h - _thumb_h)) / _scroll_range : 0;
+                    if (_thumb_pos < 0) _thumb_pos = 0;
+                    if (_thumb_pos > _track_h - _thumb_h) _thumb_pos = _track_h - _thumb_h;
+                    int _sb_top = scr_y + n->border_top + n->padding_top;
+                    for (int _ri = 0; _ri < _track_h && _sb_top + _ri < s->rows; _ri++) {
+                        if (_sb_top + _ri >= 0) {
+                            if (_ri >= _thumb_pos && _ri < _thumb_pos + _thumb_h) {
+                                scr_set(s, _sb_right, _sb_top + _ri, 0x2592); /* ▒ thumb */
+                                scr_fg(s, _sb_right, _sb_top + _ri, 120,180,255);
+                                scr_bg(s, _sb_right, _sb_top + _ri, n->bg_color.valid ? n->bg_color.r : 0,
+                                       n->bg_color.valid ? n->bg_color.g : 0,
+                                       n->bg_color.valid ? n->bg_color.b : 0);
+                            } else {
+                                scr_set(s, _sb_right, _sb_top + _ri, 0x2502); /* │ track */
+                                scr_fg(s, _sb_right, _sb_top + _ri, 60,90,130);
+                            }
+                        }
+                    }
+                }
             }
         } else {
             /* Normal word-wrap mode */

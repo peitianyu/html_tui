@@ -26,7 +26,7 @@ typedef struct InteractCallbacks InteractCallbacks;
  */
 typedef bool (*InteractButtonClickFn)(const char* btn_text, int focus_idx,
                                        LayoutNode** focus_list, int focus_count,
-                                       char input_buf[][64], int input_buf_count,
+                                       char input_buf[][4096], int input_buf_count,
                                        InteractCallbacks* cb);
 
 /**
@@ -314,14 +314,14 @@ static int collect_focus_list(LayoutNode* root, LayoutNode** focus_list, int max
 
 /** Patch INPUT/TEXTAREA text_content from saved input buffers after a layout rebuild. */
 static void patch_input_text(LayoutNode** focus_list, int focus_count,
-                              char input_buf[][64], int input_buf_count) {
+                              char input_buf[][4096], int input_buf_count) {
     for (int fi = 0; fi < focus_count && fi < input_buf_count; fi++) {
         LayoutNode* n = focus_list[fi];
         if (n->styled && n->styled->node &&
             n->styled->node->type == GUMBO_NODE_ELEMENT &&
             (n->styled->node->v.element.tag == GUMBO_TAG_INPUT ||
              n->styled->node->v.element.tag == GUMBO_TAG_TEXTAREA)) {
-            char buf[128];
+            char buf[4096];
             const char* val = input_buf[fi];
             if (val && val[0]) snprintf(buf, sizeof(buf), "%s", val);
             else snprintf(buf, sizeof(buf), " ");
@@ -345,9 +345,11 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
     struct tb_event ev;
 
     /* Input buffers: keyed by the same order as focus_list */
-    char input_buf[256][64] = {{{0}}};
+    char input_buf[256][4096] = {{{0}}};
     int  input_cursor[256] = {0}; /* cursor position within each input */
     int  textarea_target_col[256] = {0}; /* target visual column for textarea up/down nav */
+    int  textarea_scroll_y[256] = {0}; /* vertical scroll offset for textarea content */
+    int  textarea_scroll_x[256] = {0}; /* horizontal scroll offset for textarea content */
     int  input_buf_count = 0;
 
     /* Collect interactive nodes (INPUT/BUTTON) for focus */
@@ -398,6 +400,9 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
     int last_mouse_x = -1, last_mouse_y = -1;
     int mouse_idle_count = 0;
 
+    /* Track scrollbar drag state: textarea index being dragged, -1 = not dragging */
+    int textarea_scrollbar_drag = -1;
+
     /* Track previous hover/active for style recomputation */
     GumboNode* prev_hover = NULL;
     GumboNode* prev_active = NULL;
@@ -410,6 +415,16 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
         if (cb) cb->layout_root = current_root;
 
         /* ── Render frame ── */
+        /* Sync textarea scroll offsets to layout node for render clipping */
+        if (focus_idx >= 0 && focus_idx < focus_count) {
+            LayoutNode* f = focus_list[focus_idx];
+            if (f->styled && f->styled->node &&
+                f->styled->node->type == GUMBO_NODE_ELEMENT &&
+                f->styled->node->v.element.tag == GUMBO_TAG_TEXTAREA) {
+                f->content_scroll_y = textarea_scroll_y[focus_idx];
+                f->content_scroll_x = textarea_scroll_x[focus_idx];
+            }
+        }
         screen_clear(s);
         s->scroll_x = scroll_x;
         s->scroll_y = scroll_y;
@@ -457,8 +472,8 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                     }
                     int col_in_line = cursor_pos - line_start_bo;
                     int visual_col = uc_str_width_len(txt + line_start_bo, col_in_line);
-                    cu += visual_col;
-                    cursor_row += line_idx;
+                    cu += visual_col - textarea_scroll_x[focus_idx];
+                    cursor_row += line_idx - textarea_scroll_y[focus_idx];
                 } else {
                     /* INPUT: single-line, all on one row */
                     if (cursor_pos > 0) cu += uc_str_width_len(input_buf[focus_idx], cursor_pos);
@@ -609,12 +624,68 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                     restyle = true;
                 }
 
-                /* Mouse release → clear active state */
+                /* Mouse release → clear active and drag state */
                 if (ev.key == TB_KEY_MOUSE_RELEASE) {
+                    textarea_scrollbar_drag = -1;
                     if (g_interact_active) {
                         prev_active = g_interact_active;
                         g_interact_active = NULL;
                         restyle = true;
+                    }
+                }
+
+                /* Scrollbar click: left-click on the scrollbar column of a textarea */
+                if (ev.key == TB_KEY_MOUSE_LEFT && !(ev.mod & TB_MOD_MOTION)) {
+                    for (int fi = 0; fi < focus_count; fi++) {
+                        LayoutNode* n = focus_list[fi];
+                        if (!n->styled || !n->styled->node ||
+                            n->styled->node->type != GUMBO_NODE_ELEMENT ||
+                            n->styled->node->v.element.tag != GUMBO_TAG_TEXTAREA)
+                            continue;
+                        int tx, ty, tw, th;
+                        node_abs_box(n, scroll_x, scroll_y, &tx, &ty, &tw, &th);
+                        int sb_col = tx + n->border_left + n->padding_left + n->width;
+                        if (ev.x == sb_col && ev.y >= ty && ev.y < ty + th) {
+                            int total = 1;
+                            const char* sp = input_buf[fi];
+                            while (sp && *sp) { if (*sp == '\n') total++; sp++; }
+                            int ta_h = n->height > 0 ? n->height : 5;
+                            int _scroll_range = total - ta_h;
+                            if (_scroll_range > 0) {
+                                int target = ((ev.y - ty) * _scroll_range) / ta_h;
+                                if (target < 0) target = 0;
+                                if (target > _scroll_range) target = _scroll_range;
+                                textarea_scroll_y[fi] = target;
+                                focus_idx = fi;
+                                textarea_scrollbar_drag = fi;
+                                restyle = true;
+                            }
+                            break;
+                        }
+                    }
+                }
+
+                /* Scrollbar drag: left-motion while dragging the scrollbar */
+                if (ev.key == TB_KEY_MOUSE_LEFT && (ev.mod & TB_MOD_MOTION) && textarea_scrollbar_drag >= 0) {
+                    int fi = textarea_scrollbar_drag;
+                    if (fi >= 0 && fi < focus_count) {
+                        LayoutNode* n = focus_list[fi];
+                        int tx, ty, tw, th;
+                        node_abs_box(n, scroll_x, scroll_y, &tx, &ty, &tw, &th);
+                        if (ev.y >= ty && ev.y < ty + th) {
+                            int total = 1;
+                            const char* sp = input_buf[fi];
+                            while (sp && *sp) { if (*sp == '\n') total++; sp++; }
+                            int ta_h = n->height > 0 ? n->height : 5;
+                            int _scroll_range = total - ta_h;
+                            if (_scroll_range > 0) {
+                                int target = ((ev.y - ty) * _scroll_range) / ta_h;
+                                if (target < 0) target = 0;
+                                if (target > _scroll_range) target = _scroll_range;
+                                textarea_scroll_y[fi] = target;
+                                restyle = true;
+                            }
+                        }
                     }
                 }
 
@@ -732,6 +803,9 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                                 new_pos += uc_utf8_length[(unsigned char)buf[new_pos]];
                             }
                             *cpos = new_pos;
+                        } else {
+                            /* Move past final \n to end of buffer */
+                            *cpos = (int)blen;
                         }
                     }
                     goto input_update_text;
@@ -783,6 +857,7 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                         buf[*cpos] = '\n';
                         (*cpos)++;
                     }
+                    goto input_update_text;
                 } else if (ev.key == TB_KEY_ENTER && !is_textarea) {
                     /* Input: Enter = go to next focus */
                     if (focus_count > 0) {
@@ -819,8 +894,46 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                 }
 
 input_update_text:
+                /* Auto-scroll textarea to keep cursor in visible area */
+                if (is_textarea) {
+                    const char* _ta = input_buf[focus_idx];
+                    int _ta_len = (int)strlen(_ta);
+                    /* Count total lines and max line width */
+                    int _total_lines = 1, _max_line_w = 0, _cur_lw = 0;
+                    for (int _i = 0; _i < _ta_len; _i++) {
+                        if (_ta[_i] == '\n') { _total_lines++;
+                            if (_cur_lw > _max_line_w) _max_line_w = _cur_lw;
+                            _cur_lw = 0; continue; }
+                        if ((_ta[_i] & 0xC0) == 0x80) continue;
+                        _cur_lw += 1;
+                    }
+                    if (_cur_lw > _max_line_w) _max_line_w = _cur_lw;
+                    /* Find cursor line index */
+                    int _ci = 0, _last_ls = 0;
+                    for (int _i = 0; _i < *cpos && _i < _ta_len; _i++) {
+                        if (_ta[_i] == '\n') { _ci++; _last_ls = _i + 1; }
+                    }
+                    int _col = uc_str_width_len(_ta + _last_ls, *cpos - _last_ls);
+                    int _vh = inp->height > 0 ? inp->height : 5;
+                    int _vw = inp->width > 0 ? inp->width : 40;
+                    int _max_v = _total_lines - _vh; if (_max_v < 0) _max_v = 0;
+                    int _max_h = _max_line_w - _vw; if (_max_h < 0) _max_h = 0;
+                    /* Only adjust scroll if cursor is OUTSIDE visible area */
+                    if (_ci < textarea_scroll_y[focus_idx])
+                        textarea_scroll_y[focus_idx] = _ci;
+                    if (_ci >= textarea_scroll_y[focus_idx] + _vh)
+                        textarea_scroll_y[focus_idx] = _ci - _vh + 1;
+                    if (_col < textarea_scroll_x[focus_idx])
+                        textarea_scroll_x[focus_idx] = _col;
+                    if (_col >= textarea_scroll_x[focus_idx] + _vw)
+                        textarea_scroll_x[focus_idx] = _col - _vw + 1;
+                    if (textarea_scroll_y[focus_idx] < 0) textarea_scroll_y[focus_idx] = 0;
+                    if (textarea_scroll_x[focus_idx] < 0) textarea_scroll_x[focus_idx] = 0;
+                    if (textarea_scroll_y[focus_idx] > _max_v) textarea_scroll_y[focus_idx] = _max_v;
+                    if (textarea_scroll_x[focus_idx] > _max_h) textarea_scroll_x[focus_idx] = _max_h;
+                }
                 /* Update text_content */
-                { char txt[128];
+                { char txt[4096];
                 snprintf(txt, sizeof(txt), "%s", buf);
                 if (inp->text_content) free(inp->text_content);
                 inp->text_content = strdup(txt); }
@@ -987,8 +1100,40 @@ handle_scroll_keys:
 
         /* Mouse wheel */
         if (ev.type == TB_EVENT_MOUSE) {
-            if (ev.key == TB_KEY_MOUSE_WHEEL_UP) { scroll_y -= 3; }
-            else if (ev.key == TB_KEY_MOUSE_WHEEL_DOWN) { scroll_y += 3; }
+            if (ev.key == TB_KEY_MOUSE_WHEEL_UP || ev.key == TB_KEY_MOUSE_WHEEL_DOWN) {
+                /* Check if mouse is over a focused textarea — scroll its content instead of the page */
+                int ta_idx = -1;
+                if (focus_idx >= 0 && focus_idx < focus_count) {
+                    LayoutNode* _tf = focus_list[focus_idx];
+                    if (_tf->styled && _tf->styled->node &&
+                        _tf->styled->node->type == GUMBO_NODE_ELEMENT &&
+                        _tf->styled->node->v.element.tag == GUMBO_TAG_TEXTAREA) {
+                        int _tx, _ty, _tw, _th;
+                        node_abs_box(_tf, scroll_x, scroll_y, &_tx, &_ty, &_tw, &_th);
+                        if (ev.x >= _tx && ev.x < _tx + _tw && ev.y >= _ty && ev.y < _ty + _th)
+                            ta_idx = focus_idx;
+                    }
+                }
+                if (ta_idx >= 0) {
+                    int total_lines = 1;
+                    const char* _lp = input_buf[ta_idx];
+                    while (*_lp) { if (*_lp == '\n') total_lines++; _lp++; }
+                    int ta_h = focus_list[ta_idx]->height > 0 ? focus_list[ta_idx]->height : 5;
+                    int max_scroll = total_lines - ta_h;
+                    if (max_scroll < 0) max_scroll = 0;
+                    if (ev.key == TB_KEY_MOUSE_WHEEL_UP) {
+                        if (textarea_scroll_y[ta_idx] > 0) textarea_scroll_y[ta_idx] -= 1;
+                    } else {
+                        textarea_scroll_y[ta_idx] += 1;
+                        if (textarea_scroll_y[ta_idx] > max_scroll) textarea_scroll_y[ta_idx] = max_scroll;
+                    }
+                    /* Clear hover on wheel for textarea — element under cursor changed */
+                    if (g_interact_hover) { prev_hover = g_interact_hover; g_interact_hover = NULL; restyle = true; }
+                } else {
+                    if (ev.key == TB_KEY_MOUSE_WHEEL_UP) { scroll_y -= 3; }
+                    else if (ev.key == TB_KEY_MOUSE_WHEEL_DOWN) { scroll_y += 3; }
+                }
+            }
             /* Track mouse position for :hover leave detection */
             last_mouse_x = ev.x; last_mouse_y = ev.y;
             mouse_idle_count = 0;

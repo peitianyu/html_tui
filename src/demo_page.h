@@ -181,7 +181,7 @@ static bool demo_default_on_key(struct tb_event* ev, InteractCallbacks* cb) {
 
 static bool demo_on_button_click(const char* btn_text, int focus_idx,
                                   LayoutNode** focus_list, int focus_count,
-                                  char input_buf[][64], int input_buf_count,
+                                  char input_buf[][4096], int input_buf_count,
                                   InteractCallbacks* cb)
 {
     (void)btn_text;

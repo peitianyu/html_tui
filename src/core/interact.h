@@ -443,20 +443,25 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
             LayoutNode* f = focus_list[focus_idx];
             int bx, by, bw, bh;
             node_abs_box(f, scroll_x, scroll_y, &bx, &by, &bw, &bh);
-            if (bw > 2 && bh >= 1 && by >= 0 && by < s->rows) {
-                /* Left/right bars — always draw for any height */
+            if (bw > 0 && bh >= 1 && by >= 0 && by < s->rows) {
+                /*
+                 * Highlight the entire element box area uniformly with a
+                 * focus background colour.  We use screen_scr_bg() only
+                 * (NOT screen_scr_set), so existing characters — text,
+                 * border glyphs, spaces — remain fully visible while the
+                 * background changes to indicate focus.
+                 *
+                 * This avoids two problems:
+                 *  1) Edge-only bars leave the centre colour mismatched
+                 *     when the CSS :active/:hover background differs.
+                 *  2) screen_scr_set(…,' ') would erase button text or
+                 *     border characters on elements without padding.
+                 */
+                int bg_r = 80, bg_g = 80, bg_b = 120;
                 for (int ri = 0; ri < bh && by + ri < s->rows; ri++) {
-                    if (bx >= 0 && bx < s->cols)
-                        { screen_scr_set(s, bx, by+ri, ' '); screen_scr_bg(s, bx, by+ri, 80,80,120); }
-                    if (bx+bw-1 >= 0 && bx+bw-1 < s->cols)
-                        { screen_scr_set(s, bx+bw-1, by+ri, ' '); screen_scr_bg(s, bx+bw-1, by+ri, 80,80,120); }
-                }
-                /* Top/bottom bars — only for multi-row elements (avoid overwriting content) */
-                if (bh > 1) {
                     for (int ci = 0; ci < bw && bx + ci < s->cols; ci++) {
-                        if (by >= 0 && bx+ci >= 0) { screen_scr_set(s, bx+ci, by, ' '); screen_scr_bg(s, bx+ci, by, 80,80,120); }
-                        int btm = by+bh-1;
-                        if (btm < s->rows && bx+ci >= 0) { screen_scr_set(s, bx+ci, btm, ' '); screen_scr_bg(s, bx+ci, btm, 80,80,120); }
+                        if (by+ri >= 0 && bx+ci >= 0)
+                            screen_scr_bg(s, bx+ci, by+ri, bg_r, bg_g, bg_b);
                     }
                 }
             }

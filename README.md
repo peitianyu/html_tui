@@ -10,12 +10,18 @@
 
 # 指定页面
 ./run.sh pages/01-complex-form.html
+
+# 一键模式 (最简, 仅 mini_browser.h)
+tcc -I src -run src/demo_simple.c [page.html]
+
+# 高级模式 (自定义回调计数器)
+tcc -I src -run src/demo_counter.c
 ```
 
-或直接使用 tcc 编译运行：
+或直接使用 tcc 编译运行（完整 demo）：
 
 ```bash
-tcc -I src -run src/demo_main.c [page.html]
+tcc -I src -run src/demo.c [page.html]
 ```
 
 > 依赖 [tcc](https://bellard.org/tcc/)（Tiny C Compiler），无需 Makefile 或其他构建工具。
@@ -32,8 +38,8 @@ pages/
 ├── 01-complex-form.html      # 表单演示：输入框、按钮、选择器、边框
 ├── 02-flex-layout.html       # Flex 布局展示：对齐、间距、弹性
 ├── 03-selectors-elements.html# CSS 选择器与元素：伪类、表格、列表
-└── 04-new-features.html      # 新功能展示：折叠面板、多行输入、下拉选择、colspan、flex-wrap
-```
+├── 04-new-features.html      # 新功能展示：折叠面板、多行输入、下拉选择、colspan、flex-wrap
+└── 05-counter.html           # 计数器演示页（配合 demo_counter.c）```
 
 ### 键盘操作
 
@@ -53,7 +59,7 @@ pages/
 
 ### 页面跳转
 
-- 按钮 `id` 为 `btn-page-NN` 时，自动跳转到 `pages/NN-*.html`（当前支持 01~04）
+- 按钮 `id` 为 `btn-page-NN` 时，自动跳转到 `pages/NN-*.html`（当前支持 01~05）
 - 按钮 `id` 为 `btn-back` 或 `btn-back-N` 时，返回菜单 `00-menu.html`
 
 ---
@@ -98,7 +104,11 @@ HTML (.html 含 <style>)
 
 | 模块 | 文件 | 职责 |
 |:--|:--|:--|
-| **用户页面层** | `src/demo_page.h` | 页面配置、按钮行为注册（用户可编辑） |
+| **Public API** | `src/mini_browser.h` | **最小化接口 — 只需包含它 (stb-style)** |
+| **页面配置** | `src/demo_page.h` | 按钮行为注册 (使用 mini_browser.h 回调) |
+| **入口** | `src/demo.c` | 使用 mini_browser.h API 的完整入口 |
+| **最简入口** | `src/demo_simple.c` | 仅 3 行代码的一键模式 (< 10 行文件) |
+| **回调示例** | `src/demo_counter.c` | 自定义按钮+按键回调示例 |
 | **交互框架** | `src/core/interact.h` | 交互循环、焦点遍历、事件分发 |
 | **渲染引擎** | `src/core/render.h` | 屏幕缓冲、节点渲染、边框/表格绘制 |
 | **布局引擎** | `src/core/layout.h` | 盒模型、Flexbox 布局计算 |
@@ -107,9 +117,35 @@ HTML (.html 含 <style>)
 | **CSS 解析** | `src/core/katana.h` | Katana CSS 解析器（header-only） |
 | **终端 I/O** | `src/core/termbox2.h` | 终端输入/输出 |
 | **Unicode 工具** | `src/core/uc.h` | UTF-8 编解码支持 |
-| **入口** | `src/demo_main.c` | 组装所有模块，调用 `demo_run()` |
 
 所有核心模块均为 **header-only**（通过 `#define XXX_IMPLEMENTATION` 控制实例化）。
+
+---
+
+## API 设计
+
+`mini_browser.h` 提供了最小化接口：
+
+```c
+// ── 一键模式 (3 行) ──
+#define MINI_BROWSER_IMPLEMENTATION
+#include "mini_browser.h"
+mini_browser_run("page.html");
+
+// ── 高级模式 ──
+MB_Config cfg = { .on_button_click = my_callback, .show_scrollbars = true };
+MiniBrowser* mb = mini_browser_open("page.html", &cfg);
+mini_browser_run_loop(mb);
+mini_browser_close(mb);
+
+// ── 运行时 API (在回调中调用) ──
+mb_set_status(mb, "消息");       // 设置状态栏
+mb_set_text(mb, "element-id", "文本"); // 按 id 设置元素文本
+mb_get_text(mb, "element-id");  // 获取元素文本
+mb_set_visible(mb, "id", true); // 显示/隐藏元素 (需返回 true)
+mb_switch_page(mb, "path");     // 切换页面
+mb_quit(mb);                    // 退出
+```
 
 ---
 
@@ -328,7 +364,7 @@ HTML (.html 含 <style>)
 ├── run.sh                        # 运行脚本
 ├── pages/                        # 测试页面（HTML + 内联 CSS）
 ├── src/
-│   ├── demo_main.c               # 入口：组装模块并启动
+│   ├── demo.c               # 入口：组装模块并启动
 │   ├── demo_page.h               # 用户页面配置（可编辑）
 │   └── core/
 │       ├── gumbo.h               # HTML 解析器

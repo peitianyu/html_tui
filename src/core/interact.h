@@ -171,10 +171,6 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
 #include <stdarg.h>
 #include <signal.h>
 
-/* SIGWINCH flag for terminal resize */
-static volatile sig_atomic_t g_resize_flag = 0;
-static void sigwinch_handler(int sig) { (void)sig; g_resize_flag = 1; }
-
 /* Global details open/close state tracker (by element id, survives rebuilds) */
 #define MAX_DETAILS_STATES 32
 static struct { char id[64]; bool open; } g_details_states[MAX_DETAILS_STATES];
@@ -405,13 +401,6 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
 
     int vw_cache = vw, vh_cache = vh;
 
-    /* Register SIGWINCH handler for terminal resize */
-    struct sigaction sa_old;
-    struct sigaction sa;
-    memset(&sa, 0, sizeof(sa));
-    sa.sa_handler = sigwinch_handler;
-    sigaction(SIGWINCH, &sa, &sa_old);
-
     /* Track mouse position for :hover leave detection */
     int last_mouse_x = -1, last_mouse_y = -1;
     int mouse_idle_count = 0;
@@ -454,17 +443,21 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
             LayoutNode* f = focus_list[focus_idx];
             int bx, by, bw, bh;
             node_abs_box(f, scroll_x, scroll_y, &bx, &by, &bw, &bh);
-            if (bw > 2 && bh > 1 && by >= 0 && by < s->rows) {
+            if (bw > 2 && bh >= 1 && by >= 0 && by < s->rows) {
+                /* Left/right bars — always draw for any height */
                 for (int ri = 0; ri < bh && by + ri < s->rows; ri++) {
                     if (bx >= 0 && bx < s->cols)
                         { screen_scr_set(s, bx, by+ri, ' '); screen_scr_bg(s, bx, by+ri, 80,80,120); }
                     if (bx+bw-1 >= 0 && bx+bw-1 < s->cols)
                         { screen_scr_set(s, bx+bw-1, by+ri, ' '); screen_scr_bg(s, bx+bw-1, by+ri, 80,80,120); }
                 }
-                for (int ci = 0; ci < bw && bx + ci < s->cols; ci++) {
-                    if (by >= 0 && bx+ci >= 0) { screen_scr_set(s, bx+ci, by, ' '); screen_scr_bg(s, bx+ci, by, 80,80,120); }
-                    int btm = by+bh-1;
-                    if (btm < s->rows && bx+ci >= 0) { screen_scr_set(s, bx+ci, btm, ' '); screen_scr_bg(s, bx+ci, btm, 80,80,120); }
+                /* Top/bottom bars — only for multi-row elements (avoid overwriting content) */
+                if (bh > 1) {
+                    for (int ci = 0; ci < bw && bx + ci < s->cols; ci++) {
+                        if (by >= 0 && bx+ci >= 0) { screen_scr_set(s, bx+ci, by, ' '); screen_scr_bg(s, bx+ci, by, 80,80,120); }
+                        int btm = by+bh-1;
+                        if (btm < s->rows && bx+ci >= 0) { screen_scr_set(s, bx+ci, btm, ' '); screen_scr_bg(s, bx+ci, btm, 80,80,120); }
+                    }
                 }
             }
             if (f->styled && f->styled->node && f->styled->node->type == GUMBO_NODE_ELEMENT &&
@@ -571,7 +564,7 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                 int w = (int)strlen(select_popup_vals[oi]);
                 if (w > max_w) max_w = w;
             }
-            int pop_w = max_w + 2; /* 1 space padding each side */
+            int pop_w = max_w + 3; /* 1 for indicator + 1 space padding each side */
             if (pop_w > s->cols - pop_x) pop_w = s->cols - pop_x;
             if (pop_w < 4) pop_w = 4;
             /* Clamp pop_y to screen */
@@ -628,14 +621,15 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                 /* Paint the option row */
                 int col = pop_x + 1;
                 const char* label = select_popup_vals[idx];
-                screen_scr_bg(s, col - 1, row, bg_r, bg_g, bg_b);
-                screen_scr_set(s, col - 1, row, ' ');
-                /* Selection indicator */
+                /* Selection indicator inside the border (don't touch pop_x, that's the border) */
+                screen_scr_bg(s, col, row, bg_r, bg_g, bg_b);
                 if (is_sel) {
-                    screen_scr_set(s, col - 1, row, 0x25B6); /* ▶ */
-                    screen_scr_fg(s, col - 1, row, 200, 200, 255);
+                    screen_scr_set(s, col, row, 0x25B6); /* ▶ */
+                    screen_scr_fg(s, col, row, 200, 200, 255);
+                } else {
+                    screen_scr_set(s, col, row, ' ');
                 }
-                int ci = col;
+                int ci = col + 1;
                 const char* lp = label;
                 while (*lp && ci < pop_x + pop_w - 1 && ci < s->cols) {
                     uint32_t cp = uc_dec(&lp);
@@ -653,7 +647,7 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                     screen_scr_bg(s, ci, row, bg_r, bg_g, bg_b);
                     ci++;
                 }
-                if (ci < s->cols) screen_scr_bg(s, ci, row, bg_r, bg_g, bg_b);
+                /* ci is now at right border column; keep its original background intact */
             }
             /* Scroll indicators if list is clipped */
             if (select_popup_scroll > 0 && pop_y + 1 < s->rows) {
@@ -767,6 +761,9 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                         }
                         focus_idx = select_popup_focus_idx;
                         g_interact_focus = focus_list[focus_idx]->styled->node;
+                        restyle = true;  /* Trigger style update for focus/active */
+                        prev_active = g_interact_active;
+                        g_interact_active = g_interact_focus;
                         goto end_mouse_left;
                     }
                     focus_idx = -1;
@@ -1542,23 +1539,12 @@ skip_mouse_processing:
             }
         }
 
-        /* Resize via event */
+        /* Resize via event — termbox2 handles SIGWINCH internally */
         if (ev.type == TB_EVENT_RESIZE) {
             vw = ev.w; vh = ev.h;
             screen_free(s); s = screen_create(vw, vh);
             vw_cache = vw; vh_cache = vh;
             restyle = true;
-        }
-
-        /* SIGWINCH resize handler */
-        if (g_resize_flag) {
-            g_resize_flag = 0;
-            render_size(&vw, &vh);
-            if (vw != vw_cache || vh != vh_cache) {
-                screen_free(s); s = screen_create(vw, vh);
-                vw_cache = vw; vh_cache = vh;
-                restyle = true;
-            }
         }
 
         /* If hover/focus/active changed, rebuild styles and layout */

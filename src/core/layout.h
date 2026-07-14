@@ -606,13 +606,13 @@ static DisplayType get_default_display(const char* tagname) {
         {"summary",  DISPLAY_BLOCK},
         {"sup",      DISPLAY_INLINE},
         {"table",    DISPLAY_TABLE},
-        {"tbody",    DISPLAY_NONE},
+        {"tbody",    DISPLAY_BLOCK},
         {"td",       DISPLAY_BLOCK},
         {"template", DISPLAY_NONE},
         {"textarea", DISPLAY_BLOCK},
-        {"tfoot",    DISPLAY_NONE},
+        {"tfoot",    DISPLAY_BLOCK},
         {"th",       DISPLAY_BLOCK},
-        {"thead",    DISPLAY_NONE},
+        {"thead",    DISPLAY_BLOCK},
         {"time",     DISPLAY_INLINE},
         {"tr",       DISPLAY_TABLE_ROW},
         {"u",        DISPLAY_INLINE},
@@ -975,7 +975,7 @@ static void apply_styles(LayoutNode* ln) {
     const char* jc = get_style(sn, "justify-content");
     if (jc) {
         if (strcmp(jc, "center") == 0) ln->justify_content = JUSTIFY_CENTER;
-        else if (strcmp(jc, "end") == 0) ln->justify_content = JUSTIFY_END;
+        else if (strcmp(jc, "end") == 0 || strcmp(jc, "flex-end") == 0) ln->justify_content = JUSTIFY_END;
         else if (strcmp(jc, "space-between") == 0) ln->justify_content = JUSTIFY_SPACE_BETWEEN;
         else if (strcmp(jc, "space-around") == 0) ln->justify_content = JUSTIFY_SPACE_AROUND;
         else if (strcmp(jc, "space-evenly") == 0) ln->justify_content = JUSTIFY_SPACE_EVENLY;

@@ -39,6 +39,9 @@ void screen_draw_vscrollbar(Screen* s, int content_h, int scroll_y);
 /** Draw a horizontal scrollbar at the bottom (above status bar). */
 void screen_draw_hscrollbar(Screen* s, int content_w, int scroll_x);
 
+/** Dump screen buffer as plain text to a file (no ANSI escapes, for testing). */
+void screen_dump_text(Screen* s, FILE* out);
+
 /* ======================== Interactive Loop (termbox2) ======================== */
 
 /** Initialize terminal (termbox2 raw mode + truecolor + mouse). Returns 0 on success. */
@@ -802,9 +805,47 @@ void screen_draw_hscrollbar(Screen* s, int content_w, int scroll_x) {
 #include <locale.h>
 #include <errno.h>
 
+#ifdef RENDER_HEADLESS
+/* ── Headless mode: skip termbox2, provide stubs ── */
+struct tb_event { unsigned int type; unsigned int ch; int key; int mod; int x; int y; int w; int h; };
+#define TB_KEY_ESC 27
+#define TB_KEY_TAB 9
+#define TB_KEY_ENTER 13
+#define TB_KEY_BACKSPACE 8
+#define TB_OUTPUT_TRUECOLOR 2
+#define TB_INPUT_ESC 1
+#define TB_INPUT_MOUSE 4
+#define TB_OK 0
+#define TB_MOD_ALT 1
+#define TB_MOD_MOTION 2
+#define TB_MOD_CTRL 4
+#define TB_MOD_SHIFT 8
+
+static int  headless_tb_init(void)           { return 0; }
+static void headless_tb_shutdown(void)       {}
+static int  headless_tb_width(void)          { return 80; }
+static int  headless_tb_height(void)         { return 60; }
+static int  headless_tb_poll_event(struct tb_event* ev) { (void)ev; return 0; }
+static int  headless_tb_set_output_mode(int m) { (void)m; return 0; }
+static int  headless_tb_set_input_mode(int m)  { (void)m; return 0; }
+static int  headless_tb_present(void)        { return 0; }
+static int  headless_tb_last_errno(void)     { return 0; }
+
+#define tb_init             headless_tb_init
+#define tb_shutdown         headless_tb_shutdown
+#define tb_width            headless_tb_width
+#define tb_height           headless_tb_height
+#define tb_poll_event       headless_tb_poll_event
+#define tb_set_output_mode  headless_tb_set_output_mode
+#define tb_set_input_mode   headless_tb_set_input_mode
+#define tb_present          headless_tb_present
+#define tb_last_errno       headless_tb_last_errno
+
+#else
 #define TB_OPT_ATTR_W 32
 #define TB_IMPL
 #include "termbox2.h"
+#endif /* RENDER_HEADLESS */
 
 int render_init(void) {
     setlocale(LC_ALL, "");
@@ -821,6 +862,33 @@ void render_shutdown(void) {
 void render_size(int* w, int* h) {
     *w = tb_width();
     *h = tb_height();
+}
+
+void screen_dump_text(Screen* s, FILE* out) {
+    if (!s || !out) return;
+    for (int r = 0; r < s->rows; r++) {
+        int last = -1;
+        for (int c = 0; c < s->cols; c++) {
+            if (s->cells[r * s->cols + c].ch != 0x0020 &&
+                s->cells[r * s->cols + c].ch != 0) last = c;
+        }
+        if (last < 0) { fprintf(out, "\n"); continue; }
+        for (int c = 0; c <= last; c++) {
+            uint32_t ch = s->cells[r * s->cols + c].ch;
+            if (ch == 0 || ch == 0x0020) { fputc(' ', out); continue; }
+            if (ch >= 0x2500 && ch <= 0x257F) {
+                fputc((ch == 0x2502 || ch == 0x2503) ? '|' :
+                      ((ch == 0x2500 || ch == 0x2501) ? '-' : '+'), out);
+            } else if (ch == 0x2022) { fputc('*', out); }
+            else if (ch == 0x2026) { fputc('.', out); }
+            else if (ch >= 0x2580 && ch <= 0x2593) { fputc('#', out); }
+            else if (ch == 0x25A0 || ch == 0x25A1) { fputc('#', out); }
+            else if (ch == 0x25CB || ch == 0x25CF || ch == 0x25C9) { fputc('o', out); }
+            else if (ch < 0x80) { fputc((char)ch, out); }
+            else { fputc('?', out); }
+        }
+        fputc('\n', out);
+    }
 }
 
 /* find_styled_node moved to styletree.h */

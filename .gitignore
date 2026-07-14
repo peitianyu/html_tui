@@ -5,6 +5,7 @@ mini_browser
 # 编辑器
 .vscode/
 .idea/
+.github/
 *.swp
 *~
 

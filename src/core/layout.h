@@ -2220,10 +2220,19 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
             if (val && val[0]) rv = (int)strtol(val, NULL, 10);
             if (rv < 0) rv = 0; if (rv > 100) rv = 100;
             int bar_w = 20, thumb_pos = (rv * (bar_w - 1)) / 100;
-            buf[0] = '[';
-            for (int k = 1; k < bar_w; k++) buf[k] = (k <= thumb_pos) ? 0x2550 : (k == thumb_pos + 1) ? 0x25CF : ' ';
-            buf[bar_w] = ']'; buf[bar_w + 1] = '\0';
-            int off = bar_w + 1;
+            int pos = 0;
+            buf[pos++] = '[';
+            for (int k = 1; k < bar_w; k++) {
+                if (k <= thumb_pos) {
+                    buf[pos++] = 0xE2; buf[pos++] = 0x95; buf[pos++] = 0x90; /* ═ */
+                } else if (k == thumb_pos + 1) {
+                    buf[pos++] = 0xE2; buf[pos++] = 0x97; buf[pos++] = 0x8F; /* ● */
+                } else {
+                    buf[pos++] = ' ';
+                }
+            }
+            buf[pos++] = ']';
+            int off = pos;
             snprintf(buf + off, sizeof(buf) - off, " %d%%", rv);
             ln->color.r = 180; ln->color.g = 220; ln->color.b = 255;
         } else if (is_color) {
@@ -2238,8 +2247,13 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
             if (val && *val) {
                 if (is_password) {
                     int vlen = (int)strlen(val);
-                    for (int k = 0; k < vlen && k < 126; k++) buf[k] = 0x2022;
-                    buf[vlen > 126 ? 126 : vlen] = '\0';
+                    int pos = 0;
+                    for (int k = 0; k < vlen && pos < 124; k++) {
+                        buf[pos++] = 0xE2;
+                        buf[pos++] = 0x80;
+                        buf[pos++] = 0xA2;
+                    }
+                    buf[pos] = '\0';
                 } else if (is_number) {
                     /* Validate numeric */
                     const char* np = val;

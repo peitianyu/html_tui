@@ -347,22 +347,66 @@ static int collect_focus_list(LayoutNode* root, LayoutNode** focus_list, int max
     return count;
 }
 
-/** Patch INPUT/TEXTAREA text_content from saved input buffers after a layout rebuild. */
+/** Patch INPUT/TEXTAREA text_content from saved input buffers after a layout rebuild.
+ *  Skips checkbox/radio/color; range regenerated from buffer; password masked with •. */
 static void patch_input_text(LayoutNode** focus_list, int focus_count,
                               char input_buf[][4096], int input_buf_count) {
     for (int fi = 0; fi < focus_count && fi < input_buf_count; fi++) {
         LayoutNode* n = focus_list[fi];
-        if (n->styled && n->styled->node &&
-            n->styled->node->type == GUMBO_NODE_ELEMENT &&
-            (n->styled->node->v.element.tag == GUMBO_TAG_INPUT ||
-             n->styled->node->v.element.tag == GUMBO_TAG_TEXTAREA)) {
-            char buf[4096];
-            const char* val = input_buf[fi];
+        if (!n->styled || !n->styled->node ||
+            n->styled->node->type != GUMBO_NODE_ELEMENT) continue;
+        GumboTag t = n->styled->node->v.element.tag;
+        if (t != GUMBO_TAG_INPUT && t != GUMBO_TAG_TEXTAREA) continue;
+        const char* type_val = NULL;
+        if (t == GUMBO_TAG_INPUT) {
+            GumboAttribute* ta = gumbo_get_attribute(&n->styled->node->v.element.attributes, "type");
+            if (ta && ta->value) type_val = ta->value;
+            if (!type_val) type_val = "text";
+        }
+        if (t == GUMBO_TAG_INPUT && type_val &&
+            (strcmp(type_val, "checkbox") == 0 || strcmp(type_val, "radio") == 0 ||
+             strcmp(type_val, "color") == 0)) continue;
+        if (t == GUMBO_TAG_INPUT && type_val && strcmp(type_val, "range") == 0) {
+            int pct = 50;
+            if (input_buf[fi][0]) pct = (int)strtol(input_buf[fi], NULL, 10);
+            if (pct < 0) pct = 0; if (pct > 100) pct = 100;
+            int bar_w = 20, thumb_pos = (pct * (bar_w - 1)) / 100;
+            char _rb[256]; int pos = 0;
+            _rb[pos++] = '[';
+            for (int k = 1; k < bar_w; k++) {
+                if (k <= thumb_pos) {
+                    _rb[pos++] = 0xE2; _rb[pos++] = 0x95; _rb[pos++] = 0x90;
+                } else if (k == thumb_pos + 1) {
+                    _rb[pos++] = 0xE2; _rb[pos++] = 0x97; _rb[pos++] = 0x8F;
+                } else {
+                    _rb[pos++] = ' ';
+                }
+            }
+            _rb[pos++] = ']';
+            snprintf(_rb + pos, sizeof(_rb) - pos, " %d%%", pct);
+            if (n->text_content) free(n->text_content);
+            n->text_content = strdup(_rb);
+            n->width = uc_str_width(n->text_content);
+            n->color.r = 180; n->color.g = 220; n->color.b = 255;
+            continue;
+        }
+        char buf[4096]; const char* val = input_buf[fi];
+        if (t == GUMBO_TAG_INPUT && type_val && strcmp(type_val, "password") == 0) {
+            if (val && val[0]) {
+                int vlen = (int)strlen(val); int lim = ((int)sizeof(buf)-2)/3;
+                if (vlen > lim) vlen = lim;
+                int pos = 0;
+                for (int k = 0; k < vlen; k++) {
+                    buf[pos++] = 0xE2; buf[pos++] = 0x80; buf[pos++] = 0xA2;
+                }
+                buf[pos] = '\0';
+            } else strcpy(buf, " ");
+        } else {
             if (val && val[0]) snprintf(buf, sizeof(buf), "%s", val);
             else snprintf(buf, sizeof(buf), " ");
-            if (n->text_content) free(n->text_content);
-            n->text_content = strdup(buf);
         }
+        if (n->text_content) free(n->text_content);
+        n->text_content = strdup(buf);
     }
 }
 
@@ -410,6 +454,13 @@ static void draw_focus_indicator(Screen* s, LayoutNode* f, int scroll_x, int scr
         !f->text_content) return;
     GumboTag tag = f->styled->node->v.element.tag;
     if (tag != GUMBO_TAG_INPUT && tag != GUMBO_TAG_TEXTAREA) return;
+
+    /* Range & color: no text cursor */
+    if (tag == GUMBO_TAG_INPUT) {
+        GumboAttribute* ft = gumbo_get_attribute(&f->styled->node->v.element.attributes, "type");
+        if (ft && ft->value &&
+            (strcmp(ft->value, "range") == 0 || strcmp(ft->value, "color") == 0)) return;
+    }
 
     int cursor_pos = input_cursor[focus_idx];
     int cu = bx + f->border_left + f->padding_left;
@@ -481,13 +532,13 @@ static void toggle_cb_radio_text(LayoutNode* n, InteractCallbacks* cb) {
     if (!n->text_content) return;
     char _new[128];
     const char* _old = n->text_content;
-    const char* _label = _old + 3;
+    const char* _label = strchr(_old, ']'); if (!_label) _label = strchr(_old, ')'); _label += 2;
     if (_old[0] == '[') {
         bool _was = (_old[1] == 'x');
         snprintf(_new, sizeof(_new), _was ? "[ ] %s" : "[x] %s", _label);
         n->color.r = _was ? 200 : 120; n->color.g = _was ? 200 : 220; n->color.b = _was ? 200 : 120;
     } else {
-        bool _was = (_old[1] == 0x2022);
+        bool _was = ((unsigned char)_old[1] == 0xE2);
         snprintf(_new, sizeof(_new), _was ? "( ) %s" : "(•) %s", _label);
         n->color.r = _was ? 200 : 120; n->color.g = _was ? 200 : 220; n->color.b = _was ? 200 : 120;
     }
@@ -502,6 +553,60 @@ static bool is_cb_radio_node(LayoutNode* n) {
     if (n->styled->node->v.element.tag != GUMBO_TAG_INPUT) return false;
     GumboAttribute* ta = gumbo_get_attribute(&n->styled->node->v.element.attributes, "type");
     return ta && ta->value && (strcmp(ta->value, "checkbox") == 0 || strcmp(ta->value, "radio") == 0);
+}
+
+/* ─── Helper: uncheck sibling radios in same group ── */
+static void radio_group_uncheck(LayoutNode* n, LayoutNode** focus_list, int focus_count, InteractCallbacks* cb) {
+    GumboAttribute* name_a = gumbo_get_attribute(&n->styled->node->v.element.attributes, "name");
+    if (!name_a || !name_a->value) return;
+    for (int i = 0; i < focus_count; i++) {
+        if (focus_list[i] == n) continue;
+        if (!focus_list[i]->styled || !focus_list[i]->styled->node) continue;
+        if (focus_list[i]->styled->node->type != GUMBO_NODE_ELEMENT) continue;
+        if (focus_list[i]->styled->node->v.element.tag != GUMBO_TAG_INPUT) continue;
+        GumboAttribute* ta = gumbo_get_attribute(&focus_list[i]->styled->node->v.element.attributes, "type");
+        if (!ta || !ta->value || strcmp(ta->value, "radio") != 0) continue;
+        GumboAttribute* rn = gumbo_get_attribute(&focus_list[i]->styled->node->v.element.attributes, "name");
+        if (!rn || !rn->value || strcmp(rn->value, name_a->value) != 0) continue;
+        /* Already unchecked? skip */
+        if (!focus_list[i]->text_content || focus_list[i]->text_content[0] != '(') continue;
+        const char* _ro = focus_list[i]->text_content;
+        if ((unsigned char)_ro[1] != 0xE2) continue; /* not checked */
+        const char* _rl = strchr(_ro, ')');
+        if (_rl) {
+            char _rnb[128];
+            snprintf(_rnb, sizeof(_rnb), "( ) %s", _rl + 2);
+            node_set_text(focus_list[i], _rnb);
+            focus_list[i]->color.r = 200; focus_list[i]->color.g = 200; focus_list[i]->color.b = 200;
+            GumboAttribute* _ria = gumbo_get_attribute(&focus_list[i]->styled->node->v.element.attributes, "id");
+            if (_ria && _ria->value) node_override_text(cb, _ria->value, _rnb);
+        }
+    }
+}
+
+/* ─── Helper: update range slider text from percentage ─ */
+static void range_update_text(LayoutNode* n, int pct, InteractCallbacks* cb) {
+    if (!n) return;
+    if (pct < 0) pct = 0; if (pct > 100) pct = 100;
+    int bar_w = 20, thumb_pos = (pct * (bar_w - 1)) / 100;
+    char buf[256]; int pos = 0;
+    buf[pos++] = '[';
+    for (int k = 1; k < bar_w; k++) {
+        if (k <= thumb_pos) {
+            buf[pos++] = 0xE2; buf[pos++] = 0x95; buf[pos++] = 0x90; /* ═ */
+        } else if (k == thumb_pos + 1) {
+            buf[pos++] = 0xE2; buf[pos++] = 0x97; buf[pos++] = 0x8F; /* ● */
+        } else {
+            buf[pos++] = ' ';
+        }
+    }
+    buf[pos++] = ']';
+    snprintf(buf + pos, sizeof(buf) - pos, " %d%%", pct);
+    node_set_text(n, buf);
+    n->width = uc_str_width(buf);
+    n->color.r = 180; n->color.g = 220; n->color.b = 255;
+    GumboAttribute* _ia = gumbo_get_attribute(&n->styled->node->v.element.attributes, "id");
+    if (_ia && _ia->value) node_override_text(cb, _ia->value, buf);
 }
 
 /* ─── Helper: sync textarea scroll for rendering ──── */
@@ -663,6 +768,23 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
             input_buf[fi][0] == 0) {
             GumboTag t = n->styled->node->v.element.tag;
             if (t == GUMBO_TAG_INPUT) {
+                const char* type_val = NULL;
+                GumboAttribute* ta = gumbo_get_attribute(
+                    &n->styled->node->v.element.attributes, "type");
+                if (ta && ta->value) type_val = ta->value;
+                if (type_val && (strcmp(type_val, "checkbox") == 0 ||
+                                 strcmp(type_val, "radio") == 0 ||
+                                 strcmp(type_val, "color") == 0)) continue;
+                /* Range: store numeric value in input_buf */
+                if (type_val && strcmp(type_val, "range") == 0) {
+                    GumboAttribute* attr = gumbo_get_attribute(
+                        &n->styled->node->v.element.attributes, "value");
+                    if (attr && attr->value)
+                        strncpy(input_buf[fi], attr->value, sizeof(input_buf[0])-1);
+                    else
+                        strncpy(input_buf[fi], "50", sizeof(input_buf[0])-1);
+                    continue;
+                }
                 GumboAttribute* attr = gumbo_get_attribute(
                     &n->styled->node->v.element.attributes, "value");
                 if (attr && attr->value)
@@ -695,6 +817,9 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
     /* Global scrollbar drag state: -1 = not dragging, 0/1 = dragging */
     int global_sb_drag_v = -1;
     int global_sb_drag_h = -1;
+
+    /* Range slider drag state */
+    int range_drag_idx = -1;
 
     /* Track previous hover/active for style recomputation */
     GumboNode* prev_hover = NULL;
@@ -874,6 +999,45 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                             }
                         }
                     }
+                /* Click on checkbox/radio -- toggle */
+                if (focus_idx >= 0 && focus_idx < focus_count) {
+                    LayoutNode* _n = focus_list[focus_idx];
+                    if (_n->styled && _n->styled->node &&
+                        _n->styled->node->type == GUMBO_NODE_ELEMENT &&
+                        _n->styled->node->v.element.tag == GUMBO_TAG_INPUT) {
+                        GumboAttribute* _ta = gumbo_get_attribute(
+                            &_n->styled->node->v.element.attributes, "type");
+                        if (_ta && _ta->value && (strcmp(_ta->value, "checkbox") == 0 ||
+                                                   strcmp(_ta->value, "radio") == 0)) {
+                            if (_n->text_content) {
+                                char _nx[128]; const char* _ox = _n->text_content;
+                                const char* _lx = strchr(_ox, ']'); if (!_lx) _lx = strchr(_ox, ')'); _lx += 2;
+                                if (_ox[0] == '[') {
+                                    bool _w = (_ox[1] == 'x');
+                                    snprintf(_nx, sizeof(_nx), _w ? "[ ] %s" : "[x] %s", _lx);
+                                    _n->color.r = _w ? 200 : 120; _n->color.g = _w ? 200 : 220; _n->color.b = _w ? 200 : 120;
+                                    node_set_text(_n, _nx);
+                                    GumboAttribute* _ia = gumbo_get_attribute(
+                                        &_n->styled->node->v.element.attributes, "id");
+                                    if (_ia && _ia->value) node_override_text(cb, _ia->value, _nx);
+                                    snprintf(cb->status_msg, sizeof(cb->status_msg), "✓ %s", _nx);
+                                } else {
+                                    bool _w = ((unsigned char)_ox[1] == 0xE2);
+                                    if (!_w) {
+                                        radio_group_uncheck(_n, focus_list, focus_count, cb);
+                                        snprintf(_nx, sizeof(_nx), "(•) %s", _lx);
+                                        _n->color.r = 120; _n->color.g = 220; _n->color.b = 120;
+                                        node_set_text(_n, _nx);
+                                        GumboAttribute* _ia = gumbo_get_attribute(
+                                            &_n->styled->node->v.element.attributes, "id");
+                                        if (_ia && _ia->value) node_override_text(cb, _ia->value, _nx);
+                                        snprintf(cb->status_msg, sizeof(cb->status_msg), "✓ %s", _nx);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
 click_handle_select_popup:
                     /* If the clicked (or focused) element is a <select>, open popup immediately */
                     if (focus_idx >= 0 && focus_idx < focus_count &&
@@ -921,6 +1085,7 @@ end_mouse_left:
                     textarea_scrollbar_drag = -1;
                     global_sb_drag_v = -1;
                     global_sb_drag_h = -1;
+                    range_drag_idx = -1;
                     if (g_interact_active) {
                         prev_active = g_interact_active;
                         g_interact_active = NULL;
@@ -1003,6 +1168,60 @@ end_mouse_left:
                                 restyle = true;
                             }
                         }
+                    }
+                }
+
+                /* ── Range slider click ── */
+                if (ev.key == TB_KEY_MOUSE_LEFT && !(ev.mod & TB_MOD_MOTION)) {
+                    for (int fi = 0; fi < focus_count; fi++) {
+                        LayoutNode* n = focus_list[fi];
+                        if (!n->styled || !n->styled->node ||
+                            n->styled->node->type != GUMBO_NODE_ELEMENT ||
+                            n->styled->node->v.element.tag != GUMBO_TAG_INPUT)
+                            continue;
+                        GumboAttribute* rt = gumbo_get_attribute(
+                            &n->styled->node->v.element.attributes, "type");
+                        if (!rt || !rt->value || strcmp(rt->value, "range") != 0) continue;
+                        int nx, ny, nw, nh;
+                        node_abs_box(n, scroll_x, scroll_y, &nx, &ny, &nw, &nh);
+                        if (ev.x >= nx && ev.x < nx + nw && ev.y >= ny && ev.y < ny + nh) {
+                            /* Calculate percentage from X within bar */
+                            int bar_left = nx + n->border_left + n->padding_left + 1; /* after '[' */
+                            int bar_w = 20;
+                            int rel_x = ev.x - bar_left;
+                            if (rel_x < 0) rel_x = 0;
+                            if (rel_x >= bar_w) rel_x = bar_w - 1;
+                            int pct = (rel_x * 100) / (bar_w - 1);
+                            if (pct < 0) pct = 0; if (pct > 100) pct = 100;
+                            snprintf(input_buf[fi], sizeof(input_buf[0]), "%d", pct);
+                            range_update_text(n, pct, cb);
+                            range_drag_idx = fi;
+                            snprintf(cb->status_msg, sizeof(cb->status_msg),
+                                     "↔ Range: %d%%", pct);
+                            break;
+                        }
+                    }
+                }
+
+                /* ── Range slider drag ── */
+                if (ev.key == TB_KEY_MOUSE_LEFT && (ev.mod & TB_MOD_MOTION) && range_drag_idx >= 0) {
+                    int fi = range_drag_idx;
+                    if (fi >= 0 && fi < focus_count) {
+                        LayoutNode* n = focus_list[fi];
+                        int nx, ny, nw, nh;
+                        node_abs_box(n, scroll_x, scroll_y, &nx, &ny, &nw, &nh);
+                        int bar_left = nx + n->border_left + n->padding_left + 1;
+                        int bar_w = 20;
+                        int rel_x = ev.x - bar_left;
+                        if (rel_x < 0) rel_x = 0;
+                        if (rel_x >= bar_w) rel_x = bar_w - 1;
+                        int pct = (rel_x * 100) / (bar_w - 1);
+                        if (pct < 0) pct = 0; if (pct > 100) pct = 100;
+                        snprintf(input_buf[fi], sizeof(input_buf[0]), "%d", pct);
+                        range_update_text(n, pct, cb);
+                        snprintf(cb->status_msg, sizeof(cb->status_msg),
+                                 "↔ Range: %d%%", pct);
+                        restyle = true;
                     }
                 }
 
@@ -1162,6 +1381,46 @@ end_mouse_left:
                 (focus_list[focus_idx]->styled->node->v.element.tag == GUMBO_TAG_INPUT ||
                  focus_list[focus_idx]->styled->node->v.element.tag == GUMBO_TAG_TEXTAREA)) {
                 bool is_textarea = (focus_list[focus_idx]->styled->node->v.element.tag == GUMBO_TAG_TEXTAREA);
+                if (!is_textarea) {
+                    GumboAttribute* ct = gumbo_get_attribute(
+                        &focus_list[focus_idx]->styled->node->v.element.attributes, "type");
+                    if (ct && ct->value && (strcmp(ct->value, "checkbox") == 0 ||
+                                             strcmp(ct->value, "radio") == 0)) {
+                        if (ev.key == TB_KEY_SPACE || ev.key == TB_KEY_ENTER) {
+                            LayoutNode* cn = focus_list[focus_idx];
+                            if (cn->text_content) {
+                                char _nx[128]; const char* _ox = cn->text_content;
+                                const char* _lx = strchr(_ox, ']'); if (!_lx) _lx = strchr(_ox, ')'); _lx += 2;
+                                if (_ox[0] == '[') {
+                                    bool _w = (_ox[1] == 'x');
+                                    snprintf(_nx, sizeof(_nx), _w ? "[ ] %s" : "[x] %s", _lx);
+                                    cn->color.r = _w ? 200 : 120; cn->color.g = _w ? 200 : 220; cn->color.b = _w ? 200 : 120;
+                                    node_set_text(cn, _nx);
+                                    GumboAttribute* _ia = gumbo_get_attribute(&cn->styled->node->v.element.attributes, "id");
+                                    if (_ia && _ia->value) node_override_text(cb, _ia->value, _nx);
+                                    snprintf(cb->status_msg, sizeof(cb->status_msg), "✓ %s", _nx);
+                                } else {
+                                    bool _w = ((unsigned char)_ox[1] == 0xE2);
+                                    if (!_w) {
+                                        radio_group_uncheck(cn, focus_list, focus_count, cb);
+                                        snprintf(_nx, sizeof(_nx), "(•) %s", _lx);
+                                        cn->color.r = 120; cn->color.g = 220; cn->color.b = 120;
+                                        node_set_text(cn, _nx);
+                                        GumboAttribute* _ia = gumbo_get_attribute(&cn->styled->node->v.element.attributes, "id");
+                                        if (_ia && _ia->value) node_override_text(cb, _ia->value, _nx);
+                                        snprintf(cb->status_msg, sizeof(cb->status_msg), "✓ %s", _nx);
+                                    }
+                                }
+                            }
+                        }
+                        continue;
+                    }
+                    /* Range & color: only drag/click, no keyboard input */
+                    if (ct && ct->value &&
+                        (strcmp(ct->value, "range") == 0 || strcmp(ct->value, "color") == 0)) {
+                        continue;
+                    }
+                }
                 char* buf = input_buf[focus_idx];
                 size_t blen = strlen(buf);
                 int* cpos = &input_cursor[focus_idx];

@@ -19,7 +19,8 @@ typedef enum {
     DISPLAY_FLEX,
     DISPLAY_GRID,
     DISPLAY_TABLE,
-    DISPLAY_TABLE_ROW
+    DISPLAY_TABLE_ROW,
+    DISPLAY_INLINE_BLOCK
 } DisplayType;
 
 /** Flex direction */
@@ -166,6 +167,9 @@ typedef struct LayoutNode {
     /* position: 0=static, 1=relative */
     int position_type;
     int position_top, position_right, position_bottom, position_left;
+
+    /* z-index (0 = auto/default, only applies when position_type != 0) */
+    int z_index;
 
     /* scroll offset within element's content (e.g. textarea) */
     int content_scroll_y;
@@ -636,7 +640,7 @@ static DisplayType parse_display(const char* str) {
     if (strcmp(str, "none") == 0)      return DISPLAY_NONE;
     if (strcmp(str, "block") == 0)     return DISPLAY_BLOCK;
     if (strcmp(str, "inline") == 0)    return DISPLAY_INLINE;
-    if (strcmp(str, "inline-block") == 0) return DISPLAY_BLOCK; /* treat as block */
+    if (strcmp(str, "inline-block") == 0) return DISPLAY_INLINE_BLOCK;
     if (strcmp(str, "flex") == 0)      return DISPLAY_FLEX;
     if (strcmp(str, "grid") == 0)      return DISPLAY_GRID;
     if (strcmp(str, "table") == 0)    return DISPLAY_TABLE;
@@ -1007,13 +1011,15 @@ static void apply_styles(LayoutNode* ln) {
     /* position: relative */
     ln->position_type = 0;
     ln->position_top = ln->position_right = ln->position_bottom = ln->position_left = 0;
+    ln->z_index = 0;
     const char* ppos = get_style(sn, "position");
     if (ppos && strcmp(ppos, "relative") == 0) ln->position_type = 1;
     const char* ptop = get_style(sn, "top"); if (ptop) ln->position_top = (int)strtol(ptop, NULL, 10);
     const char* pleft = get_style(sn, "left"); if (pleft) ln->position_left = (int)strtol(pleft, NULL, 10);
     const char* pright = get_style(sn, "right"); if (pright) ln->position_right = (int)strtol(pright, NULL, 10);
     const char* pbottom = get_style(sn, "bottom"); if (pbottom) ln->position_bottom = (int)strtol(pbottom, NULL, 10);
-
+    const char* pz = get_style(sn, "z-index");
+    if (pz) { int zv = atoi(pz); if (zv > 0) ln->z_index = zv; }
     /* flex child properties */
     ln->flex_grow = 0;
     const char* fg = get_style(sn, "flex-grow");
@@ -1642,6 +1648,13 @@ static void layout_table_children(LayoutNode* parent, int content_w) {
     bool has_width = (tw_str && strcmp(tw_str, "auto") != 0);
     int avail = has_width ? table_w : (total_nat < content_w ? total_nat : content_w);
 
+    /* ── Rowspan support ──
+       Track which columns are reserved by a cell spanning from a previous row.
+       rowspan_occupancy[row][col] > 0 means that column is occupied by a rowspan.
+       When value reaches 1, the cell owns that row and will render; when >1, skip. */
+    int* rowspan_occ = (int*)calloc(max_cols, sizeof(int));
+    int* rowspan_h   = (int*)calloc(max_cols, sizeof(int)); /* accumulated height for spanning cell */
+
     int y_cursor = 0;
     for (size_t i = 0; i < num_rows; i++) {
         LayoutNode* row = rows[i];
@@ -1650,26 +1663,50 @@ static void layout_table_children(LayoutNode* parent, int content_w) {
 
         int cx = 0, max_h = 0;
         size_t c = 0;
+
+        /* First pass: compute row height from non-rowspan cells */
+        int* cell_colspan = (int*)calloc(row->num_children, sizeof(int));
+        int* cell_cw      = (int*)calloc(row->num_children, sizeof(int));
+        int* cell_rowspan = (int*)calloc(row->num_children, sizeof(int));
+
         for (size_t j = 0; j < row->num_children; j++) {
             LayoutNode* cell = row->children[j];
             if (cell->display == DISPLAY_NONE) continue;
 
-            int colspan = 1;
+            /* Skip cells occupied by rowspan from previous rows */
+            while (c < max_cols && rowspan_occ[c] > 1) {
+                rowspan_occ[c]--; /* decrement remaining span count */
+                c++;
+            }
+            if (c >= max_cols) break;
+
+            int colspan = 1, rowspan = 1;
             if (cell->styled && cell->styled->node && cell->styled->node->type == GUMBO_NODE_ELEMENT) {
                 GumboAttribute* ca = gumbo_get_attribute(
                     &cell->styled->node->v.element.attributes, "colspan");
                 if (ca && ca->value) { int cv = atoi(ca->value); if (cv > 1) colspan = cv; }
+                GumboAttribute* ra = gumbo_get_attribute(
+                    &cell->styled->node->v.element.attributes, "rowspan");
+                if (ra && ra->value) { int rv = atoi(ra->value); if (rv > 1) rowspan = rv; if (rowspan > 8) rowspan = 8; }
             }
+
+            cell_colspan[j] = colspan;
+            cell_rowspan[j] = rowspan;
 
             /* Sum column widths for colspan */
             int cw = 0;
-            for (int k = 0; k < colspan && c + k < max_cols; k++) {
+            for (int k = 0; k < colspan && c + k < max_cols; k++)
                 cw += col_w[c + k] * avail / total_nat;
-            }
             if (cw < 1) cw = 1;
+            cell_cw[j] = cw;
+
+            if (rowspan > 1) {
+                /* Mark occupancy for this and subsequent rows */
+                for (int k = 0; k < colspan && c + k < max_cols; k++)
+                    rowspan_occ[c + k] = rowspan; /* remaining rows to occupy */
+            }
 
             cell->x = cx + cell->border_left + cell->padding_left;
-            /* Cell content starts 1 cell below row top (for the grid line) */
             cell->y = cell->padding_top + 1;
             cell->width = cw - cell->padding_left - cell->padding_right -
                           cell->border_left - cell->border_right;
@@ -1677,24 +1714,96 @@ static void layout_table_children(LayoutNode* parent, int content_w) {
 
             compute_child_layouts(cell, cell->width);
 
-            /* Row height = content only (borders handled by table grid);
-               +1 for the grid line at row top */
             int ch = cell->height + cell->padding_top + cell->padding_bottom;
             if (ch > max_h) max_h = ch;
             cx += cw;
             c += colspan;
         }
 
+        /* Determine actual row height (max of all cells) */
+        int actual_row_h = max_h;
+
+        /* Second pass: set cell heights and track rowspan heights */
         for (size_t j = 0; j < row->num_children; j++) {
             LayoutNode* cell = row->children[j];
             if (cell->display == DISPLAY_NONE) continue;
-            int target = max_h - cell->padding_top - cell->padding_bottom;
-            if (target > cell->height) cell->height = target;
-            /* Zero out cell vertical borders — table grid handles them */
             cell->border_top = cell->border_bottom = 0;
+
+            int rs = cell_rowspan[j];
+            if (rs > 1) {
+                /* Rowspan cell: initially set height to this row's contribution */
+                cell->height = actual_row_h;
+                /* Accumulate remaining span rows: we add the row heights of
+                   subsequent rows as we encounter them. For now, mark that
+                   this cell's height should be augmented. */
+                for (int k = 0; k < cell_colspan[j] && (c >= max_cols || c < max_cols); ) {
+                    /* We'll accumulate in rowspan_h for the primary column */
+                    break;
+                }
+                /* Store the initial row height for this span cell */
+                int pc = 0; /* find primary column */
+                for (size_t tj = 0; tj < j; tj++) {
+                    if (row->children[tj]->display != DISPLAY_NONE) {
+                        int tc = cell_colspan[tj];
+                        if (tc > 0) pc += tc;
+                    }
+                }
+                if (pc < (int)max_cols) {
+                    rowspan_h[pc] = actual_row_h; /* initial row contribution */
+                }
+            } else {
+                int target = actual_row_h - cell->padding_top - cell->padding_bottom;
+                if (target > cell->height) cell->height = target;
+            }
         }
-        row->height = max_h + 1;  /* +1 for the grid separator line */
-        y_cursor += max_h + 1;
+
+        row->height = actual_row_h + 1;
+        y_cursor += actual_row_h + 1;
+
+        /* Augment rowspan cell heights with subsequent row contributions */
+        for (size_t j = 0; j < row->num_children; j++) {
+            LayoutNode* cell = row->children[j];
+            if (cell->display == DISPLAY_NONE) continue;
+            int rs = cell_rowspan[j];
+            if (rs > 1) {
+                /* Find primary column index */
+                int pc = 0;
+                for (size_t tj = 0; tj < j; tj++) {
+                    if (row->children[tj]->display != DISPLAY_NONE) {
+                        int tc = cell_colspan[tj];
+                        if (tc > 0) pc += tc;
+                    }
+                }
+                /* Accumulate: add this row's height to the spanning cell */
+                /* rowspan_h[pc] already has the sum from previous rows */
+            }
+        }
+
+        /* Decrement rowspan occupancy (transition to next row) */
+        for (size_t cc = 0; cc < max_cols; cc++) {
+            if (rowspan_occ[cc] > 1) {
+                rowspan_occ[cc]--;
+                /* Accumulate rowspan_h for the spanning cell */
+                int occ_val = rowspan_occ[cc];
+                /* Find which rowspan cell owns this column */
+                for (size_t rj = 0; rj < row->num_children; rj++) {
+                    LayoutNode* rcell = row->children[rj];
+                    if (rcell->display == DISPLAY_NONE) continue;
+                    int rrs = cell_rowspan[rj];
+                    if (rrs > 1 && occ_val > 1) {
+                        /* This cell spans this column */
+                        /* Contribute this row's height to that cell's span height */
+                        int add_h = actual_row_h + 1; /* +1 for grid line */
+                        rcell->height += add_h;
+                        break;
+                    }
+                }
+            }
+        }
+
+        free(cell_colspan);
+        free(cell_cw);
+        free(cell_rowspan);
     }
 
     parent->height = y_cursor;
@@ -1710,7 +1819,6 @@ static void layout_table_children(LayoutNode* parent, int content_w) {
             LayoutNode* row = rows[i];
             row->height += add;
             row->y = y_fix;
-            /* Extend cell heights in this row */
             for (size_t j = 0; j < row->num_children; j++) {
                 LayoutNode* cell = row->children[j];
                 if (cell->display == DISPLAY_NONE) continue;
@@ -1723,6 +1831,8 @@ static void layout_table_children(LayoutNode* parent, int content_w) {
 
     parent->width = avail;
     free(col_w);
+    free(rowspan_occ);
+    free(rowspan_h);
     free(rows);
 }
 
@@ -2175,6 +2285,30 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
                     break;
                 }
             }
+        }
+    }
+
+    /* <dialog>: default hidden unless open, with global state tracking */
+    if (snode->node->type == GUMBO_NODE_ELEMENT &&
+        snode->node->v.element.tag == GUMBO_TAG_DIALOG) {
+        GumboAttribute* open_attr = gumbo_get_attribute(
+            &snode->node->v.element.attributes, "open");
+        bool initially_open = (open_attr != NULL);
+        /* Check if dialog has previously been toggled */
+        const char* did = NULL;
+        GumboAttribute* id_a = gumbo_get_attribute(
+            &snode->node->v.element.attributes, "id");
+        if (id_a && id_a->value) did = id_a->value;
+        if (did) {
+            for (int i = 0; i < g_det_count; i++) {
+                if (strcmp(g_det_state[i].id, did) == 0) {
+                    initially_open = g_det_state[i].open;
+                    break;
+                }
+            }
+        }
+        if (!initially_open) {
+            ln->display = DISPLAY_NONE;
         }
     }
 

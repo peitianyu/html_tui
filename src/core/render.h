@@ -532,8 +532,32 @@ static void screen_render_offset(Screen* s, LayoutNode* n, int px, int py, int c
     screen_render_node(s, n);
     int cpx=n->x, cpy=n->y; n->x=svx; n->y=svy;
 
+    /* Sort children by z-index: render higher z-index later (on top) */
+    /* Only sort if there are children with z-index > 0 */
+    bool has_z = false;
     for (size_t i = 0; i < n->num_children; i++)
-        screen_render_offset(s, n->children[i], cpx, cpy, my_clip_x, my_clip_y, my_clip_w, my_clip_h);
+        if (n->children[i]->z_index > 0) { has_z = true; break; }
+
+    if (has_z && n->num_children > 1) {
+        /* Create index array and sort by z_index ascending (selection sort, small n) */
+        size_t order[256];
+        if (n->num_children > 256) {
+            for (size_t i = 0; i < n->num_children; i++)
+                screen_render_offset(s, n->children[i], cpx, cpy, my_clip_x, my_clip_y, my_clip_w, my_clip_h);
+        } else {
+            for (size_t i = 0; i < n->num_children; i++) order[i] = i;
+            for (size_t i = 0; i < n->num_children; i++)
+                for (size_t j = i + 1; j < n->num_children; j++)
+                    if (n->children[order[i]]->z_index > n->children[order[j]]->z_index) {
+                        size_t tmp = order[i]; order[i] = order[j]; order[j] = tmp;
+                    }
+            for (size_t i = 0; i < n->num_children; i++)
+                screen_render_offset(s, n->children[order[i]], cpx, cpy, my_clip_x, my_clip_y, my_clip_w, my_clip_h);
+        }
+    } else {
+        for (size_t i = 0; i < n->num_children; i++)
+            screen_render_offset(s, n->children[i], cpx, cpy, my_clip_x, my_clip_y, my_clip_w, my_clip_h);
+    }
 
     /* Draw table grid if this is a <table> node */
     if (n->styled && n->styled->node && n->styled->node->type == GUMBO_NODE_ELEMENT &&

@@ -26,10 +26,11 @@ tcc -I src -run src/demo.c [page.html]
 ```
 pages/
 ├── 00-menu.html              # 主菜单（默认页面）
-├── 01-complex-form.html      # 表单演示：输入框、按钮、选择器、边框
-├── 02-flex-layout.html       # Flex 布局展示：对齐、间距、弹性
-├── 03-selectors-elements.html# CSS 选择器与元素：伪类、表格、列表
-└── 04-new-features.html      # 新功能展示：折叠面板、多行输入、下拉选择、colspan、flex-wrap
+├── 01-complex-form.html      # 表单演示
+├── 02-flex-layout.html       # Flex 布局展示
+├── 03-selectors-elements.html# CSS 选择器与元素
+├── 04-new-features.html      # 新功能展示（details/textarea/select/colspan）
+└── 05-advanced-features.html # 高级特性（rowspan/z-index/新input类型/dialog/inline-block）
 ```
 
 ### 键盘操作
@@ -40,7 +41,7 @@ pages/
 | `Shift+Tab` | 上一个可聚焦元素 |
 | `Enter` | 点击当前聚焦的按钮 / 切换 `<summary>` 折叠 / 循环 `<select>` 选项 |
 | `Enter`（textarea） | 输入框中换行 |
-| `q` / `Q` / `Esc` | 退出 |
+| `Esc` | 退出 |
 | 任意字符键 | 在输入框中输入文本 |
 | `←` / `→` | 输入框中光标左/右移动 |
 | `Home` / `End` | 输入框中光标到开头/末尾 |
@@ -50,7 +51,7 @@ pages/
 
 ### 页面跳转
 
-- 按钮 `id` 为 `btn-page-NN` 时，自动跳转到 `pages/NN-*.html`（当前支持 01~04）
+- 按钮 `id` 为 `btn-page-NN` 时，自动跳转到 `pages/NN-*.html`（当前支持 01~05）
 - 按钮 `id` 为 `btn-back` 或 `btn-back-N` 时，返回菜单 `00-menu.html`
 
 ---
@@ -162,8 +163,8 @@ mb_quit(mb);                     // 退出
 
 | 属性 | 说明 |
 |:--|:--|
-| `display` | `block`, `inline`, `flex`, `grid`（降级为 block）, `table`, `inline-block`（降级为 block）, `none` |
-| `position` | `static`, `relative`（`top`/`left`/`right`/`bottom` 偏移） |
+| `display` | `block`, `inline`, `flex`, `grid`（降级为 block）, `table`, `inline-block`, `none` |
+| `position` | `static`, `relative`（`top`/`left`/`right`/`bottom` + `z-index` 偏移） |
 | `width` / `height` | `px`, `%` 单位 |
 | `min-width` / `max-width` | 宽度约束（`px` 单位） |
 | `min-height` / `max-height` | 高度约束（`px` 单位） |
@@ -207,7 +208,7 @@ mb_quit(mb);                     // 退出
 
 | 类别 | 标签 |
 |:--|:--|
-| 块级元素 | `html`, `body`, `div`, `p`, `h1`-`h6`, `ul`, `ol`, `li`, `header`, `footer`, `section`, `article`, `nav`, `main`, `form`, `fieldset`, `legend`, `hr`, `pre`, `details`, `summary`, `textarea`, `select`, `table`, `tr`, `td`, `th` |
+| 块级元素 | `html`, `body`, `div`, `p`, `h1`-`h6`, `ul`, `ol`, `li`, `header`, `footer`, `section`, `article`, `nav`, `main`, `form`, `fieldset`, `legend`, `hr`, `pre`, `details`, `summary`, `textarea`, `select`, `table`, `tr`, `td`, `th`, `dialog`, `figure`, `figcaption` |
 | 行内元素 | `span`, `a`, `em`, `strong`, `b`, `i`, `u`, `code`, `small`, `br`, `img`, `input`, `button`, `s`, `del`, `kbd`, `samp` |
 | 交互元素 | `<details>` / `<summary>`（折叠/展开，`open` 属性控制默认状态） |
 | | `<textarea>`（多行文本编辑，Enter 换行，双向滚动 + 滚动条拖拽） |
@@ -217,7 +218,7 @@ mb_quit(mb);                     // 退出
 | | `<button>`（背景色 + 粗体） |
 | | `<a href>`（默认蓝色 + 下划线） |
 | 列表 | `<ul>` / `<ol>` / `<li>`（`•` 和 `1.` 前缀） |
-| 表格 | `<table>` / `<tr>` / `<td>` / `<th>`（自动列宽 + 等高等列，支持 `colspan`） |
+| 表格 | `<table>` / `<tr>` / `<td>` / `<th>`（自动列宽 + 等高等列，支持 `colspan`、`rowspan`） |
 | | `<thead>` / `<tbody>` / `<tfoot>`（统一按行处理） |
 | 其他 | `<img>`（显示 `[alt文本]` 占位符），`<hr>`（`─` 横线），`<pre>`（保留空白和换行） |
 | 默认样式 | `<s>` / `<del>`（`line-through` 删除线），`<kbd>` / `<samp>` / `<code>`（深色背景） |
@@ -242,6 +243,7 @@ mb_quit(mb);                     // 退出
 | UTF-8 支持 | 中文 / Emoji 多字节字符 |
 | 终端 Resize | SIGWINCH 信号处理 + 事件轮询双检测 |
 | 鼠标交互 | 点击、悬停（`:hover`）、滚轮滚动、滚动条拖拽、右键查看元素信息 |
+| `<dialog>` 模态框 | 深色遮罩 + 内容居中，`open` 属性控制显隐 |
 
 ---
 
@@ -264,12 +266,8 @@ mb_quit(mb);                     // 退出
 |:--|:--|:--:|
 | `float`, `clear` | 需要多遍浮动布局算法，已推荐 Flexbox 替代 | ★★★ |
 | `position: absolute / fixed` | 需要引入包含块系统 + 脱离文档流的布局通道 | ★★★ |
-| `z-index` | 需要渲染时按 z-index 排序；与绝对定位配合才有意义 | ★★☆ |
 | Grid 布局 | 完整的 Grid 布局引擎，含 template/area/fr 单位 | ★★★ |
-| `rowspan` | 需要追踪跨行单元格并动态调整行高（现已支持 colspan） | ★★☆ |
-| `display: inline-block` | 需要真正的行内流 + 块级盒模型组合（当前降级为 block） | ★★☆ |
 | 拖拽交互 | 通用拖拽模型（除现有滚动条拖拽外） | ★★★ |
-| `<dialog>` 模态框 | 需要叠加层渲染 + 焦点捕获 | ★★☆ |
 
 ---
 
@@ -282,7 +280,8 @@ mb_quit(mb);                     // 退出
 │   ├── 01-complex-form.html      # 表单演示
 │   ├── 02-flex-layout.html       # Flex 布局展示
 │   ├── 03-selectors-elements.html# CSS 选择器与元素
-│   └── 04-new-features.html      # 新功能展示
+│   ├── 04-new-features.html      # 新功能展示（details/textarea/select/colspan）
+│   └── 05-advanced-features.html # 高级特性（rowspan/z-index/新input类型/dialog/inline-block）
 ├── src/
 │   ├── demo.c                    # 入口：组装模块 + 按钮回调配置
 │   └── core/

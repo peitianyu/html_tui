@@ -476,6 +476,149 @@ static void draw_status_bar(Screen* s, InteractCallbacks* cb, int scroll_x, int 
     }
 }
 
+/* ─── Helper: toggle checkbox/radio text ───────────── */
+static void toggle_cb_radio_text(LayoutNode* n, InteractCallbacks* cb) {
+    if (!n->text_content) return;
+    char _new[128];
+    const char* _old = n->text_content;
+    const char* _label = _old + 3;
+    if (_old[0] == '[') {
+        bool _was = (_old[1] == 'x');
+        snprintf(_new, sizeof(_new), _was ? "[ ] %s" : "[x] %s", _label);
+        n->color.r = _was ? 200 : 120; n->color.g = _was ? 200 : 220; n->color.b = _was ? 200 : 120;
+    } else {
+        bool _was = (_old[1] == 0x2022);
+        snprintf(_new, sizeof(_new), _was ? "( ) %s" : "(•) %s", _label);
+        n->color.r = _was ? 200 : 120; n->color.g = _was ? 200 : 220; n->color.b = _was ? 200 : 120;
+    }
+    node_set_text(n, _new);
+    GumboAttribute* _id_a = gumbo_get_attribute(&n->styled->node->v.element.attributes, "id");
+    if (_id_a && _id_a->value) node_override_text(cb, _id_a->value, _new);
+    snprintf(cb->status_msg, sizeof(cb->status_msg), "✓ %s", _new);
+}
+
+static bool is_cb_radio_node(LayoutNode* n) {
+    if (!n->styled || !n->styled->node || n->styled->node->type != GUMBO_NODE_ELEMENT) return false;
+    if (n->styled->node->v.element.tag != GUMBO_TAG_INPUT) return false;
+    GumboAttribute* ta = gumbo_get_attribute(&n->styled->node->v.element.attributes, "type");
+    return ta && ta->value && (strcmp(ta->value, "checkbox") == 0 || strcmp(ta->value, "radio") == 0);
+}
+
+/* ─── Helper: sync textarea scroll for rendering ──── */
+static void sync_textarea_scroll(LayoutNode** focus_list, int focus_count, int focus_idx,
+                                  int* textarea_scroll_y, int* textarea_scroll_x) {
+    if (focus_idx >= 0 && focus_idx < focus_count) {
+        LayoutNode* f = focus_list[focus_idx];
+        if (f->styled && f->styled->node &&
+            f->styled->node->type == GUMBO_NODE_ELEMENT &&
+            f->styled->node->v.element.tag == GUMBO_TAG_TEXTAREA) {
+            f->content_scroll_y = textarea_scroll_y[focus_idx];
+            f->content_scroll_x = textarea_scroll_x[focus_idx];
+        }
+    }
+}
+
+/* ─── Helper: restyle on hover/focus/active change ── */
+static void do_restyle(KatanaStylesheet* css, StyledNode* st_root,
+                       LayoutNode** current_root, LayoutNode* original_root,
+                       int w, int h,
+                       LayoutNode** focus_list, int* focus_count,
+                       char input_buf[][4096], int input_buf_count,
+                       GumboNode* g_hover, GumboNode* g_focus,
+                       GumboNode* g_active, 
+                       GumboNode** p_hover, GumboNode** p_active,
+                       InteractCallbacks* cb)
+{
+    StyledNode* nodes[8]; int cnt = 0;
+    StyledNode* sn;
+    #define ADD_SN(n) do { if (n) { sn = find_styled_node(st_root, n); if (sn) { bool dup=false; for(int _i=0;_i<cnt;_i++) if(nodes[_i]==sn){dup=true;break;} if(!dup)nodes[cnt++]=sn; } } } while(0)
+    if (p_hover && *p_hover && *p_hover != g_hover && *p_hover != g_focus) ADD_SN(*p_hover);
+    ADD_SN(g_hover);
+    if (g_focus != g_hover) ADD_SN(g_focus);
+    if (p_active && *p_active && *p_active != g_hover && *p_active != g_focus && *p_active != g_active) ADD_SN(*p_active);
+    #undef ADD_SN
+    if (p_hover) *p_hover = NULL; if (p_active) *p_active = NULL;
+    for (int i = 0; i < cnt; i++) recompute_style_subtree(nodes[i], css, NULL);
+    LayoutNode* nr = build_layout_tree(st_root, w, h);
+    if (nr) { if (*current_root != original_root) free_layout_tree(*current_root); *current_root = nr; }
+    *focus_count = collect_focus_list(*current_root, focus_list, 256);
+    patch_input_text(focus_list, *focus_count, input_buf, input_buf_count);
+    if (cb) for (int i = 0; i < cb->text_override_count; i++) {
+        LayoutNode* ov = find_node_by_id(*current_root, cb->text_overrides[i].id);
+        node_set_text(ov, cb->text_overrides[i].text);
+    }
+}
+
+/* ─── Helper: render one frame ─────────────────────── */
+static void render_frame(Screen* s, LayoutNode* current_root, int scroll_x, int scroll_y,
+                          LayoutNode** focus_list, int focus_count, int focus_idx,
+                          char input_buf[][4096], int* input_cursor,
+                          int* textarea_scroll_y, int* textarea_scroll_x,
+                          InteractCallbacks* cb,
+                          int select_popup_active, int select_popup_focus_idx,
+                          int select_popup_count, char select_popup_vals[][64],
+                          int select_popup_types[32], int select_popup_sel,
+                          int select_popup_scroll)
+{
+    sync_textarea_scroll(focus_list, focus_count, focus_idx, textarea_scroll_y, textarea_scroll_x);
+    screen_clear(s);
+    s->scroll_x = scroll_x; s->scroll_y = scroll_y;
+    screen_render_tree(s, current_root);
+    if (focus_idx >= 0 && focus_idx < focus_count)
+        draw_focus_indicator(s, focus_list[focus_idx], scroll_x, scroll_y,
+                             input_buf, input_cursor, textarea_scroll_y, textarea_scroll_x, focus_idx);
+    if (cb && cb->show_scrollbars && current_root) {
+        screen_draw_hscrollbar(s, current_root->width, scroll_x);
+        screen_draw_vscrollbar(s, current_root->height, scroll_y);
+    }
+    draw_status_bar(s, cb, scroll_x, scroll_y, current_root);
+    /* Select popup overlay */
+    if (select_popup_active && select_popup_focus_idx >= 0 && select_popup_focus_idx < focus_count) {
+        LayoutNode* sn = focus_list[select_popup_focus_idx];
+        SelectPopupRect pr = calc_select_popup_rect(sn, scroll_x, scroll_y, s,
+                                                     select_popup_count, select_popup_vals, select_popup_sel);
+        int px=pr.x, py=pr.y, pw=pr.w, mv=pr.max_vis, bc=100;
+        for (int ci=px; ci<px+pw&&ci<s->cols; ci++) for (int ri=py; ri<py+mv+2&&ri<s->rows; ri++)
+            { screen_scr_set(s,ci,ri,' '); screen_scr_bg(s,ci,ri,20,20,40); }
+        if (py < s->rows) {
+            for (int ci=px; ci<px+pw&&ci<s->cols; ci++) { screen_scr_set(s,ci,py,0x2500); screen_scr_fg(s,ci,py,bc,bc,bc); screen_scr_bg(s,ci,py,20,20,40); }
+            if (px<s->cols) { screen_scr_set(s,px,py,0x250C); screen_scr_fg(s,px,py,bc,bc,bc); }
+            int r=px+pw-1; if (r<s->cols) { screen_scr_set(s,r,py,0x2510); screen_scr_fg(s,r,py,bc,bc,bc); }
+        }
+        int br=py+mv+1;
+        if (br < s->rows) {
+            for (int ci=px; ci<px+pw&&ci<s->cols; ci++) { screen_scr_set(s,ci,br,0x2500); screen_scr_fg(s,ci,br,bc,bc,bc); screen_scr_bg(s,ci,br,20,20,40); }
+            if (px<s->cols) { screen_scr_set(s,px,br,0x2514); screen_scr_fg(s,px,br,bc,bc,bc); }
+            int r=px+pw-1; if (r<s->cols) { screen_scr_set(s,r,br,0x2518); screen_scr_fg(s,r,br,bc,bc,bc); }
+        }
+        for (int ri=py+1; ri<py+mv+1&&ri<s->rows; ri++) {
+            if (px<s->cols) { screen_scr_set(s,px,ri,0x2502); screen_scr_fg(s,px,ri,bc,bc,bc); }
+            int r=px+pw-1; if (r<s->cols) { screen_scr_set(s,r,ri,0x2502); screen_scr_fg(s,r,ri,bc,bc,bc); }
+        }
+        for (int oi=0; oi<mv; oi++) {
+            int idx=select_popup_scroll+oi; if (idx>=select_popup_count) break;
+            int row=py+1+oi; if (row>=s->rows) break;
+            int bg_r=(idx==select_popup_sel)?80:(select_popup_types[idx]==1?30:20);
+            int bg_g=(idx==select_popup_sel)?80:(select_popup_types[idx]==1?40:20);
+            int bg_b=(idx==select_popup_sel)?140:(select_popup_types[idx]==1?60:40);
+            int col=px+1; const char* lb=select_popup_vals[idx];
+            screen_scr_bg(s,col,row,bg_r,bg_g,bg_b);
+            if (select_popup_types[idx]==1) { screen_scr_set(s,col,row,0x2503); screen_scr_fg(s,col,row,180,200,120); screen_scr_bold(s,col,row,true); }
+            else if (idx==select_popup_sel) { screen_scr_set(s,col,row,0x25B6); screen_scr_fg(s,col,row,200,200,255); }
+            else screen_scr_set(s,col,row,' ');
+            int ci=col+1; while (*lb&&ci<px+pw-1&&ci<s->cols) {
+                uint32_t cp=uc_dec(&lb); if (cp==0) break;
+                screen_scr_set(s,ci,row,cp); screen_scr_fg(s,ci,row,220,220,220); screen_scr_bg(s,ci,row,bg_r,bg_g,bg_b);
+                int w=uc_wid((int)cp); ci+=w; if (w==2&&ci<s->cols) screen_scr_set(s,ci,row,0);
+            }
+            while (ci<px+pw-1&&ci<s->cols) { screen_scr_set(s,ci,row,' '); screen_scr_bg(s,ci,row,bg_r,bg_g,bg_b); ci++; }
+        }
+        if (select_popup_scroll>0&&py+1<s->rows) { screen_scr_set(s,px+pw-2,py+1,0x25B2); screen_scr_fg(s,px+pw-2,py+1,100,180,255); }
+        if (select_popup_scroll+mv<select_popup_count&&py+mv<s->rows) { screen_scr_set(s,px+pw-2,py+mv,0x25BC); screen_scr_fg(s,px+pw-2,py+mv,100,180,255); }
+    }
+    screen_flush(s);
+}
+
 /* ─── Interactive loop ──────────────────────────────────────────── */
 void interact_run(LayoutNode* root, KatanaStylesheet* css,
                   StyledNode* styled_root,
@@ -565,137 +708,13 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
         if (cb) cb->layout_root = current_root;
 
         /* ── Render frame ── */
-        /* Sync textarea scroll offsets to layout node for render clipping */
-        if (focus_idx >= 0 && focus_idx < focus_count) {
-            LayoutNode* f = focus_list[focus_idx];
-            if (f->styled && f->styled->node &&
-                f->styled->node->type == GUMBO_NODE_ELEMENT &&
-                f->styled->node->v.element.tag == GUMBO_TAG_TEXTAREA) {
-                f->content_scroll_y = textarea_scroll_y[focus_idx];
-                f->content_scroll_x = textarea_scroll_x[focus_idx];
-            }
-        }
-        screen_clear(s);
-        s->scroll_x = scroll_x;
-        s->scroll_y = scroll_y;
-        screen_render_tree(s, current_root);
-
-        /* Focus indicator */
-        if (focus_idx >= 0 && focus_idx < focus_count) {
-            draw_focus_indicator(s, focus_list[focus_idx], scroll_x, scroll_y,
-                                 input_buf, input_cursor,
-                                 textarea_scroll_y, textarea_scroll_x,
-                                 focus_idx);
-        }
-
-        /* Draw global scrollbars: hscroll first so vscroll draws on top at corner */
-        if (cb && cb->show_scrollbars && current_root) {
-            screen_draw_hscrollbar(s, current_root->width, scroll_x);
-            screen_draw_vscrollbar(s, current_root->height, scroll_y);
-        }
-
-        /* Draw status bar at bottom */
-        draw_status_bar(s, cb, scroll_x, scroll_y, current_root);
-
-        /* ── Draw select popup overlay ── */
-        if (select_popup_active && select_popup_focus_idx >= 0 && select_popup_focus_idx < focus_count) {
-            LayoutNode* sel_node = focus_list[select_popup_focus_idx];
-            SelectPopupRect pr = calc_select_popup_rect(sel_node, scroll_x, scroll_y, s,
-                                                         select_popup_count, select_popup_vals, select_popup_sel);
-            int pop_x = pr.x, pop_y = pr.y, pop_w = pr.w, max_vis = pr.max_vis;
-            /* Draw border */
-            int border_color = 100;
-            for (int ci = pop_x; ci < pop_x + pop_w && ci < s->cols; ci++) {
-                for (int ri = pop_y; ri < pop_y + max_vis + 2 && ri < s->rows; ri++) {
-                    screen_scr_set(s, ci, ri, ' ');
-                    screen_scr_bg(s, ci, ri, 20, 20, 40);
-                }
-            }
-            /* Top border */
-            if (pop_y < s->rows) {
-                for (int ci = pop_x; ci < pop_x + pop_w && ci < s->cols; ci++) {
-                    screen_scr_set(s, ci, pop_y, 0x2500);
-                    screen_scr_fg(s, ci, pop_y, border_color, border_color, border_color);
-                    screen_scr_bg(s, ci, pop_y, 20, 20, 40);
-                }
-                if (pop_x < s->cols) { screen_scr_set(s, pop_x, pop_y, 0x250C); screen_scr_fg(s, pop_x, pop_y, border_color, border_color, border_color); }
-                int rgt = pop_x + pop_w - 1;
-                if (rgt < s->cols) { screen_scr_set(s, rgt, pop_y, 0x2510); screen_scr_fg(s, rgt, pop_y, border_color, border_color, border_color); }
-            }
-            /* Bottom border */
-            int bottom_row = pop_y + max_vis + 1;
-            if (bottom_row < s->rows) {
-                for (int ci = pop_x; ci < pop_x + pop_w && ci < s->cols; ci++) {
-                    screen_scr_set(s, ci, bottom_row, 0x2500);
-                    screen_scr_fg(s, ci, bottom_row, border_color, border_color, border_color);
-                    screen_scr_bg(s, ci, bottom_row, 20, 20, 40);
-                }
-                if (pop_x < s->cols) { screen_scr_set(s, pop_x, bottom_row, 0x2514); screen_scr_fg(s, pop_x, bottom_row, border_color, border_color, border_color); }
-                int rgt = pop_x + pop_w - 1;
-                if (rgt < s->cols) { screen_scr_set(s, rgt, bottom_row, 0x2518); screen_scr_fg(s, rgt, bottom_row, border_color, border_color, border_color); }
-            }
-            /* Left/right borders */
-            for (int ri = pop_y + 1; ri < pop_y + max_vis + 1 && ri < s->rows; ri++) {
-                if (pop_x < s->cols) { screen_scr_set(s, pop_x, ri, 0x2502); screen_scr_fg(s, pop_x, ri, border_color, border_color, border_color); }
-                int rgt = pop_x + pop_w - 1;
-                if (rgt < s->cols) { screen_scr_set(s, rgt, ri, 0x2502); screen_scr_fg(s, rgt, ri, border_color, border_color, border_color); }
-            }
-            /* Draw option items */
-            for (int oi = 0; oi < max_vis; oi++) {
-                int idx = select_popup_scroll + oi;
-                if (idx >= select_popup_count) break;
-                int row = pop_y + 1 + oi;
-                if (row >= s->rows) break;
-                bool is_sel = (idx == select_popup_sel);
-                bool is_header = (select_popup_types[idx] == 1);
-                int bg_r = is_sel ? 80 : (is_header ? 30 : 20);
-                int bg_g = is_sel ? 80 : (is_header ? 40 : 20);
-                int bg_b = is_sel ? 140 : (is_header ? 60 : 40);
-                int col = pop_x + 1;
-                const char* label = select_popup_vals[idx];
-                screen_scr_bg(s, col, row, bg_r, bg_g, bg_b);
-                if (is_header) {
-                    /* Group header: bold-ish look, no pointer */
-                    screen_scr_set(s, col, row, 0x2503);
-                    screen_scr_fg(s, col, row, 180, 200, 120);
-                    screen_scr_bold(s, col, row, true);
-                } else if (is_sel) {
-                    screen_scr_set(s, col, row, 0x25B6);
-                    screen_scr_fg(s, col, row, 200, 200, 255);
-                } else {
-                    screen_scr_set(s, col, row, ' ');
-                }
-                int ci = col + 1;
-                const char* lp = label;
-                while (*lp && ci < pop_x + pop_w - 1 && ci < s->cols) {
-                    uint32_t cp = uc_dec(&lp);
-                    if (cp == 0) break;
-                    screen_scr_set(s, ci, row, cp);
-                    screen_scr_fg(s, ci, row, is_header ? 180 : 220, is_header ? 200 : 220, is_header ? 120 : 220);
-                    screen_scr_bg(s, ci, row, bg_r, bg_g, bg_b);
-                    if (is_header) screen_scr_bold(s, ci, row, true);
-                    int w = uc_wid((int)cp);
-                    ci += w;
-                    if (w == 2 && ci < s->cols) screen_scr_set(s, ci, row, 0);
-                }
-                while (ci < pop_x + pop_w - 1 && ci < s->cols) {
-                    screen_scr_set(s, ci, row, ' ');
-                    screen_scr_bg(s, ci, row, bg_r, bg_g, bg_b);
-                    ci++;
-                }
-            }
-            /* Scroll indicators if list is clipped */
-            if (select_popup_scroll > 0 && pop_y + 1 < s->rows) {
-                screen_scr_set(s, pop_x + pop_w - 2, pop_y + 1, 0x25B2);
-                screen_scr_fg(s, pop_x + pop_w - 2, pop_y + 1, 100, 180, 255);
-            }
-            if (select_popup_scroll + max_vis < select_popup_count && pop_y + max_vis < s->rows) {
-                screen_scr_set(s, pop_x + pop_w - 2, pop_y + max_vis, 0x25BC);
-                screen_scr_fg(s, pop_x + pop_w - 2, pop_y + max_vis, 100, 180, 255);
-            }
-        }
-
-        screen_flush(s);
+        render_frame(s, current_root, scroll_x, scroll_y,
+                     focus_list, focus_count, focus_idx,
+                     input_buf, input_cursor,
+                     textarea_scroll_y, textarea_scroll_x,
+                     cb, select_popup_active, select_popup_focus_idx,
+                     select_popup_count, select_popup_vals,
+                     select_popup_types, select_popup_sel, select_popup_scroll);
 
         /* Poll input */
         if (tb_poll_event(&ev) != TB_OK) {
@@ -1578,67 +1597,11 @@ skip_mouse_processing:
 
         /* If hover/focus/active changed, rebuild styles and layout */
         if (restyle && saved_css && saved_st) {
-            /* Collect all nodes needing restyle, deduplicate by pointer */
-            StyledNode* restyle_nodes[8];
-            int restyle_count = 0;
-            StyledNode* sn;
-
-            /* previous hover node (remove old :hover styles) */
-            if (prev_hover && prev_hover != g_interact_hover && prev_hover != g_interact_focus) {
-                sn = find_styled_node(saved_st, prev_hover);
-                if (sn) restyle_nodes[restyle_count++] = sn;
-            }
-            /* new hover node */
-            if (g_interact_hover) {
-                sn = find_styled_node(saved_st, g_interact_hover);
-                if (sn) {
-                    bool dup = false;
-                    for (int i = 0; i < restyle_count; i++) if (restyle_nodes[i] == sn) { dup = true; break; }
-                    if (!dup) restyle_nodes[restyle_count++] = sn;
-                }
-            }
-            /* focus node (if different from hover) */
-            if (g_interact_focus && g_interact_focus != g_interact_hover) {
-                sn = find_styled_node(saved_st, g_interact_focus);
-                if (sn) {
-                    bool dup = false;
-                    for (int i = 0; i < restyle_count; i++) if (restyle_nodes[i] == sn) { dup = true; break; }
-                    if (!dup) restyle_nodes[restyle_count++] = sn;
-                }
-            }
-            /* previous active node (remove old :active styles) */
-            if (prev_active && prev_active != g_interact_hover && prev_active != g_interact_focus && prev_active != g_interact_active) {
-                sn = find_styled_node(saved_st, prev_active);
-                if (sn) {
-                    bool dup = false;
-                    for (int i = 0; i < restyle_count; i++) if (restyle_nodes[i] == sn) { dup = true; break; }
-                    if (!dup) restyle_nodes[restyle_count++] = sn;
-                }
-            }
-            prev_hover = NULL;
-            prev_active = NULL;
-
-            /* Recompute each unique node once */
-            for (int i = 0; i < restyle_count; i++) {
-                recompute_style_subtree(restyle_nodes[i], saved_css, NULL);
-            }
-            LayoutNode* new_root = build_layout_tree(saved_st, vw_cache, vh_cache);
-            if (new_root) {
-                /* Free old root */
-                if (current_root != root) free_layout_tree(current_root);
-                current_root = new_root;
-            }
-            /* Re-collect focus list */
-            focus_count = collect_focus_list(current_root, focus_list, 256);
-            /* Re-patch INPUT text_content from input_buf */
-            patch_input_text(focus_list, focus_count, input_buf, input_buf_count);
-            /* Re-apply user text overrides (survive layout rebuilds) */
-            if (cb) {
-                for (int i = 0; i < cb->text_override_count; i++) {
-                    LayoutNode* ov = find_node_by_id(current_root, cb->text_overrides[i].id);
-                    node_set_text(ov, cb->text_overrides[i].text);
-                }
-            }
+            do_restyle(saved_css, saved_st, &current_root, root,
+                       vw_cache, vh_cache,
+                       focus_list, &focus_count, input_buf, input_buf_count,
+                       g_interact_hover, g_interact_focus, g_interact_active,
+                       &prev_hover, &prev_active, cb);
         }
 
         /* Clamp scroll */

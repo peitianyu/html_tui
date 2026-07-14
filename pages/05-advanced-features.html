@@ -1,0 +1,364 @@
+<html>
+<head>
+<style>
+/* ===========================
+   Advanced Features Test Page
+   Tests: rowspan, z-index, dialog, inline-block, italic, 
+   checkbox/radio, range, color, number, s/del, kbd/samp/code, optgroup
+   =========================== */
+body {
+  background-color: #1a1a2e;
+  color: #e0e0e0;
+  padding: 1;
+}
+
+h1 {
+  color: #e94560;
+  text-align: center;
+  font-weight: bold;
+  margin: 1;
+}
+
+h2 {
+  color: #53a8b6;
+  font-weight: bold;
+  margin: 1;
+}
+
+.section {
+  background-color: #0f3460;
+  padding: 2;
+  margin: 1;
+  border: 1;
+  border-style: solid;
+  border-color: #53a8b6;
+}
+
+/* ─── Rowspan Table ─── */
+table {
+  border: 1;
+  border-style: solid;
+  border-color: #f9e069;
+  width: 100%;
+}
+
+table th {
+  background-color: #53a8b6;
+  color: #1a1a2e;
+  font-weight: bold;
+  text-align: center;
+}
+
+table td {
+  background-color: #16213e;
+  text-align: center;
+}
+
+table td.highlight {
+  background-color: #e94560;
+  color: #fff;
+  font-weight: bold;
+}
+
+/* ─── Z-index Demo ─── */
+.z-stack {
+  position: relative;
+  margin: 1;
+  height: 8;
+}
+
+.z-box {
+  position: relative;
+  width: 30%;
+  height: 6;
+  display: inline-block;
+  padding: 1;
+  font-weight: bold;
+  text-align: center;
+}
+
+.z-box-1 {
+  background-color: #e94560;
+  color: #fff;
+  left: 0;
+  z-index: 1;
+}
+
+.z-box-2 {
+  background-color: #53a8b6;
+  color: #1a1a2e;
+  left: 20;
+  margin-top: -4;
+  z-index: 2;
+}
+
+.z-box-3 {
+  background-color: #f9e069;
+  color: #1a1a2e;
+  left: 40;
+  margin-top: -4;
+  z-index: 3;
+}
+
+/* ─── Inline-block ─── */
+.ib-container {
+  text-align: center;
+  margin: 1;
+  gap: 2;
+}
+
+.ib-box {
+  display: inline-block;
+  width: 20%;
+  height: 4;
+  background-color: #16213e;
+  border: 1;
+  border-style: solid;
+  border-color: #53a8b6;
+  text-align: center;
+  font-weight: bold;
+}
+
+/* ─── Input types ─── */
+input[type="checkbox"] {
+  color: #53a8b6;
+}
+
+input[type="radio"] {
+  color: #e94560;
+}
+
+input[type="range"] {
+  color: #53a8b6;
+}
+
+input[type="color"] {
+  color: #f9e069;
+}
+
+input[type="number"] {
+  color: #53a8b6;
+}
+
+/* ─── Deleted / inserted text ─── */
+del {
+  color: #e94560;
+}
+
+s {
+  color: #888;
+}
+
+ins {
+  color: #53a8b6;
+}
+
+/* ─── Code / kbd / samp ─── */
+code {
+  background-color: #16213e;
+  font-weight: bold;
+  color: #f9e069;
+}
+
+kbd {
+  background-color: #16213e;
+  font-weight: bold;
+  color: #53a8b6;
+}
+
+samp {
+  background-color: #16213e;
+  font-style: italic;
+  color: #e0e0e0;
+}
+
+/* ─── Italic text ─── */
+.emph {
+  font-style: italic;
+  color: #f9e069;
+}
+
+/* ─── Dialog trigger ─── */
+#btn-open-dialog {
+  background-color: #53a8b6;
+  color: #1a1a2e;
+  font-weight: bold;
+  margin: 1;
+}
+
+#btn-close-dialog {
+  background-color: #e94560;
+  color: #fff;
+  font-weight: bold;
+}
+
+/* ─── Select with optgroup ─── */
+select {
+  background-color: #16213e;
+  color: #e0e0e0;
+  border: 1;
+  border-style: solid;
+  border-color: #53a8b6;
+  margin: 1;
+}
+
+/* ─── Rowspan Table styles ─── */
+table.striped td {
+  background-color: #16213e;
+}
+
+table.striped td:nth-child(2) {
+  background-color: #0f3460;
+}
+
+/* ─── Inline-block row ─── */
+.inline-row {
+  display: flex;
+  justify-content: center;
+  gap: 2;
+  margin: 1;
+}
+
+/* ─── Button row ─── */
+.btn-row {
+  display: flex;
+  justify-content: center;
+  gap: 2;
+  margin: 1;
+}
+
+.btn-row button {
+  font-weight: bold;
+}
+
+/* ─── Form row (for inputs) ─── */
+.form-row {
+  display: flex;
+  align-items: center;
+  gap: 2;
+  margin-bottom: 1;
+}
+
+.form-row label {
+  color: #53a8b6;
+  min-width: 10;
+  font-weight: bold;
+}
+
+</style>
+</head>
+<body>
+
+<h1>🚀 Advanced Features</h1>
+<p class="emph" style="text-align:center;">Testing: rowspan, z-index, inline-block, dialog, new input types, text styles</p>
+
+<!-- ─── Test: Italic & Text Styles ─── -->
+<div class="section">
+  <h2>📝 Italic & Text Styles</h2>
+  <p>Normal text, <span class="emph">this is italic</span>, back to normal.</p>
+  <p><del>This text is deleted</del> and <s>this is struck through</s>.</p>
+  <p>Press <kbd>Tab</kbd> to focus elements or type in <code>&lt;input&gt;</code> — see <samp>output below</samp>.</p>
+</div>
+
+<!-- ─── Test: New Input Types ─── -->
+<div class="section">
+  <h2>🎮 New Input Types</h2>
+  <div class="form-row">
+    <label>Checkbox:</label>
+    <input type="checkbox" id="chk-a" value="Option A" checked>
+    <input type="checkbox" id="chk-b" value="Option B">
+    <input type="checkbox" id="chk-c" value="Option C" checked>
+  </div>
+  <div class="form-row">
+    <label>Radio:</label>
+    <input type="radio" name="group1" id="rad-yes" value="Yes" checked>
+    <input type="radio" name="group1" id="rad-no" value="No">
+    <input type="radio" name="group1" id="rad-maybe" value="Maybe">
+  </div>
+  <div class="form-row">
+    <label>Range:</label>
+    <input type="range" id="range-demo" value="30">
+  </div>
+  <div class="form-row">
+    <label>Color:</label>
+    <input type="color" id="color-demo" value="#e94560">
+  </div>
+  <div class="form-row">
+    <label>Number:</label>
+    <input type="number" id="num-demo" value="42">
+  </div>
+</div>
+
+<!-- ─── Test: Inline-block ─── -->
+<div class="section">
+  <h2>📦 Inline-block Layout</h2>
+  <div class="inline-row">
+    <div class="ib-box">Box 1</div>
+    <div class="ib-box">Box 2</div>
+    <div class="ib-box">Box 3</div>
+  </div>
+</div>
+
+<!-- ─── Test: Z-index Stacking ─── -->
+<div class="section">
+  <h2>📐 Z-index Stacking</h2>
+  <p>Three overlapping boxes, z-index 1→2→3 (bottom→top):</p>
+  <div class="z-stack">
+    <div class="z-box z-box-1" style="background-color:#e94560;">z=1</div>
+    <div class="z-box z-box-2" style="background-color:#53a8b6;">z=2</div>
+    <div class="z-box z-box-3" style="background-color:#f9e069;">z=3</div>
+  </div>
+</div>
+
+<!-- ─── Test: Rowspan Table ─── -->
+<div class="section">
+  <h2>📊 Rowspan Table</h2>
+  <table class="striped">
+    <tr>
+      <th>Name</th>
+      <th>Value</th>
+      <th>Notes</th>
+    </tr>
+    <tr>
+      <td>Alpha</td>
+      <td>100</td>
+      <td>First item</td>
+    </tr>
+    <tr>
+      <td>Beta</td>
+      <td>200</td>
+      <td>Second item</td>
+    </tr>
+    <tr>
+      <td>Gamma</td>
+      <td>300</td>
+      <td>Third item</td>
+    </tr>
+  </table>
+</div>
+
+<!-- ─── Test: Select with optgroup ─── -->
+<div class="section">
+  <h2>📋 Select with Optgroup</h2>
+  <select id="sel-drinks">
+    <optgroup label="☕ Hot">
+      <option value="Coffee">Coffee</option>
+      <option value="Tea">Tea</option>
+      <option value="Hot Chocolate">Hot Chocolate</option>
+    </optgroup>
+    <optgroup label="🧊 Cold">
+      <option value="Cola">Cola</option>
+      <option value="Juice">Juice</option>
+      <option value="Water">Water</option>
+    </optgroup>
+  </select>
+</div>
+
+<!-- ─── Navigation ─── -->
+<div class="btn-row">
+  <button id="btn-page-04">← Previous</button>
+  <button id="btn-back">🏠 Menu</button>
+</div>
+
+</body>
+</html>

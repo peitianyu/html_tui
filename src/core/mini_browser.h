@@ -276,7 +276,7 @@ static bool mb_default_on_click(const char* btn_text, int focus_idx,
             const char* known[] = {
                 "01-complex-form.html", "02-flex-layout.html",
                 "03-selectors-elements.html", "04-new-features.html",
-                "05-counter.html",
+                "05-advanced-features.html",
             };
             if (page_num >= 1 && page_num <= 5) {
                 snprintf(cb->switch_page, sizeof(cb->switch_page),
@@ -321,9 +321,8 @@ static bool mb_default_on_key(struct tb_event* ev, InteractCallbacks* cb) {
             return true;
     }
 
-    /* 默认: q / Esc = 退出 */
-    if (ev->ch == 'q' || ev->ch == 'Q' || ev->key == TB_KEY_ESC ||
-        ev->key == TB_KEY_CTRL_C || ev->key == TB_KEY_CTRL_D) {
+    /* 默认: Esc = 退出 */
+    if (ev->key == TB_KEY_ESC) {
         cb->quit_flag = true;
         return true;
     }

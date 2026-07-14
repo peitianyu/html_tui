@@ -112,7 +112,7 @@ static bool demo_on_click(const char* btn_id, const char* btn_text,
 int main(int argc, char** argv) {
     const char* filepath = argc > 1 ? argv[1] : "pages/00-menu.html";
 
-    MB_Config config;
+    MB_Config config = MB_CONFIG_DEFAULT;
     config.on_button_click = demo_on_click;
     config.show_scrollbars = true;
 

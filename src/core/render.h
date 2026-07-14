@@ -159,6 +159,118 @@ static void draw_border(Screen* s, int x, int y, int w, int h, ResolvedColor col
     }
 }
 
+/* ─── Render preserved whitespace text (<pre>/<textarea>) ──── */
+static void render_preserved_ws(Screen* s, LayoutNode* n, const char* p,
+                                 int lnx, int* cy, int lh, int cx) {
+    int scr_x = n->x - n->border_left - n->padding_left - s->scroll_x;
+    int scr_y = n->y - n->border_top - n->padding_top - s->scroll_y;
+    int scroll_h = 0;
+    bool is_textarea = false;
+    if (n->styled && n->styled->node && n->styled->node->type == GUMBO_NODE_ELEMENT &&
+        n->styled->node->v.element.tag == GUMBO_TAG_TEXTAREA) {
+        scroll_h = n->height;
+        is_textarea = true;
+    }
+    int scroll_skip = n->content_scroll_y;
+    int scroll_left = n->content_scroll_x;
+
+    while (*p && *cy < s->rows) {
+        if (*p == '\n') {
+            if (is_textarea) {
+                if (scroll_skip > 0) { scroll_skip--; p++; cx = lnx; continue; }
+                if ((*cy - (scr_y + n->border_top + n->padding_top)) / lh >= scroll_h) break;
+            }
+            *cy += lh; cx = lnx; p++; continue;
+        }
+        if (*p == '\t') { cx = ((cx - lnx) / 4 + 1) * 4 + lnx; p++; continue; }
+        uint32_t cp = uc_dec(&p);
+        if (cp == 0 || cp == 0xFFFD) continue;
+        int w = uc_wid((int)cp);
+        if (is_textarea && scroll_skip > 0) { cx += w + n->letter_spacing; continue; }
+        int render_cx = cx - scroll_left;
+        if (is_textarea && render_cx >= n->width) { cx += w + n->letter_spacing; continue; }
+        if (is_textarea && render_cx + w <= 0) { cx += w + n->letter_spacing; continue; }
+        if (render_cx >= 0 && render_cx < s->cols) {
+            scr_set(s, render_cx, *cy, cp);
+            scr_fg(s, render_cx, *cy, n->color.r, n->color.g, n->color.b);
+            if (n->font_bold) scr_bold(s, render_cx, *cy, true);
+            if (n->font_underline == 1) scr_uline(s, render_cx, *cy, true);
+            else if (n->font_underline == 2 && render_cx < s->cols) { scr_set(s, render_cx, *cy, 0x00AF); scr_fg(s, render_cx, *cy, n->color.r, n->color.g, n->color.b); }
+            else if (n->font_underline == 3 && render_cx < s->cols) { scr_set(s, render_cx, *cy, 0x002D); scr_fg(s, render_cx, *cy, n->color.r, n->color.g, n->color.b); }
+            if (w == 2 && render_cx + 1 < s->cols) scr_set(s, render_cx + 1, *cy, 0);
+        }
+        cx += w + n->letter_spacing;
+    }
+    /* Draw textarea scrollbar */
+    if (is_textarea) {
+        int total = 1;
+        const char* sp = n->text_content;
+        while (sp && *sp) { if (*sp == '\n') total++; sp++; }
+        int sb_right = lnx + n->width;
+        if (total > scroll_h && sb_right >= 0 && sb_right < s->cols) {
+            int track_h = scroll_h;
+            int thumb_h = track_h * track_h / total;
+            if (thumb_h < 1) thumb_h = 1;
+            if (thumb_h > track_h) thumb_h = track_h;
+            int scroll_range = total - scroll_h;
+            int thumb_pos = scroll_range > 0 ? (n->content_scroll_y * (track_h - thumb_h)) / scroll_range : 0;
+            if (thumb_pos < 0) thumb_pos = 0; if (thumb_pos > track_h - thumb_h) thumb_pos = track_h - thumb_h;
+            int sb_top = scr_y + n->border_top + n->padding_top;
+            for (int ri = 0; ri < track_h && sb_top + ri < s->rows; ri++) {
+                if (sb_top + ri >= 0) {
+                    if (ri >= thumb_pos && ri < thumb_pos + thumb_h) {
+                        scr_set(s, sb_right, sb_top + ri, 0x2592);
+                        scr_fg(s, sb_right, sb_top + ri, 120,180,255);
+                    } else {
+                        scr_set(s, sb_right, sb_top + ri, 0x2502);
+                        scr_fg(s, sb_right, sb_top + ri, 60,90,130);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/* ─── Render word-wrapped text (normal mode) ───────────────── */
+static void render_word_wrapped(Screen* s, LayoutNode* n, const char* p,
+                                 int lnx, int* cy, int lh, int cx) {
+    int mw = n->width; if (mw < 1) mw = 1;
+    if (n->text_align == 1 || n->text_align == 2) {
+        int line_w = 0;
+        const char* q = p;
+        while (*q && *q != '\n') { uint32_t cp = uc_dec(&q); if (cp == 0) break; if (cp != ' ' && cp != '\t') line_w += uc_wid((int)cp); }
+        if (n->text_align == 1 && line_w < mw) cx = lnx + (mw - line_w) / 2;
+        else if (n->text_align == 2 && line_w < mw) cx = lnx + mw - line_w;
+    }
+    while (*p && *cy < s->rows) {
+        while (*p == ' ' || *p == '\t') { cx++; p++; }
+        if (!*p) break;
+        if (*p == '\n') { *cy += lh; cx = lnx; p++; continue; }
+        const char* we = p; int word_w = 0;
+        while (*we && *we != ' ' && *we != '\t' && *we != '\n') { uint32_t cp = uc_dec(&we); if (cp == 0) break; word_w += uc_wid((int)cp); }
+        if (cx - lnx + word_w > mw && cx > lnx) { if (n->truncate_overflow) break; *cy += lh; cx = lnx; }
+        if (*cy >= s->rows) break;
+        while (p < we && *cy < s->rows) {
+            uint32_t cp = uc_dec(&p); if (cp == 0 || cp == 0xFFFD) continue;
+            int w = uc_wid((int)cp);
+            if (n->truncate_overflow && cx - lnx + w > mw) {
+                if (cx - lnx < mw && cx >= 0 && cx < s->cols) { scr_set(s, cx, *cy, 0x2026); scr_fg(s, cx, *cy, n->color.r, n->color.g, n->color.b); }
+                p = we; break;
+            }
+            if (cx >= 0 && cx < s->cols) {
+                scr_set(s, cx, *cy, cp); scr_fg(s, cx, *cy, n->color.r, n->color.g, n->color.b);
+                if (n->font_bold) scr_bold(s, cx, *cy, true);
+                if (n->font_underline) scr_uline(s, cx, *cy, true);
+                if (w == 2 && cx + 1 < s->cols) scr_set(s, cx + 1, *cy, 0);
+            }
+            cx += w + n->letter_spacing;
+            if (cx - lnx >= mw && p < we) { if (n->truncate_overflow) { p = we; break; } *cy += lh; cx = lnx; }
+        }
+        if (*p == ' ') { cx += 1 + n->word_spacing; p++; }
+        while (*p == '\n') { *cy += lh; cx = lnx; p++; }
+    }
+}
+
 void screen_render_node(Screen* s, LayoutNode* n) {
     if (!n || !s || n->display == DISPLAY_NONE) return;
     int sx = s->scroll_x, sy = s->scroll_y;
@@ -237,177 +349,9 @@ void screen_render_node(Screen* s, LayoutNode* n) {
         }
 
         if (n->preserve_ws) {
-            /* <pre> / <textarea> mode: preserve whitespace, no word-wrap, with scroll */
-            /* Determine visible height for scroll clipping */
-            int scroll_h = 0;
-            bool is_textarea_for_scroll = false;
-            if (n->styled && n->styled->node && n->styled->node->type == GUMBO_NODE_ELEMENT &&
-                n->styled->node->v.element.tag == GUMBO_TAG_TEXTAREA) {
-                scroll_h = n->height; /* content area height */
-                is_textarea_for_scroll = true;
-            }
-            int scroll_skip = n->content_scroll_y;
-            int scroll_left = n->content_scroll_x; /* chars to skip on the left */
-
-            while (*p && cy < s->rows) {
-                if (*p == '\n') {
-                    if (is_textarea_for_scroll) {
-                        if (scroll_skip > 0) {
-                            scroll_skip--;
-                            p++;
-                            cx = lnx;
-                            continue;
-                        }
-                        /* Check if we've filled the visible area */
-                        if ((cy - (scr_y + n->border_top + n->padding_top)) / lh >= scroll_h)
-                            break;
-                    }
-                    cy += lh; cx = lnx; p++; continue;
-                }
-                if (*p == '\t') { cx = ((cx - lnx) / 4 + 1) * 4 + lnx; p++; continue; }
-                uint32_t cp = uc_dec(&p);
-                if (cp == 0 || cp == 0xFFFD) continue;
-                int w = uc_wid((int)cp);
-                /* Skip characters on scrolled-off-the-top lines */
-                if (is_textarea_for_scroll && scroll_skip > 0) {
-                    cx += w + n->letter_spacing;
-                    continue;
-                }
-                int render_cx = cx - scroll_left;
-                /* Horizontal scroll: skip chars past visible width to the right */
-                if (is_textarea_for_scroll && render_cx >= n->width) {
-                    cx += w + n->letter_spacing;
-                    continue;
-                }
-                /* Horizontal scroll: skip chars that are scrolled off to the left */
-                if (is_textarea_for_scroll && render_cx + w <= 0) {
-                    cx += w + n->letter_spacing;
-                    continue;
-                }
-                if (render_cx >= 0 && render_cx < s->cols) {
-                    scr_set(s, render_cx, cy, cp);
-                    scr_fg(s, render_cx, cy, n->color.r, n->color.g, n->color.b);
-                    if (n->font_bold) scr_bold(s, render_cx, cy, true);
-                    if (n->font_underline == 1) scr_uline(s, render_cx, cy, true);
-                    else if (n->font_underline == 2 && render_cx >= 0 && render_cx < s->cols) {
-                        /* overline: macron above */
-                        scr_set(s, render_cx, cy, 0x00AF);
-                        scr_fg(s, render_cx, cy, n->color.r, n->color.g, n->color.b);
-                    }
-                    else if (n->font_underline == 3 && render_cx >= 0 && render_cx < s->cols) {
-                        /* line-through: strike with - */
-                        scr_set(s, render_cx, cy, 0x002D);
-                        scr_fg(s, render_cx, cy, n->color.r, n->color.g, n->color.b);
-                    }
-                    if (w == 2 && render_cx + 1 < s->cols) scr_set(s, render_cx + 1, cy, 0);
-                }
-                cx += w + n->letter_spacing;
-            }
-            /* ── Draw textarea scrollbar if content overflows visible area ── */
-            if (is_textarea_for_scroll) {
-                int _total = 1;
-                const char* _cp = n->text_content;
-                while (_cp && *_cp) { if (*_cp == '\n') _total++; _cp++; }
-                int _sb_right = scr_x + n->border_left + n->padding_left + n->width;
-                if (_total > scroll_h && _sb_right >= 0 && _sb_right < s->cols) {
-                    int _track_h = scroll_h;
-                    int _thumb_h = _track_h * _track_h / _total;
-                    if (_thumb_h < 1) _thumb_h = 1;
-                    if (_thumb_h > _track_h) _thumb_h = _track_h;
-                    int _scroll_range = _total - scroll_h;
-                    int _thumb_pos = _scroll_range > 0 ? (n->content_scroll_y * (_track_h - _thumb_h)) / _scroll_range : 0;
-                    if (_thumb_pos < 0) _thumb_pos = 0;
-                    if (_thumb_pos > _track_h - _thumb_h) _thumb_pos = _track_h - _thumb_h;
-                    int _sb_top = scr_y + n->border_top + n->padding_top;
-                    for (int _ri = 0; _ri < _track_h && _sb_top + _ri < s->rows; _ri++) {
-                        if (_sb_top + _ri >= 0) {
-                            if (_ri >= _thumb_pos && _ri < _thumb_pos + _thumb_h) {
-                                scr_set(s, _sb_right, _sb_top + _ri, 0x2592); /* ▒ thumb */
-                                scr_fg(s, _sb_right, _sb_top + _ri, 120,180,255);
-                                scr_bg(s, _sb_right, _sb_top + _ri, n->bg_color.valid ? n->bg_color.r : 0,
-                                       n->bg_color.valid ? n->bg_color.g : 0,
-                                       n->bg_color.valid ? n->bg_color.b : 0);
-                            } else {
-                                scr_set(s, _sb_right, _sb_top + _ri, 0x2502); /* │ track */
-                                scr_fg(s, _sb_right, _sb_top + _ri, 60,90,130);
-                            }
-                        }
-                    }
-                }
-            }
+            render_preserved_ws(s, n, p, lnx, &cy, lh, cx);
         } else {
-            /* Normal word-wrap mode */
-
-            /* Alignment: measure first line width for center/right */
-            if (n->text_align == 1 || n->text_align == 2) {
-                int line_w = 0;
-                const char* q = p;
-                while (*q && *q != '\n') {
-                    uint32_t cp = uc_dec(&q);
-                    if (cp == 0) break;
-                    if (cp != ' ' && cp != '\t') line_w += uc_wid((int)cp);
-                }
-                if (n->text_align == 1 && line_w < mw) cx = lnx + (mw - line_w) / 2;
-                else if (n->text_align == 2 && line_w < mw) cx = lnx + mw - line_w;
-            }
-
-            while (*p && cy < s->rows) {
-                /* Skip leading spaces/tabs */
-                while (*p == ' ' || *p == '\t') { cx++; p++; }
-                if (!*p) break;
-                if (*p == '\n') { cy += lh; cx = lnx; p++; continue; }
-
-                /* Measure word display width */
-                const char* we = p;
-                int word_w = 0;
-                while (*we && *we != ' ' && *we != '\t' && *we != '\n') {
-                    uint32_t cp = uc_dec(&we);
-                    if (cp == 0) break;
-                    word_w += uc_wid((int)cp);
-                }
-
-                /* Word-wrap if needed */
-                if (cx - lnx + word_w > mw && cx > lnx) {
-                    if (n->truncate_overflow) break;  /* truncate, don't wrap */
-                    cy += lh; cx = lnx;
-                }
-                if (cy >= s->rows) break;
-
-                /* Render word characters */
-                while (p < we && cy < s->rows) {
-                    uint32_t cp = uc_dec(&p);
-                    if (cp == 0 || cp == 0xFFFD) continue;
-                    int w = uc_wid((int)cp);
-                    /* Truncate if beyond content width */
-                    if (n->truncate_overflow && cx - lnx + w > mw) {
-                        /* Draw ellipsis '…' at the last visible position */
-                        if (cx - lnx < mw && cx >= 0 && cx < s->cols) {
-                            scr_set(s, cx, cy, 0x2026); /* … */
-                            scr_fg(s, cx, cy, n->color.r, n->color.g, n->color.b);
-                        }
-                        /* Skip remaining characters */
-                        p = we;
-                        break;
-                    }
-                    if (cx >= 0 && cx < s->cols) {
-                        scr_set(s, cx, cy, cp);
-                        scr_fg(s, cx, cy, n->color.r, n->color.g, n->color.b);
-                        if (n->font_bold) scr_bold(s, cx, cy, true);
-                        if (n->font_underline) scr_uline(s, cx, cy, true);
-                        if (w == 2 && cx + 1 < s->cols) scr_set(s, cx + 1, cy, 0);
-                    }
-                    cx += w + n->letter_spacing;
-                    if (cx - lnx >= mw && p < we) {
-                        if (n->truncate_overflow) { p = we; break; }
-                        cy += lh; cx = lnx;
-                    }
-                }
-
-                /* Skip trailing space */
-                if (*p == ' ') { cx += 1 + n->word_spacing; p++; }
-                /* Handle newlines */
-                while (*p == '\n') { cy += lh; cx = lnx; p++; }
-            }
+            render_word_wrapped(s, n, p, lnx, &cy, lh, cx);
         }
     }
 }
@@ -599,31 +543,57 @@ void screen_render_tree(Screen* s, LayoutNode* root) {
 
 void screen_flush(Screen* s) {
     if (!s) return;
-    printf("\033[H");
+
+    /* Batch all output into a single writev-friendly buffer */
+    /* Max size: "\033[H" + rows * (cols * (max_ansi_seq + utf8_char + skip)) */
+#define FLUSH_BUF_SIZE 65536
+    static char flush_buf[FLUSH_BUF_SIZE];
+    int pos = 0;
+
+#define FLUSH_PUTC(c) do { if (pos >= FLUSH_BUF_SIZE - 1) { fwrite(flush_buf, 1, pos, stdout); pos = 0; } flush_buf[pos++] = (c); } while(0)
+#define FLUSH_PUTS(s) do { const char* _s = (s); while (*_s) FLUSH_PUTC(*_s++); } while(0)
+#define FLUSH_PRINTF(...) do { \
+    int _r = snprintf(flush_buf + pos, FLUSH_BUF_SIZE - pos, __VA_ARGS__); \
+    if (_r > 0) { pos += _r; if (pos >= FLUSH_BUF_SIZE - 256) { fwrite(flush_buf, 1, pos, stdout); pos = 0; } } \
+} while(0)
+
+    /* Move cursor to home */
+    FLUSH_PUTS("\033[H");
+
     int pfr=-1,pfg=-1,pfb=-1,pbr=-1,pbg=-1,pbb=-1; bool pb=false,pu=false;
     for (int r=0; r<s->rows; r++) {
         for (int c=0; c<s->cols; c++) {
             Cell* cl = &s->cells[r*s->cols + c];
             if (cl->ch == 0) {
-                /* Empty/wide-continuation cell — leave ANSI state as-is, just output space */
-                putchar(' ');
+                FLUSH_PUTC(' ');
                 continue;
             }
-            if (cl->fg_r!=pfr||cl->fg_g!=pfg||cl->fg_b!=pfb) { printf("\033[38;2;%d;%d;%dm",cl->fg_r,cl->fg_g,cl->fg_b); pfr=cl->fg_r;pfg=cl->fg_g;pfb=cl->fg_b; }
-            if (cl->bg_r!=pbr||cl->bg_g!=pbg||cl->bg_b!=pbb) { printf("\033[48;2;%d;%d;%dm",cl->bg_r,cl->bg_g,cl->bg_b); pbr=cl->bg_r;pbg=cl->bg_g;pbb=cl->bg_b; }
-            if (cl->bold!=pb) { printf(cl->bold?"\033[1m":"\033[22m"); pb=cl->bold; }
-            if (cl->underline!=pu) { printf(cl->underline?"\033[4m":"\033[24m"); pu=cl->underline; }
+            if (cl->fg_r!=pfr||cl->fg_g!=pfg||cl->fg_b!=pfb) {
+                FLUSH_PRINTF("\033[38;2;%d;%d;%dm",cl->fg_r,cl->fg_g,cl->fg_b);
+                pfr=cl->fg_r;pfg=cl->fg_g;pfb=cl->fg_b;
+            }
+            if (cl->bg_r!=pbr||cl->bg_g!=pbg||cl->bg_b!=pbb) {
+                FLUSH_PRINTF("\033[48;2;%d;%d;%dm",cl->bg_r,cl->bg_g,cl->bg_b);
+                pbr=cl->bg_r;pbg=cl->bg_g;pbb=cl->bg_b;
+            }
+            if (cl->bold!=pb) { FLUSH_PUTS(cl->bold?"\033[1m":"\033[22m"); pb=cl->bold; }
+            if (cl->underline!=pu) { FLUSH_PUTS(cl->underline?"\033[4m":"\033[24m"); pu=cl->underline; }
             char buf[4];
             int n = uc_enc(cl->ch, buf);
-            fwrite(buf, 1, (size_t)n, stdout);
-            /* Skip next column if this was a double-width character */
-            if (uc_wid((int)cl->ch) > 1) {
-                c++; /* skip the 2nd cell which was zeroed by scr_set */
-            }
+            for (int i = 0; i < n; i++) FLUSH_PUTC(buf[i]);
+            if (uc_wid((int)cl->ch) > 1) c++;
         }
-        if (r < s->rows-1) printf("\r\n");
+        if (r < s->rows-1) { FLUSH_PUTC('\r'); FLUSH_PUTC('\n'); }
     }
-    printf("\033[0m"); fflush(stdout);
+    FLUSH_PUTS("\033[0m");
+
+    if (pos > 0) fwrite(flush_buf, 1, pos, stdout);
+    fflush(stdout);
+
+#undef FLUSH_PUTC
+#undef FLUSH_PUTS
+#undef FLUSH_PRINTF
+#undef FLUSH_BUF_SIZE
 }
 
 /* Scroll helpers */

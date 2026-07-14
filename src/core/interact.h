@@ -292,6 +292,37 @@ void node_set_visible(LayoutNode* n, bool visible) {
     n->display = visible ? DISPLAY_BLOCK : DISPLAY_NONE;
 }
 
+/* ─── Select popup rect helper ──────────────────────────── */
+typedef struct { int x, y, w, h; int max_vis; int max_w; } SelectPopupRect;
+
+static SelectPopupRect calc_select_popup_rect(LayoutNode* sel_node, int scroll_x, int scroll_y,
+                                                Screen* s, int select_popup_count,
+                                                char select_popup_vals[][64], int sel_row) {
+    SelectPopupRect r = {0,0,0,0,0,0};
+    int sx, sy, sw, sh;
+    node_abs_box(sel_node, scroll_x, scroll_y, &sx, &sy, &sw, &sh);
+    r.x = sx;
+    r.y = sy + sh;
+    /* Compute max label width */
+    r.max_w = 0;
+    for (int oi = 0; oi < select_popup_count; oi++) {
+        int w = (int)strlen(select_popup_vals[oi]);
+        if (w > r.max_w) r.max_w = w;
+    }
+    r.w = r.max_w + 4;
+    if (r.w > s->cols - r.x) r.w = s->cols - r.x;
+    if (r.w < 4) r.w = 4;
+    /* Clamp y */
+    if (r.y < 0) r.y = 0;
+    r.max_vis = select_popup_count;
+    if (r.max_vis > s->rows - r.y - 1) r.max_vis = s->rows - r.y - 1;
+    if (r.y + r.max_vis > s->rows) r.max_vis = s->rows - r.y;
+    if (r.max_vis > select_popup_count) r.max_vis = select_popup_count;
+    if (r.max_vis < 1 && select_popup_count > 0) r.max_vis = 1;
+    r.h = r.max_vis + 2; /* +2 for top+bottom border rows */
+    return r;
+}
+
 /* ─── Focus list collection helper ──────────────────────────── */
 /** Collect all focusable nodes (INPUT/BUTTON) from the layout tree.
  *  Returns the number collected, or 0 on empty. */
@@ -332,6 +363,116 @@ static void patch_input_text(LayoutNode** focus_list, int focus_count,
             if (n->text_content) free(n->text_content);
             n->text_content = strdup(buf);
         }
+    }
+}
+
+/* ─── Find deepest element node at screen coordinates ──────── */
+static GumboNode* find_deepest_node_at(LayoutNode* root, int x, int y, int scroll_x, int scroll_y) {
+    GumboNode* result = NULL;
+    LayoutNode* stack[256]; int sp = 0;
+    stack[sp++] = root;
+    int best_depth = -1;
+    while (sp > 0) {
+        LayoutNode* n = stack[--sp];
+        for (size_t ci = 0; ci < n->num_children && sp < 256; ci++)
+            stack[sp++] = n->children[ci];
+        int hx, hy, hw, hh;
+        node_abs_box(n, scroll_x, scroll_y, &hx, &hy, &hw, &hh);
+        int depth = 0;
+        { LayoutNode* pp = n; while (pp) { depth++; pp = pp->parent; } }
+        if (x >= hx && x < hx + hw && y >= hy && y < hy + hh && depth > best_depth) {
+            if (n->styled && n->styled->node &&
+                n->styled->node->type == GUMBO_NODE_ELEMENT) {
+                result = n->styled->node;
+                best_depth = depth;
+            }
+        }
+    }
+    return result;
+}
+
+/* ─── Draw focus indicator around a focused element ─────────── */
+static void draw_focus_indicator(Screen* s, LayoutNode* f, int scroll_x, int scroll_y,
+                                  char input_buf[][4096], int* input_cursor,
+                                  int* textarea_scroll_y, int* textarea_scroll_x,
+                                  int focus_idx) {
+    int bx, by, bw, bh;
+    node_abs_box(f, scroll_x, scroll_y, &bx, &by, &bw, &bh);
+    if (bw <= 0 || bh < 1 || by < 0 || by >= s->rows) return;
+    int bg_r = 80, bg_g = 80, bg_b = 120;
+    for (int ri = 0; ri < bh && by + ri < s->rows; ri++) {
+        for (int ci = 0; ci < bw && bx + ci < s->cols; ci++) {
+            if (by+ri >= 0 && bx+ci >= 0)
+                screen_scr_bg(s, bx+ci, by+ri, bg_r, bg_g, bg_b);
+        }
+    }
+    if (!f->styled || !f->styled->node || f->styled->node->type != GUMBO_NODE_ELEMENT ||
+        !f->text_content) return;
+    GumboTag tag = f->styled->node->v.element.tag;
+    if (tag != GUMBO_TAG_INPUT && tag != GUMBO_TAG_TEXTAREA) return;
+
+    int cursor_pos = input_cursor[focus_idx];
+    int cu = bx + f->border_left + f->padding_left;
+    int cursor_row = by + f->border_top + f->padding_top;
+
+    if (tag == GUMBO_TAG_TEXTAREA) {
+        const char* txt = input_buf[focus_idx];
+        int bo = 0, line_idx = 0, line_start_bo = 0;
+        while (bo < cursor_pos && txt[bo]) {
+            if (txt[bo] == '\n') { line_idx++; line_start_bo = bo + 1; }
+            bo++;
+        }
+        int visual_col = uc_str_width_len(txt + line_start_bo, cursor_pos - line_start_bo);
+        cu += visual_col - textarea_scroll_x[focus_idx];
+        cursor_row += line_idx - textarea_scroll_y[focus_idx];
+    } else {
+        if (cursor_pos > 0) cu += uc_str_width_len(input_buf[focus_idx], cursor_pos);
+    }
+
+    int ca_left = bx + f->border_left + f->padding_left;
+    int ca_top  = by + f->border_top  + f->padding_top;
+    int ca_right = ca_left + f->width;
+    int ca_bottom = ca_top + f->height;
+    if (cu >= 0 && cu < s->cols && cursor_row >= 0 && cursor_row < s->rows &&
+        cu >= ca_left && cu < ca_right &&
+        cursor_row >= ca_top && cursor_row < ca_bottom) {
+        Cell* cur_cell = &s->cells[cursor_row * s->cols + cu];
+        int cf_r = cur_cell->fg_r, cf_g = cur_cell->fg_g, cf_b = cur_cell->fg_b;
+        int cb_r = cur_cell->bg_r, cb_g = cur_cell->bg_g, cb_b = cur_cell->bg_b;
+        screen_scr_fg(s, cu, cursor_row, cb_r, cb_g, cb_b);
+        screen_scr_bg(s, cu, cursor_row, cf_r, cf_g, cf_b);
+    }
+}
+
+/* ─── Draw status bar at bottom ─────────────────────────────── */
+static void draw_status_bar(Screen* s, InteractCallbacks* cb, int scroll_x, int scroll_y,
+                             LayoutNode* current_root) {
+    if (!cb || !cb->status_msg[0]) return;
+    int sb_row = s->rows - 1;
+    for (int ci = 0; ci < s->cols; ci++) {
+        screen_scr_set(s, ci, sb_row, ' ');
+        screen_scr_bg(s, ci, sb_row, 30, 30, 50);
+    }
+    const char* sp = cb->status_msg;
+    int ci = 0;
+    while (*sp && ci < s->cols) {
+        uint32_t cp = uc_dec(&sp);
+        if (cp == 0) break;
+        int w = uc_wid((int)cp);
+        if (ci + w <= s->cols) {
+            screen_scr_set(s, ci, sb_row, cp);
+            screen_scr_fg(s, ci, sb_row, 200, 200, 100);
+            if (w == 2 && ci + 1 < s->cols) screen_scr_set(s, ci + 1, sb_row, 0);
+        }
+        ci += w;
+    }
+    if (scroll_y > 0) {
+        int ri = s->cols - 3;
+        if (ri > ci && ri < s->cols) { screen_scr_set(s, ri, sb_row, 0x25B2); screen_scr_fg(s, ri, sb_row, 100,180,255); }
+    }
+    if (current_root && scroll_y < current_root->height - s->rows) {
+        int ri = s->cols - 2;
+        if (ri > ci && ri < s->cols) { screen_scr_set(s, ri, sb_row, 0x25BC); screen_scr_fg(s, ri, sb_row, 100,180,255); }
     }
 }
 
@@ -440,80 +581,10 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
 
         /* Focus indicator */
         if (focus_idx >= 0 && focus_idx < focus_count) {
-            LayoutNode* f = focus_list[focus_idx];
-            int bx, by, bw, bh;
-            node_abs_box(f, scroll_x, scroll_y, &bx, &by, &bw, &bh);
-            if (bw > 0 && bh >= 1 && by >= 0 && by < s->rows) {
-                /*
-                 * Highlight the entire element box area uniformly with a
-                 * focus background colour.  We use screen_scr_bg() only
-                 * (NOT screen_scr_set), so existing characters — text,
-                 * border glyphs, spaces — remain fully visible while the
-                 * background changes to indicate focus.
-                 *
-                 * This avoids two problems:
-                 *  1) Edge-only bars leave the centre colour mismatched
-                 *     when the CSS :active/:hover background differs.
-                 *  2) screen_scr_set(…,' ') would erase button text or
-                 *     border characters on elements without padding.
-                 */
-                int bg_r = 80, bg_g = 80, bg_b = 120;
-                for (int ri = 0; ri < bh && by + ri < s->rows; ri++) {
-                    for (int ci = 0; ci < bw && bx + ci < s->cols; ci++) {
-                        if (by+ri >= 0 && bx+ci >= 0)
-                            screen_scr_bg(s, bx+ci, by+ri, bg_r, bg_g, bg_b);
-                    }
-                }
-            }
-            if (f->styled && f->styled->node && f->styled->node->type == GUMBO_NODE_ELEMENT &&
-                f->text_content &&
-                (f->styled->node->v.element.tag == GUMBO_TAG_INPUT ||
-                 f->styled->node->v.element.tag == GUMBO_TAG_TEXTAREA)) {
-                int cursor_pos = (focus_idx >= 0 && focus_idx < input_buf_count) ? input_cursor[focus_idx] : 0;
-                int cu = bx + f->border_left + f->padding_left;
-                int cursor_row = by + f->border_top + f->padding_top;
-
-                if (f->styled->node->v.element.tag == GUMBO_TAG_TEXTAREA) {
-                    /* For textarea, compute cursor row and column from \n-delimited text */
-                    const char* txt = input_buf[focus_idx];
-                    int bo = 0; /* byte offset in input_buf */
-                    int line_idx = 0;
-                    int line_start_bo = 0;
-                    /* Find which line the cursor falls on */
-                    while (bo < cursor_pos && txt[bo]) {
-                        if (txt[bo] == '\n') {
-                            line_idx++;
-                            line_start_bo = bo + 1;
-                        }
-                        bo++;
-                    }
-                    int col_in_line = cursor_pos - line_start_bo;
-                    int visual_col = uc_str_width_len(txt + line_start_bo, col_in_line);
-                    cu += visual_col - textarea_scroll_x[focus_idx];
-                    cursor_row += line_idx - textarea_scroll_y[focus_idx];
-                } else {
-                    /* INPUT: single-line, all on one row */
-                    if (cursor_pos > 0) cu += uc_str_width_len(input_buf[focus_idx], cursor_pos);
-                }
-
-                {
-                    /* Content area bounds — prevent cursor drawing outside textarea/input */
-                    int ca_left = bx + f->border_left + f->padding_left;
-                    int ca_top  = by + f->border_top  + f->padding_top;
-                    int ca_right = ca_left + f->width;
-                    int ca_bottom = ca_top + f->height;
-                    if (cu >= 0 && cu < s->cols && cursor_row >= 0 && cursor_row < s->rows &&
-                        cu >= ca_left && cu < ca_right &&
-                        cursor_row >= ca_top && cursor_row < ca_bottom) {
-                        /* Terminal-style block cursor: invert fg↔bg colors */
-                        Cell* cur_cell = &s->cells[cursor_row * s->cols + cu];
-                        int cf_r = cur_cell->fg_r, cf_g = cur_cell->fg_g, cf_b = cur_cell->fg_b;
-                        int cb_r = cur_cell->bg_r, cb_g = cur_cell->bg_g, cb_b = cur_cell->bg_b;
-                        screen_scr_fg(s, cu, cursor_row, cb_r, cb_g, cb_b);
-                        screen_scr_bg(s, cu, cursor_row, cf_r, cf_g, cf_b);
-                    }
-                }
-            }
+            draw_focus_indicator(s, focus_list[focus_idx], scroll_x, scroll_y,
+                                 input_buf, input_cursor,
+                                 textarea_scroll_y, textarea_scroll_x,
+                                 focus_idx);
         }
 
         /* Draw global scrollbars: hscroll first so vscroll draws on top at corner */
@@ -523,60 +594,14 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
         }
 
         /* Draw status bar at bottom */
-        if (cb && cb->status_msg[0]) {
-            int sb_row = s->rows - 1;
-            for (int ci = 0; ci < s->cols; ci++) {
-                screen_scr_set(s, ci, sb_row, ' ');
-                screen_scr_bg(s, ci, sb_row, 30, 30, 50);
-            }
-            const char* sp = cb->status_msg;
-            int ci = 0;
-            while (*sp && ci < s->cols) {
-                uint32_t cp = uc_dec(&sp);
-                if (cp == 0) break;
-                int w = uc_wid((int)cp);
-                if (ci + w <= s->cols) {
-                    screen_scr_set(s, ci, sb_row, cp);
-                    screen_scr_fg(s, ci, sb_row, 200, 200, 100);
-                    if (w == 2 && ci + 1 < s->cols) screen_scr_set(s, ci + 1, sb_row, 0);
-                }
-                ci += w;
-            }
-            /* Scroll indicators on the right side of status bar */
-            if (scroll_y > 0) {
-                int ri = s->cols - 3;
-                if (ri > ci && ri < s->cols) { screen_scr_set(s, ri, sb_row, 0x25B2); screen_scr_fg(s, ri, sb_row, 100,180,255); }
-            }
-            if (current_root && scroll_y < current_root->height - s->rows) {
-                int ri = s->cols - 2;
-                if (ri > ci && ri < s->cols) { screen_scr_set(s, ri, sb_row, 0x25BC); screen_scr_fg(s, ri, sb_row, 100,180,255); }
-            }
-        }
+        draw_status_bar(s, cb, scroll_x, scroll_y, current_root);
 
         /* ── Draw select popup overlay ── */
         if (select_popup_active && select_popup_focus_idx >= 0 && select_popup_focus_idx < focus_count) {
             LayoutNode* sel_node = focus_list[select_popup_focus_idx];
-            int sx, sy, sw, sh;
-            node_abs_box(sel_node, scroll_x, scroll_y, &sx, &sy, &sw, &sh);
-            /* Popup appears below the select element, aligned to left edge */
-            int pop_x = sx;
-            int pop_y = sy + sh; /* just below the select */
-            int max_vis = select_popup_count;
-            if (max_vis > s->rows - pop_y - 1) max_vis = s->rows - pop_y - 1;
-            /* Compute max label width */
-            int max_w = 0;
-            for (int oi = 0; oi < select_popup_count; oi++) {
-                int w = (int)strlen(select_popup_vals[oi]);
-                if (w > max_w) max_w = w;
-            }
-            int pop_w = max_w + 3; /* 1 for indicator + 1 space padding each side */
-            if (pop_w > s->cols - pop_x) pop_w = s->cols - pop_x;
-            if (pop_w < 4) pop_w = 4;
-            /* Clamp pop_y to screen */
-            if (pop_y < 0) pop_y = 0;
-            if (pop_y + max_vis > s->rows) max_vis = s->rows - pop_y;
-            if (max_vis > select_popup_count) max_vis = select_popup_count;
-            if (max_vis < 1 && select_popup_count > 0) max_vis = 1;
+            SelectPopupRect pr = calc_select_popup_rect(sel_node, scroll_x, scroll_y, s,
+                                                         select_popup_count, select_popup_vals, select_popup_sel);
+            int pop_x = pr.x, pop_y = pr.y, pop_w = pr.w, max_vis = pr.max_vis;
             /* Draw border */
             int border_color = 100;
             for (int ci = pop_x; ci < pop_x + pop_w && ci < s->cols; ci++) {
@@ -621,15 +646,12 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                 int row = pop_y + 1 + oi;
                 if (row >= s->rows) break;
                 bool is_sel = (idx == select_popup_sel);
-                /* Background: highlighted vs normal */
                 int bg_r = is_sel ? 80 : 20, bg_g = is_sel ? 80 : 20, bg_b = is_sel ? 140 : 40;
-                /* Paint the option row */
                 int col = pop_x + 1;
                 const char* label = select_popup_vals[idx];
-                /* Selection indicator inside the border (don't touch pop_x, that's the border) */
                 screen_scr_bg(s, col, row, bg_r, bg_g, bg_b);
                 if (is_sel) {
-                    screen_scr_set(s, col, row, 0x25B6); /* ▶ */
+                    screen_scr_set(s, col, row, 0x25B6);
                     screen_scr_fg(s, col, row, 200, 200, 255);
                 } else {
                     screen_scr_set(s, col, row, ' ');
@@ -646,13 +668,11 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                     ci += w;
                     if (w == 2 && ci < s->cols) screen_scr_set(s, ci, row, 0);
                 }
-                /* Fill remaining */
                 while (ci < pop_x + pop_w - 1 && ci < s->cols) {
                     screen_scr_set(s, ci, row, ' ');
                     screen_scr_bg(s, ci, row, bg_r, bg_g, bg_b);
                     ci++;
                 }
-                /* ci is now at right border column; keep its original background intact */
             }
             /* Scroll indicators if list is clipped */
             if (select_popup_scroll > 0 && pop_y + 1 < s->rows) {
@@ -691,27 +711,7 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                 }
             }
             if (ev.key != TB_KEY_MOUSE_WHEEL_UP && ev.key != TB_KEY_MOUSE_WHEEL_DOWN) {
-                /* Find node under mouse for hover (deepest match) */
-                GumboNode* hover_node = NULL;
-                LayoutNode* hstack[256]; int hsp = 0;
-                hstack[hsp++] = current_root;
-                int best_depth = -1;
-                while (hsp > 0) {
-                    LayoutNode* n = hstack[--hsp];
-                    for (size_t ci = 0; ci < n->num_children && hsp < 256; ci++)
-                        hstack[hsp++] = n->children[ci];
-                    int hx, hy, hw, hh;
-                    node_abs_box(n, scroll_x, scroll_y, &hx, &hy, &hw, &hh);
-                    int depth = 0; { LayoutNode* pp = n; while (pp) { depth++; pp = pp->parent; } }
-                    if (ev.x >= hx && ev.x < hx + hw && ev.y >= hy && ev.y < hy + hh && depth > best_depth) {
-                        if (n->styled && n->styled->node &&
-                            n->styled->node->type == GUMBO_NODE_ELEMENT) {
-                            hover_node = n->styled->node;
-                            best_depth = depth;
-                        }
-                    }
-                }
-
+                GumboNode* hover_node = find_deepest_node_at(current_root, ev.x, ev.y, scroll_x, scroll_y);
                 if (hover_node != g_interact_hover) {
                     prev_hover = g_interact_hover;
                     g_interact_hover = hover_node;
@@ -722,26 +722,13 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                 if (ev.key == TB_KEY_MOUSE_LEFT && !(ev.mod & TB_MOD_MOTION)) {
                     /* ── Select popup mouse click ── */
                     if (select_popup_active) {
-                        /* Compute popup dimensions (same as rendering section) */
                         LayoutNode* _psn = focus_list[select_popup_focus_idx];
-                        int _psx, _psy, _psw, _psh;
-                        node_abs_box(_psn, scroll_x, scroll_y, &_psx, &_psy, &_psw, &_psh);
-                        int _pp_x = _psx;
-                        int _pp_y = _psy + _psh;
-                        int _max_w = 0;
-                        for (int _oi = 0; _oi < select_popup_count; _oi++) {
-                            int _w = (int)strlen(select_popup_vals[_oi]);
-                            if (_w > _max_w) _max_w = _w;
-                        }
-                        int _pp_w = _max_w + 4; /* 2 padding + 2 borders */
-                        if (_pp_w > s->cols - _pp_x) _pp_w = s->cols - _pp_x;
-                        if (_pp_w < 4) _pp_w = 4;
-                        int _pp_h = select_popup_count < (s->rows - _pp_y - 1) ? select_popup_count : (s->rows - _pp_y - 1);
-                        if (_pp_h < 1 && select_popup_count > 0) _pp_h = 1;
+                        SelectPopupRect pr = calc_select_popup_rect(_psn, scroll_x, scroll_y, s,
+                                                                     select_popup_count, select_popup_vals, select_popup_sel);
                         /* Check if click is inside popup area */
-                        if (ev.x >= _pp_x && ev.x < _pp_x + _pp_w &&
-                            ev.y > _pp_y && ev.y <= _pp_y + _pp_h) {
-                            int oi = (ev.y - _pp_y - 1) + select_popup_scroll;
+                        if (ev.x >= pr.x && ev.x < pr.x + pr.w &&
+                            ev.y > pr.y && ev.y <= pr.y + pr.max_vis) {
+                            int oi = (ev.y - pr.y - 1) + select_popup_scroll;
                             if (oi >= 0 && oi < select_popup_count) {
                                 select_popup_sel = oi;
                                 /* Confirm selection (unless select has its own value=header) */
@@ -773,27 +760,7 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                     }
                     focus_idx = -1;
                     /* First check if clicked on a <label> — redirect to its for= target */
-                    GumboNode* clicked_elem = NULL;
-                    {
-                        LayoutNode* hstack2[256]; int hsp2 = 0;
-                        hstack2[hsp2++] = current_root;
-                        int best_d2 = -1;
-                        while (hsp2 > 0) {
-                            LayoutNode* n = hstack2[--hsp2];
-                            for (size_t ci = 0; ci < n->num_children && hsp2 < 256; ci++)
-                                hstack2[hsp2++] = n->children[ci];
-                            int hx, hy, hw, hh;
-                            node_abs_box(n, scroll_x, scroll_y, &hx, &hy, &hw, &hh);
-                            int depth = 0; { LayoutNode* pp = n; while (pp) { depth++; pp = pp->parent; } }
-                            if (ev.x >= hx && ev.x < hx + hw && ev.y >= hy && ev.y < hy + hh && depth > best_d2) {
-                                if (n->styled && n->styled->node &&
-                                    n->styled->node->type == GUMBO_NODE_ELEMENT) {
-                                    clicked_elem = n->styled->node;
-                                    best_d2 = depth;
-                                }
-                            }
-                        }
-                    }
+                    GumboNode* clicked_elem = find_deepest_node_at(current_root, ev.x, ev.y, scroll_x, scroll_y);
                     if (clicked_elem && clicked_elem->type == GUMBO_NODE_ELEMENT &&
                         clicked_elem->v.element.tag == GUMBO_TAG_LABEL) {
                         GumboAttribute* for_attr = gumbo_get_attribute(

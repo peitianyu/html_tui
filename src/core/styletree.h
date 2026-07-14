@@ -592,6 +592,26 @@ static int compare_matched_rules(const void* a, const void* b) {
     return 0;
 }
 
+/**
+ * Quick reject: skip selector_matches_node if the rightmost simple
+ * selector is a tag and it doesn't match the element's tag.
+ * Returns true if the selector definitely won't match (can skip).
+ */
+static bool selector_tag_quick_reject(KatanaSelector* sel, GumboNode* node) {
+    if (!sel || !node || node->type != GUMBO_NODE_ELEMENT) return false;
+    /* Find the rightmost (last) simple selector in the chain */
+    KatanaSelector* last = sel;
+    while (last->tagHistory) last = last->tagHistory;
+    /* If the rightmost selector is a tag match, check it */
+    if (last->match == KatanaSelectorMatchTag && last->tag && last->tag->local) {
+        const char* tag_name = last->tag->local;
+        if (strcmp(tag_name, "*") == 0) return false; /* universal selector */
+        const char* node_tag = gumbo_normalized_tagname(node->v.element.tag);
+        if (strcmp(tag_name, node_tag) != 0) return true; /* reject */
+    }
+    return false;
+}
+
 /** Collect all matching style rules for a node */
 static bool media_query_matches(KatanaMediaQuery* mq, int viewport_w) {
     if (!mq || !mq->type) return false;
@@ -643,7 +663,7 @@ static void collect_matching_rules(GumboNode* node, KatanaStylesheet* ss,
 
             for (unsigned int j = 0; j < sr->selectors->length; j++) {
                 KatanaSelector* sel = (KatanaSelector*)sr->selectors->data[j];
-                if (selector_matches_node(sel, node)) {
+                if (!selector_tag_quick_reject(sel, node) && selector_matches_node(sel, node)) {
                     if (len >= cap) {
                         cap *= 2;
                         arr = (MatchedRule*)realloc(arr, cap * sizeof(MatchedRule));
@@ -677,7 +697,7 @@ static void collect_matching_rules(GumboNode* node, KatanaStylesheet* ss,
                     if (!sr->selectors) continue;
                     for (unsigned int j = 0; j < sr->selectors->length; j++) {
                         KatanaSelector* sel = (KatanaSelector*)sr->selectors->data[j];
-                        if (selector_matches_node(sel, node)) {
+                        if (!selector_tag_quick_reject(sel, node) && selector_matches_node(sel, node)) {
                             if (len >= cap) {
                                 cap *= 2;
                                 arr = (MatchedRule*)realloc(arr, cap * sizeof(MatchedRule));

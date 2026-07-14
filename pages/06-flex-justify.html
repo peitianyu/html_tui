@@ -1,0 +1,122 @@
+<html>
+<head>
+<style>
+/* ===========================
+   Test 06: Flex Justify Content
+   Tests: start, center, end, space-between, space-around, space-evenly
+   =========================== */
+body { background-color: #222; color: #ccc; padding: 1; }
+h1 { color: #e94560; text-align: center; font-weight: bold; margin: 1; }
+h2 { color: #53a8b6; font-weight: bold; margin: 1; }
+
+.section { background-color: #333; padding: 2; margin: 1; border: 1; border-style: solid; border-color: #555; }
+
+.demo-label {
+  color: #f9e069;
+  font-weight: bold;
+  margin: 1 0 0 0;
+}
+
+.flex-row {
+  display: flex;
+  flex-direction: row;
+  gap: 1;
+  background-color: #1a1a2e;
+  padding: 1;
+  margin: 0 0 1 0;
+  border: 1;
+  border-style: dotted;
+  border-color: #555;
+}
+
+.flex-row button {
+  background-color: #e94560;
+  color: #fff;
+  font-weight: bold;
+  padding: 1;
+}
+
+/* justify-content variants */
+.jc-start   { justify-content: flex-start; }
+.jc-center  { justify-content: center; }
+.jc-end     { justify-content: flex-end; }
+.jc-between { justify-content: space-between; }
+.jc-around  { justify-content: space-around; }
+.jc-evenly  { justify-content: space-evenly; }
+
+.footer { text-align: center; color: #888; margin-top: 2; }
+</style>
+</head>
+<body>
+
+<h1>🔲 Test 06: Flex Justify Content</h1>
+
+<div class="section">
+  <h2>justify-content: flex-start</h2>
+  <p class="demo-label">→ Items packed at the start</p>
+  <div class="flex-row jc-start">
+    <button id="btn-a">A</button>
+    <button id="btn-b">B</button>
+    <button id="btn-c">C</button>
+  </div>
+</div>
+
+<div class="section">
+  <h2>justify-content: center</h2>
+  <p class="demo-label">→ Items centered</p>
+  <div class="flex-row jc-center">
+    <button id="btn-d">A</button>
+    <button id="btn-e">B</button>
+    <button id="btn-f">C</button>
+  </div>
+</div>
+
+<div class="section">
+  <h2>justify-content: flex-end</h2>
+  <p class="demo-label">→ Items packed at the end</p>
+  <div class="flex-row jc-end">
+    <button id="btn-g">A</button>
+    <button id="btn-h">B</button>
+    <button id="btn-i">C</button>
+  </div>
+</div>
+
+<div class="section">
+  <h2>justify-content: space-between</h2>
+  <p class="demo-label">→ Items with equal space between</p>
+  <div class="flex-row jc-between">
+    <button id="btn-j">A</button>
+    <button id="btn-k">B</button>
+    <button id="btn-l">C</button>
+  </div>
+</div>
+
+<div class="section">
+  <h2>justify-content: space-around</h2>
+  <p class="demo-label">→ Items with space around each</p>
+  <div class="flex-row jc-around">
+    <button id="btn-m">A</button>
+    <button id="btn-n">B</button>
+    <button id="btn-o">C</button>
+  </div>
+</div>
+
+<div class="section">
+  <h2>justify-content: space-evenly</h2>
+  <p class="demo-label">→ Items with equal space everywhere</p>
+  <div class="flex-row jc-evenly">
+    <button id="btn-p">A</button>
+    <button id="btn-q">B</button>
+    <button id="btn-r">C</button>
+  </div>
+</div>
+
+<hr>
+
+<div class="footer">
+  <button id="btn-back">⬅ Back to Menu</button>
+  Test 06 — Flex Justify Content
+</div>
+
+</body>
+</html>

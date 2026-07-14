@@ -2,180 +2,256 @@
 <head>
 <style>
 /* ===========================
-   Main Menu Page
+   Mini Browser Test Suite — Menu
    =========================== */
 body {
-  background-color: #444444;
-  color: #7fb069;
+  background-color: #1a1a2e;
+  color: #e0e0e0;
   padding: 1;
 }
 
 h1 {
-  color: #f9e069;
+  color: #e94560;
   text-align: center;
   font-weight: bold;
   margin: 2;
 }
 
 h2 {
-  color: #7fb069;
+  color: #f9e069;
   font-weight: bold;
-  text-align: center;
-  margin: 1;
+  margin: 1 0 1 0;
 }
 
-.menu-card {
-  background-color: #444444;
-  padding: 2;
+.category {
+  background-color: #0f3460;
+  padding: 1;
   margin: 1;
   border: 1;
   border-style: solid;
-  border-color: #7fb069;
+  border-color: #53a8b6;
 }
 
-.menu-item {
+.category h2 {
+  color: #f9e069;
+  text-align: center;
+  margin: 0 0 1 0;
+}
+
+.test-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 1;
   margin: 1;
-  background-color: #444444;
+  background-color: #16213e;
   border: 1;
   border-style: dotted;
-  border-color: #7fb069;
+  border-color: #53a8b6;
 }
 
-.menu-item:first-child {
+.test-item:first-child {
   border-style: solid;
-  border-color: #f9e069;
+  border-color: #e94560;
 }
 
-.menu-item:hover {
-  background-color: #444444;
+.test-label {
+  color: #e0e0e0;
 }
 
-.menu-label {
-  color: #7fb069;
-  font-weight: bold;
-}
-
-.menu-label .num {
+.test-label .num {
   color: #f9e069;
-}
-
-.menu-label .desc {
-  color: #7fb069;
-}
-
-.menu-btn {
-  background-color: #f9e069;
-  color: #444444;
   font-weight: bold;
 }
 
-.menu-btn:hover {
-  background-color: #f9e069;
+.test-label .desc {
+  color: #53a8b6;
 }
 
-.menu-btn:active {
-  background-color: #7fb069;
-  color: #444444;
-}
-
-.info-bar {
-  display: flex;
-  justify-content: center;
-  gap: 4;
-  background-color: #444444;
-  padding: 1;
-  margin: 2;
-}
-
-.info-bar span {
-  color: #7fb069;
+.test-btn {
+  background-color: #53a8b6;
+  color: #1a1a2e;
   font-weight: bold;
+}
+
+.test-btn:hover {
+  background-color: #e94560;
+  color: #fff;
+}
+
+.test-btn:active {
+  background-color: #f9e069;
+  color: #1a1a2e;
 }
 
 .footer {
   text-align: center;
-  color: #7fb069;
+  color: #888;
   margin-top: 2;
 }
 
 .controls {
   text-align: center;
-  color: #7fb069;
+  color: #888;
+  margin: 1;
+}
+
+.info {
+  text-align: center;
+  color: #53a8b6;
   margin: 1;
 }
 </style>
 </head>
 <body>
 
-<h1>🌐 Mini Browser Test Suite</h1>
-<h2>Select a Test Page</h2>
+<h1>🧪 Mini Browser Test Suite</h1>
+<h2>Feature-by-Feature Testing</h2>
 
-<div class="menu-card">
-  <div class="menu-item">
-    <span class="menu-label">
+<div class="category">
+  <h2>📐 Typography &amp; Box Model</h2>
+  <div class="test-item">
+    <span class="test-label">
       <span class="num">[01]</span>
-      Complex Form Demo
-      <span class="desc">— inputs, buttons, selectors, borders</span>
+      Text &amp; Colors
+      <span class="desc">— colors, bold, italic, underline, text-align</span>
     </span>
-    <button id="btn-page-01" class="menu-btn">Open →</button>
+    <button id="btn-page-01" class="test-btn"> Open → </button>
   </div>
-  <div class="menu-item">
-    <span class="menu-label">
+  <div class="test-item">
+    <span class="test-label">
       <span class="num">[02]</span>
-      Flex Layout Showcase
-      <span class="desc">— flexbox, align, justify, gap</span>
+      Box Model
+      <span class="desc">— padding, margin, border styles/colors, box-sizing</span>
     </span>
-    <button id="btn-page-02" class="menu-btn">Open →</button>
-  </div>
-  <div class="menu-item">
-    <span class="menu-label">
-      <span class="num">[03]</span>
-      CSS Selectors & Elements
-      <span class="desc">— pseudo-classes, tables, lists</span>
-    </span>
-    <button id="btn-page-03" class="menu-btn">Open →</button>
-  </div>
-  <div class="menu-item">
-    <span class="menu-label">
-      <span class="num">[04]</span>
-      New Features Showcase
-      <span class="desc">— details, textarea, select, colspan, flex-wrap</span>
-    </span>
-    <button id="btn-page-04" class="menu-btn">Open →</button>
-  </div>
-  <div class="menu-item">
-    <span class="menu-label">
-      <span class="num">[05]</span>
-      Advanced Features
-      <span class="desc">— rowspan, z-index, dialog, inline-block, new inputs</span>
-    </span>
-    <button id="btn-page-05" class="menu-btn">Open →</button>
+    <button id="btn-page-02" class="test-btn"> Open → </button>
   </div>
 </div>
 
-<div class="info-bar">
-  <span>HTML</span>
-  <span>+</span>
-  <span>CSS</span>
-  <span>+</span>
-  <span>Layout</span>
-  <span>+</span>
-  <span>Termbox2</span>
+<div class="category">
+  <h2>⌨️ Form Elements</h2>
+  <div class="test-item">
+    <span class="test-label">
+      <span class="num">[03]</span>
+      Input Fields
+      <span class="desc">— text, password, focus, cursor, placeholder</span>
+    </span>
+    <button id="btn-page-03" class="test-btn"> Open → </button>
+  </div>
+  <div class="test-item">
+    <span class="test-label">
+      <span class="num">[04]</span>
+      Buttons
+      <span class="desc">— click, hover, active, multiple styles</span>
+    </span>
+    <button id="btn-page-04" class="test-btn"> Open → </button>
+  </div>
+</div>
+
+<div class="category">
+  <h2>📦 Flexbox Layout</h2>
+  <div class="test-item">
+    <span class="test-label">
+      <span class="num">[05]</span>
+      Flex Direction
+      <span class="desc">— row vs column, space-between, space-evenly</span>
+    </span>
+    <button id="btn-page-05" class="test-btn"> Open → </button>
+  </div>
+  <div class="test-item">
+    <span class="test-label">
+      <span class="num">[06]</span>
+      Flex Justify Content
+      <span class="desc">— start, center, end, between, around, evenly</span>
+    </span>
+    <button id="btn-page-06" class="test-btn"> Open → </button>
+  </div>
+  <div class="test-item">
+    <span class="test-label">
+      <span class="num">[07]</span>
+      Flex Align &amp; Wrap
+      <span class="desc">— align-items, gap, flex-wrap</span>
+    </span>
+    <button id="btn-page-07" class="test-btn"> Open → </button>
+  </div>
+</div>
+
+<div class="category">
+  <h2>📊 Data Display</h2>
+  <div class="test-item">
+    <span class="test-label">
+      <span class="num">[08]</span>
+      Tables
+      <span class="desc">— table, colspan, nth-child striping</span>
+    </span>
+    <button id="btn-page-08" class="test-btn"> Open → </button>
+  </div>
+  <div class="test-item">
+    <span class="test-label">
+      <span class="num">[09]</span>
+      Lists &amp; Pseudo-classes
+      <span class="desc">— ul/ol, :first-child, :last-child, :nth-child</span>
+    </span>
+    <button id="btn-page-09" class="test-btn"> Open → </button>
+  </div>
+</div>
+
+<div class="category">
+  <h2>🔧 Interactive Elements</h2>
+  <div class="test-item">
+    <span class="test-label">
+      <span class="num">[10]</span>
+      Details &amp; Textarea
+      <span class="desc">— details/summary toggle, multi-line textarea</span>
+    </span>
+    <button id="btn-page-10" class="test-btn"> Open → </button>
+  </div>
+  <div class="test-item">
+    <span class="test-label">
+      <span class="num">[11]</span>
+      Select Dropdown
+      <span class="desc">— select, optgroup, option cycling</span>
+    </span>
+    <button id="btn-page-11" class="test-btn"> Open → </button>
+  </div>
+</div>
+
+<div class="category">
+  <h2>🎨 Advanced CSS</h2>
+  <div class="test-item">
+    <span class="test-label">
+      <span class="num">[12]</span>
+      CSS Effects
+      <span class="desc">— ::before/::after, position, z-index, @media</span>
+    </span>
+    <button id="btn-page-12" class="test-btn"> Open → </button>
+  </div>
+  <div class="test-item">
+    <span class="test-label">
+      <span class="num">[13]</span>
+      Input Types
+      <span class="desc">— checkbox, radio, range, color, number</span>
+    </span>
+    <button id="btn-page-13" class="test-btn"> Open → </button>
+  </div>
+  <div class="test-item">
+    <span class="test-label">
+      <span class="num">[14]</span>
+      Text Styles
+      <span class="desc">— inline-block, del/s, code/kbd, italic, optgroup</span>
+    </span>
+    <button id="btn-page-14" class="test-btn"> Open → </button>
+  </div>
 </div>
 
 <div class="controls">
-  <p>Tab: Focus / Enter: Open / Arrow Keys: Scroll</p>
-  <p>q: Quit / ESC: Back to Menu</p>
+  <p>Tab: Focus | Enter: Open Page | Arrow Keys: Scroll</p>
 </div>
 
 <hr>
 
 <div class="footer">
-  <p>Mini Browser Demo — HTML+CSS → Layout → TUI Rendering</p>
+  <p>Mini Browser — Feature-by-Feature Test Suite</p>
 </div>
 
 </body>

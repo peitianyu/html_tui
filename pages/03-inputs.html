@@ -1,0 +1,162 @@
+<html>
+<head>
+<style>
+/* ===========================
+   Test 03: Input Fields
+   Tests: text input, password, focus, cursor, placeholder, Save/Clear/Reset
+   =========================== */
+body { background-color: #222; color: #ccc; padding: 1; }
+h1 { color: #e94560; text-align: center; font-weight: bold; margin: 1; }
+h2 { color: #53a8b6; font-weight: bold; margin: 1; }
+
+.section { background-color: #333; padding: 2; margin: 1; border: 1; border-style: solid; border-color: #555; }
+
+.form-row {
+  display: flex;
+  align-items: center;
+  gap: 2;
+  margin-bottom: 1;
+}
+
+.form-row label {
+  color: #53a8b6;
+  min-width: 14;
+  font-weight: bold;
+}
+
+.form-row input {
+  background-color: #1a1a2e;
+  color: #e0e0e0;
+  width: 30;
+}
+
+.form-row input:focus {
+  background-color: #16213e;
+  color: #fff;
+}
+
+/* input type=password uses • */
+input[type="password"] {
+  background-color: #1a1a2e;
+  color: #e0e0e0;
+  width: 30;
+}
+
+/* placeholder styling */
+input::placeholder {
+  color: #888;
+  font-style: italic;
+}
+
+.btn-group {
+  display: flex;
+  justify-content: center;
+  gap: 3;
+  margin: 1;
+}
+
+.btn-save {
+  background-color: #53a8b6;
+  color: #fff;
+  font-weight: bold;
+}
+.btn-save:hover { background-color: #6bc9d9; }
+.btn-save:active { background-color: #3a8a96; }
+
+.btn-clear {
+  background-color: #e94560;
+  color: #fff;
+  font-weight: bold;
+}
+.btn-clear:hover { background-color: #ff6b81; }
+.btn-clear:active { background-color: #c23150; }
+
+.btn-reset {
+  background-color: #f9e069;
+  color: #222;
+  font-weight: bold;
+}
+.btn-reset:hover { background-color: #fff0a0; }
+.btn-reset:active { background-color: #d4b84a; }
+
+/* label[for] test */
+label[for] {
+  cursor: pointer;
+}
+
+.label-for {
+  color: #f9e069;
+}
+
+.note { color: #888; text-align: center; margin: 1; }
+
+.footer { text-align: center; color: #888; margin-top: 2; }
+</style>
+</head>
+<body>
+
+<h1>⌨ Test 03: Input Fields</h1>
+
+<div class="section">
+  <h2>Text Inputs</h2>
+  <div class="form-row">
+    <label>First Name:</label>
+    <input id="inp-first" value="John">
+  </div>
+  <div class="form-row">
+    <label>Last Name:</label>
+    <input id="inp-last" value="Doe">
+  </div>
+  <div class="form-row">
+    <label>Email:</label>
+    <input id="inp-email" value="john@example.com">
+  </div>
+  <div class="form-row">
+    <label>Phone:</label>
+    <input id="inp-phone" value="+86 138-0000-0000">
+  </div>
+</div>
+
+<div class="section">
+  <h2>Password Input</h2>
+  <div class="form-row">
+    <label>Password:</label>
+    <input type="password" id="inp-pass" value="secret123">
+  </div>
+</div>
+
+<div class="section">
+  <h2>Focus Test</h2>
+  <p>Tab to focus inputs, ←/→ to move cursor, Home/End, Backspace/Delete</p>
+  <div class="form-row">
+    <label class="label-for">Focus me:</label>
+    <input id="inp-focus" value="Type here to test cursor">
+  </div>
+  <div class="form-row">
+    <label>Empty field:</label>
+    <input id="inp-empty" value="">
+  </div>
+</div>
+
+<div class="section">
+  <h2>Actions</h2>
+  <div class="btn-group">
+    <button id="btn-save" class="btn-save">💾 Save All</button>
+    <button id="btn-clear" class="btn-clear">🗑 Clear All</button>
+    <button id="btn-reset-f" class="btn-reset">↺ Reset</button>
+  </div>
+</div>
+
+<p class="note">
+  Tab: next field | Enter/Save: collect values | Clear: empty all | Reset: defaults
+</p>
+
+<hr>
+
+<div class="footer">
+  <button id="btn-back">⬅ Back to Menu</button>
+  Test 03 — Input Fields
+</div>
+
+</body>
+</html>

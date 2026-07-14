@@ -1,0 +1,140 @@
+<html>
+<head>
+<style>
+/* ===========================
+   Test 01: Text & Colors
+   Tests: colors (hex/named/rgb), bold, italic, text-align
+   =========================== */
+body { background-color: #222; color: #ccc; padding: 1; }
+h1 { color: #e94560; text-align: center; font-weight: bold; margin: 1; }
+h2 { color: #53a8b6; font-weight: bold; margin: 1; }
+
+.section { background-color: #333; padding: 2; margin: 1; border: 1; border-style: solid; border-color: #53a8b6; }
+
+/* Named colors */
+.red     { color: red; }
+.green   { color: #00ff00; }
+.blue    { color: #4488ff; }
+.yellow  { color: rgb(255,255,0); }
+.orange  { color: #ff8800; }
+.purple  { color: rgb(180,80,220); }
+.cyan    { color: #00cccc; }
+.white   { color: #ffffff; }
+.gray    { color: #888888; }
+
+/* Font styles */
+.bold    { font-weight: bold; }
+.italic  { font-style: italic; }
+.bold-italic { font-weight: bold; font-style: italic; }
+
+/* Text align */
+.left    { text-align: left; }
+.center  { text-align: center; }
+.right   { text-align: right; }
+
+/* Background colors */
+.bg-red    { background-color: #661111; }
+.bg-green  { background-color: #116611; }
+.bg-blue   { background-color: #113366; }
+.bg-yellow { background-color: #666611; color: #111; }
+.bg-mix    { background-color: #444; }
+
+/* underline / line-through */
+.uline { text-decoration: underline; }
+.strike { text-decoration: line-through; }
+.overline { text-decoration: overline; }
+.mixed-decoration { text-decoration: underline; font-weight: bold; color: #f9e069; }
+
+/* line-height */
+.lh2 { line-height: 2; }
+.lh3 { line-height: 3; }
+
+/* letter-spacing */
+.ls1 { letter-spacing: 1; }
+.ls2 { letter-spacing: 2; }
+
+/* uppercase / lowercase / capitalize */
+.upper { text-transform: uppercase; }
+.lower { text-transform: lowercase; }
+.cap   { text-transform: capitalize; }
+
+/* transparent / currentColor test */
+.trans-bg { background-color: transparent; color: #f9e069; }
+.curcolor-border { border: 1; border-style: solid; border-color: currentColor; color: #e94560; margin: 1; padding: 1; }
+
+.footer { text-align: center; color: #888; margin-top: 2; }
+</style>
+</head>
+<body>
+
+<h1>📝 Test 01: Text &amp; Colors</h1>
+
+<div class="section">
+  <h2>Named &amp; Hex Colors</h2>
+  <p class="red">This is red (named)</p>
+  <p class="green">This is #00ff00</p>
+  <p class="blue">This is #4488ff</p>
+  <p class="yellow">This is rgb(255,255,0)</p>
+  <p class="orange">This is #ff8800</p>
+  <p class="purple">This is rgb(180,80,220)</p>
+  <p class="cyan">This is #00cccc</p>
+  <p class="white">This is white (#ffffff)</p>
+  <p class="gray">This is gray (#888888)</p>
+</div>
+
+<div class="section">
+  <h2>Font Styles</h2>
+  <p class="bold">Bold text</p>
+  <p class="italic">Italic text</p>
+  <p class="bold-italic">Bold + Italic</p>
+  <p class="uline">Underlined text</p>
+  <p class="strike">Line-through text</p>
+  <p class="overline">Overline text</p>
+  <p class="mixed-decoration">Bold Underlined (gold)</p>
+</div>
+
+<div class="section">
+  <h2>Text Alignment</h2>
+  <p class="left">[Left aligned]</p>
+  <p class="center">[Center aligned]</p>
+  <p class="right">[Right aligned]</p>
+</div>
+
+<div class="section">
+  <h2>Background Colors</h2>
+  <p class="bg-red">Red background</p>
+  <p class="bg-green">Green background</p>
+  <p class="bg-blue">Blue background</p>
+  <p class="bg-yellow">Yellow background (dark text)</p>
+  <p class="trans-bg">Transparent background (should inherit)</p>
+</div>
+
+<div class="section">
+  <h2>Text Transform</h2>
+  <p class="upper">uppercase text</p>
+  <p class="lower">LOWERCASE TEXT</p>
+  <p class="cap">capitalize this text</p>
+</div>
+
+<div class="section">
+  <h2>Letter Spacing &amp; Line Height</h2>
+  <p class="ls1">Spaced out text (ls=1)</p>
+  <p class="ls2">Even more spaced (ls=2)</p>
+  <p class="lh2">Line height 2 — Line 1<br>Line 2<br>Line 3</p>
+  <p class="lh3">Line height 3 — Line A<br>Line B<br>Line C</p>
+</div>
+
+<div class="section">
+  <h2>currentColor Border</h2>
+  <p class="curcolor-border">This box has a currentColor border (should be red like the text)</p>
+</div>
+
+<hr>
+
+<div class="footer">
+  <button id="btn-back">⬅ Back to Menu</button>
+  Test 01 — Text &amp; Colors
+</div>
+
+</body>
+</html>

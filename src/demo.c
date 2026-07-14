@@ -4,48 +4,61 @@
 typedef struct { const char* id; const char* msg; } BtnAction;
 
 static const BtnAction btn_actions[] = {
-    /* ── Form 页面 ── */
+    /* ── 03-inputs: Save/Clear/Reset ── */
     {"btn-clear",   "✓ All inputs cleared"},
     {"btn-reset-f",  "↺ Form reset to defaults"},
-    {"btn-test-1",  "⚡ Test 1 triggered"},
-    {"btn-test-2",  "⚡ Test 2 triggered"},
-    {"btn-test-3",  "⚠ Danger button pressed"},
+    {"btn-save",     "💾 Values saved"},
 
-    /* ── Flex 页面 ── */
+    /* ── 04-buttons ── */
+    {"btn-primary",  "🔵 Primary clicked"},
+    {"btn-secondary","🔘 Secondary clicked"},
+    {"btn-success",  "🟢 Success clicked"},
+    {"btn-warning",  "🟡 Warning clicked"},
+    {"btn-danger",   "🔴 Danger clicked"},
+    {"btn-hover-1",  "✨ Hover test 1"},
+    {"btn-hover-2",  "✨ Hover test 2"},
+    {"btn-hover-3",  "✨ Hover test 3"},
+    {"btn-small",    "🔹 Small button"},
+    {"btn-med",      "🔸 Medium button"},
+    {"btn-large",    "🔶 Large button"},
+    {"btn-block",    "▬ Block button"},
+    {"btn-act-1",    "⚡ Test 1 triggered"},
+    {"btn-act-2",    "⚡ Test 2 triggered"},
+    {"btn-act-3",    "⚠ Danger action triggered"},
+
+    /* ── 05-flex-direction ── */
     {"btn-nav-1",   "🏠 Home"},
     {"btn-nav-2",   "📊 Dashboard"},
     {"btn-nav-3",   "⚙ Settings"},
     {"btn-nav-4",   "👤 Profile"},
     {"btn-nav-5",   "🚪 Logout"},
-    {"btn-center-act", "🎯 Centered button clicked"},
-    {"btn-end-1",   "✏ Edit action"},
-    {"btn-end-2",   "🗑 Delete action"},
-    {"btn-end-3",   "📤 Export action"},
+    {"btn-cen-1",   "← Left"},
+    {"btn-cen-2",   "⇔ Center"},
+    {"btn-cen-3",   "→ Right"},
     {"btn-ev-1",    "One"},
     {"btn-ev-2",    "Two"},
     {"btn-ev-3",    "Three"},
     {"btn-ev-4",    "Four"},
-    {"btn-vc-1",    "⬆ Up"},
-    {"btn-vc-2",    "⬇ Down"},
-    {"btn-card-a",  "✓ Detail clicked"},
-    {"btn-card-b",  "✓ Detail clicked"},
-    {"btn-card-c",  "✓ Detail clicked"},
 
-    /* ── Selectors 页面 ── */
-    {"btn-table-act","📊 Table refreshed"},
-    {"btn-list-act", "📝 List updated"},
+    /* ── 09-lists-pseudo ── */
     {"btn-info",     "ℹ Pseudo-classes: :first-child :last-child :nth-child :hover"},
 };
 
 #define BTN_ACTIONS_COUNT ((int)(sizeof(btn_actions) / sizeof(btn_actions[0])))
 
-/* 已知输入框 id 列表 (用于 btn-save 收集值) */
+/* 已知输入框 id 列表 (用于 btn-save 收集值) — 对应 03-inputs.html */
 static const char* known_input_ids[] = {
-    "input-name", "input-email", "input-pass", "input-age",
-    "input-search", "input-tel", "input-url", "input-num",
-    "input-date", "input-color",
+    "inp-first", "inp-last", "inp-email", "inp-phone",
+    "inp-pass", "inp-focus", "inp-empty",
 };
 #define KNOWN_INPUT_IDS_COUNT ((int)(sizeof(known_input_ids) / sizeof(known_input_ids[0])))
+
+/* 用于 btn-clear 的输入框 id */
+static const char* clear_ids[] = {
+    "inp-first", "inp-last", "inp-email", "inp-phone",
+    "inp-pass", "inp-focus", "inp-empty",
+};
+#define CLEAR_IDS_COUNT ((int)(sizeof(clear_ids) / sizeof(clear_ids[0])))
 
 static bool demo_on_click(const char* btn_id, const char* btn_text,
                            MiniBrowser* mb, void* userdata)
@@ -69,15 +82,9 @@ static bool demo_on_click(const char* btn_id, const char* btn_text,
 
     /* ── btn-clear: 清空所有输入框 ── */
     if (btn_id && strcmp(btn_id, "btn-clear") == 0) {
-        for (int i = 0; i < KNOWN_INPUT_IDS_COUNT; i++)
-            mb_set_text(mb, known_input_ids[i], "");
-        for (int i = 0; i < BTN_ACTIONS_COUNT; i++) {
-            if (strcmp(btn_actions[i].id, "btn-clear") == 0) {
-                mb_set_status(mb, btn_actions[i].msg);
-                return true;
-            }
-        }
-        mb_set_status(mb, "✓ Cleared");
+        for (int i = 0; i < CLEAR_IDS_COUNT; i++)
+            mb_set_text(mb, clear_ids[i], "");
+        mb_set_status(mb, "✓ All inputs cleared");
         return true;
     }
 
@@ -85,16 +92,8 @@ static bool demo_on_click(const char* btn_id, const char* btn_text,
     if (btn_id && strcmp(btn_id, "btn-reset-f") == 0) {
         for (int i = 0; i < KNOWN_INPUT_IDS_COUNT; i++)
             mb_set_text(mb, known_input_ids[i], "");
-        for (int i = 0; i < BTN_ACTIONS_COUNT; i++) {
-            if (strcmp(btn_actions[i].id, "btn-reset-f") == 0) {
-                mb_set_status(mb, btn_actions[i].msg);
-                return true;
-            }
-        }
-        mb_set_status(mb, "↺ Reset");
-        return true;
     }
-
+    
     /* ── 查表 ── */
     if (btn_id) {
         for (int i = 0; i < BTN_ACTIONS_COUNT; i++) {
@@ -113,10 +112,9 @@ static bool demo_on_click(const char* btn_id, const char* btn_text,
 int main(int argc, char** argv) {
     const char* filepath = argc > 1 ? argv[1] : "pages/00-menu.html";
 
-    MB_Config config = {
-        .on_button_click = demo_on_click,
-        .show_scrollbars = true,
-    };
+    MB_Config config;
+    config.on_button_click = demo_on_click;
+    config.show_scrollbars = true;
 
     MiniBrowser* mb = mini_browser_open(filepath, &config);
     if (!mb) return 1;

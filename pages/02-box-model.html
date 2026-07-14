@@ -1,0 +1,164 @@
+<html>
+<head>
+<style>
+/* ===========================
+   Test 02: Box Model
+   Tests: padding, margin, border styles/colors, box-sizing, outline
+   =========================== */
+body { background-color: #222; color: #ccc; padding: 1; }
+h1 { color: #e94560; text-align: center; font-weight: bold; margin: 1; }
+h2 { color: #53a8b6; font-weight: bold; margin: 1; }
+
+.section { background-color: #333; padding: 2; margin: 1; border: 1; border-style: solid; border-color: #555; }
+
+/* Basic padding */
+.pad-small  { padding: 1; background-color: #3a3a3a; border: 1; border-style: solid; border-color: #53a8b6; }
+.pad-medium { padding: 2; background-color: #3a3a3a; border: 1; border-style: solid; border-color: #53a8b6; margin: 1; }
+.pad-large  { padding: 3; background-color: #3a3a3a; border: 1; border-style: solid; border-color: #53a8b6; margin: 1; }
+
+/* Asymmetric padding */
+.pad-asym   { padding: 1 4 2 1; background-color: #3a3a3a; border: 1; border-style: solid; border-color: #e94560; margin: 1; }
+
+/* Margin */
+.margin-all   { margin: 2; background-color: #2a2a3a; border: 1; border-style: dotted; border-color: #f9e069; }
+.margin-top   { margin-top: 3; background-color: #2a2a3a; border: 1; border-style: dotted; border-color: #f9e069; }
+.margin-bottom { margin-bottom: 3; background-color: #2a2a3a; border: 1; border-style: dotted; border-color: #f9e069; }
+
+/* Negative margin (overlap) */
+.neg-margin {
+  margin-top: -1;
+  margin-bottom: -1;
+  background-color: #661111;
+  color: #fff;
+  padding: 1;
+  border: 1;
+  border-style: solid;
+  border-color: #e94560;
+}
+
+/* Border styles */
+.border-dashed  { border: 1; border-style: dashed; border-color: #e94560; padding: 1; margin: 1; background-color: #2a2a2a; }
+.border-dotted  { border: 1; border-style: dotted; border-color: #53a8b6; padding: 1; margin: 1; background-color: #2a2a2a; }
+.border-solid   { border: 1; border-style: solid; border-color: #f9e069; padding: 1; margin: 1; background-color: #2a2a2a; }
+.border-double  { border: 2; border-style: double; border-color: #e94560; padding: 1; margin: 1; background-color: #2a2a2a; }
+.border-heavy   { border: 2; border-style: heavy; border-color: #53a8b6; padding: 1; margin: 1; background-color: #2a2a2a; }
+
+/* Thick border */
+.border-thick   { border: 2; border-style: solid; border-color: #e94560; padding: 1; margin: 1; background-color: #2a2a2a; }
+
+/* Multi-border sides */
+.border-sides   { border-top: 1; border-bottom: 1; border-left: 2; border-right: 2; border-style: solid; border-color: #e94560; padding: 1; margin: 1; background-color: #2a2a2a; }
+
+/* Outline */
+.outline-demo   { outline: 1; outline-style: solid; outline-color: #f9e069; padding: 1; margin: 2; background-color: #2a2a2a; }
+
+/* Box-sizing */
+.border-box-demo {
+  box-sizing: border-box;
+  width: 30;
+  border: 1;
+  border-style: solid;
+  border-color: #53a8b6;
+  padding: 2;
+  background-color: #2a2a2a;
+  margin: 1;
+}
+.content-box-demo {
+  box-sizing: content-box;
+  width: 30;
+  border: 1;
+  border-style: solid;
+  border-color: #e94560;
+  padding: 2;
+  background-color: #2a2a2a;
+  margin: 1;
+}
+
+/* min-width / max-width */
+.minw { min-width: 30; background-color: #2a2a3a; border: 1; border-style: solid; border-color: #53a8b6; padding: 1; margin: 1; }
+.maxw { max-width: 30; background-color: #2a2a3a; border: 1; border-style: solid; border-color: #e94560; padding: 1; margin: 1; }
+
+/* margin auto (centering) */
+.margin-auto {
+  width: 20;
+  margin: 1 auto;
+  background-color: #661111;
+  color: #fff;
+  padding: 1;
+  border: 1;
+  border-style: solid;
+  border-color: #f9e069;
+  text-align: center;
+}
+
+.footer { text-align: center; color: #888; margin-top: 2; }
+</style>
+</head>
+<body>
+
+<h1>📦 Test 02: Box Model</h1>
+
+<div class="section">
+  <h2>Padding</h2>
+  <p class="pad-small">padding: 1</p>
+  <p class="pad-medium">padding: 2</p>
+  <p class="pad-large">padding: 3</p>
+  <p class="pad-asym">padding: 1 4 2 1 (asymmetric)</p>
+</div>
+
+<div class="section">
+  <h2>Margin</h2>
+  <p class="margin-all">margin: 2 (all sides)</p>
+  <p class="margin-top">margin-top: 3</p>
+  <p class="margin-bottom">margin-bottom: 3</p>
+</div>
+
+<div class="section">
+  <h2>Negative Margin (Overlap)</h2>
+  <p>Normal text</p>
+  <p class="neg-margin">This has margin-top:-1 and margin-bottom:-1</p>
+  <p>Normal text (should overlap)</p>
+</div>
+
+<div class="section">
+  <h2>Border Styles</h2>
+  <p class="border-solid">Border: solid</p>
+  <p class="border-dashed">Border: dashed</p>
+  <p class="border-dotted">Border: dotted</p>
+  <p class="border-double">Border: double (width 2)</p>
+  <p class="border-heavy">Border: heavy (width 2)</p>
+  <p class="border-thick">Border: solid + width 2</p>
+  <p class="border-sides">Different borders per side</p>
+</div>
+
+<div class="section">
+  <h2>Outline</h2>
+  <p class="outline-demo">This has a gold outline (outside border)</p>
+</div>
+
+<div class="section">
+  <h2>Box-Sizing</h2>
+  <p class="border-box-demo">box-sizing: border-box (width=30, pad+border inside)</p>
+  <p class="content-box-demo">box-sizing: content-box (width=30, pad+border added)</p>
+</div>
+
+<div class="section">
+  <h2>Min/Max Width</h2>
+  <p class="minw">min-width: 30 (will not shrink below 30)</p>
+  <p class="maxw">max-width: 30 (short text)</p>
+</div>
+
+<div class="section">
+  <h2>Margin Auto (Centering)</h2>
+  <p class="margin-auto">Centered Block</p>
+</div>
+
+<hr>
+
+<div class="footer">
+  <button id="btn-back">⬅ Back to Menu</button>
+  Test 02 — Box Model
+</div>
+
+</body>
+</html>

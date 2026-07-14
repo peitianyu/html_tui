@@ -1,0 +1,235 @@
+<html>
+<head>
+<style>
+/* ===========================
+   Test 14: Text Styles
+   Tests: inline-block, del/s/ins, code/kbd/samp, italic, rgb()/rgba(), currentColor
+   =========================== */
+body { background-color: #222; color: #ccc; padding: 1; }
+h1 { color: #e94560; text-align: center; font-weight: bold; margin: 1; }
+h2 { color: #53a8b6; font-weight: bold; margin: 1; }
+
+.section { background-color: #333; padding: 2; margin: 1; border: 1; border-style: solid; border-color: #555; }
+
+/* ─── Inline-block (降级为block) ─── */
+.ib-container {
+  text-align: center;
+  margin: 1;
+}
+
+.ib-box {
+  display: inline-block;
+  width: 15;
+  height: 4;
+  background-color: #16213e;
+  border: 1;
+  border-style: solid;
+  border-color: #53a8b6;
+  text-align: center;
+  font-weight: bold;
+  color: #53a8b6;
+  padding: 1;
+}
+
+.ib-box-alt {
+  display: inline-block;
+  width: 12;
+  height: 5;
+  background-color: #0f3460;
+  border: 1;
+  border-style: solid;
+  border-color: #e94560;
+  text-align: center;
+  font-weight: bold;
+  color: #e94560;
+  padding: 1;
+}
+
+/* ─── Deleted / inserted / struck text ─── */
+del {
+  color: #e94560;
+}
+
+s {
+  color: #888;
+}
+
+ins {
+  color: #53a8b6;
+  font-weight: bold;
+}
+
+/* ─── Code / kbd / samp ─── */
+code {
+  background-color: #16213e;
+  font-weight: bold;
+  color: #f9e069;
+}
+
+kbd {
+  background-color: #16213e;
+  font-weight: bold;
+  color: #53a8b6;
+}
+
+samp {
+  background-color: #16213e;
+  font-style: italic;
+  color: #e0e0e0;
+}
+
+/* ─── Italic ─── */
+.emph {
+  font-style: italic;
+  color: #f9e069;
+}
+
+.emph-bold {
+  font-style: italic;
+  font-weight: bold;
+  color: #e94560;
+}
+
+/* ─── rgb() / rgba() colors ─── */
+.rgb-red {
+  color: rgb(255, 0, 0);
+  font-weight: bold;
+}
+.rgb-green {
+  color: rgb(0, 200, 0);
+  font-weight: bold;
+}
+.rgb-blue {
+  color: rgb(50, 100, 255);
+  font-weight: bold;
+}
+.rgb-mix {
+  color: rgb(200, 100, 50);
+  font-weight: bold;
+}
+.rgba-demo {
+  color: rgb(255, 100, 100);
+  font-weight: bold;
+}
+
+/* ─── currentColor ─── */
+.current-color-box {
+  color: #e94560;
+  border: 1;
+  border-style: solid;
+  border-color: currentColor;
+  padding: 1;
+  margin: 1;
+  text-align: center;
+  font-weight: bold;
+}
+
+/* ─── Select with optgroup ─── */
+select.optgroup {
+  background-color: #1a1a2e;
+  color: #e0e0e0;
+  width: 24;
+  border: 1;
+  border-style: solid;
+  border-color: #f9e069;
+}
+
+/* ─── width/height constraint ─── */
+.ib-row {
+  display: flex;
+  justify-content: center;
+  gap: 2;
+  margin: 1;
+}
+
+.footer { text-align: center; color: #888; margin-top: 2; }
+</style>
+</head>
+<body>
+
+<h1>🎯 Test 14: Text Styles</h1>
+
+<div class="section">
+  <h2>Italic &amp; Bold+Italic</h2>
+  <p>Normal text, <span class="emph">this is italic</span>, back to normal.</p>
+  <p><span class="emph-bold">This is bold italic (red)</span></p>
+  <p><i>HTML &lt;i&gt; tag</i> and <em>&lt;em&gt; tag</em></p>
+</div>
+
+<div class="section">
+  <h2>Deleted, Struck &amp; Inserted Text</h2>
+  <p><del>This text is deleted</del></p>
+  <p><s>This is struck through</s></p>
+  <p><ins>This is inserted (new)</ins></p>
+  <p>Mix: <del>old price $50</del> <ins>new price $30</ins></p>
+</div>
+
+<div class="section">
+  <h2>Code, KBD &amp; Samp</h2>
+  <p>Press <kbd>Tab</kbd> to focus elements</p>
+  <p>Type in <code>&lt;input&gt;</code> field</p>
+  <p>See <samp>output below</samp> in status bar</p>
+</div>
+
+<div class="section">
+  <h2>Inline-block Layout</h2>
+  <p>Elements with display:inline-block:</p>
+  <div class="ib-row">
+    <div class="ib-box">Box 1</div>
+    <div class="ib-box">Box 2</div>
+    <div class="ib-box">Box 3</div>
+  </div>
+  <div class="ib-row">
+    <div class="ib-box-alt">A</div>
+    <div class="ib-box-alt">B</div>
+    <div class="ib-box-alt">C</div>
+    <div class="ib-box-alt">D</div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>rgb() Colors</h2>
+  <p class="rgb-red">rgb(255,0,0) — Red</p>
+  <p class="rgb-green">rgb(0,200,0) — Green</p>
+  <p class="rgb-blue">rgb(50,100,255) — Blue</p>
+  <p class="rgb-mix">rgb(200,100,50) — Orange</p>
+</div>
+
+<div class="section">
+  <h2>currentColor Border</h2>
+  <p class="current-color-box">This box border uses currentColor (red)</p>
+  <p style="color:#53a8b6; border:1; border-style:solid; border-color:currentColor; padding:1; text-align:center; font-weight:bold;">
+    This box border uses currentColor (teal)
+  </p>
+</div>
+
+<div class="section">
+  <h2>Select with Optgroup</h2>
+  <select id="sel-fruit" class="optgroup">
+    <optgroup label="🍎 Common">
+      <option value="Apple">Apple</option>
+      <option value="Banana">Banana</option>
+      <option value="Orange">Orange</option>
+    </optgroup>
+    <optgroup label="🌴 Tropical">
+      <option value="Mango">Mango</option>
+      <option value="Pineapple">Pineapple</option>
+      <option value="Coconut">Coconut</option>
+    </optgroup>
+    <optgroup label="🍊 Citrus">
+      <option value="Lemon">Lemon</option>
+      <option value="Lime">Lime</option>
+      <option value="Grapefruit">Grapefruit</option>
+    </optgroup>
+  </select>
+</div>
+
+<hr>
+
+<div class="footer">
+  <button id="btn-back">⬅ Back to Menu</button>
+  Test 14 — Text Styles
+</div>
+
+</body>
+</html>

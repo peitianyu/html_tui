@@ -1,0 +1,179 @@
+<html>
+<head>
+<style>
+/* ===========================
+   Test 05: Flex Direction
+   Tests: flex row vs column, space-between, space-evenly, center
+   =========================== */
+body { background-color: #222; color: #ccc; padding: 1; }
+h1 { color: #e94560; text-align: center; font-weight: bold; margin: 1; }
+h2 { color: #53a8b6; font-weight: bold; margin: 1; }
+
+.section { background-color: #333; padding: 2; margin: 1; border: 1; border-style: solid; border-color: #555; }
+
+.flex-item {
+  background-color: #e94560;
+  color: #fff;
+  padding: 1;
+  font-weight: bold;
+  text-align: center;
+}
+.flex-item-alt {
+  background-color: #53a8b6;
+  color: #fff;
+  padding: 1;
+  font-weight: bold;
+  text-align: center;
+}
+
+/* Row with space-between */
+.toolbar {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #1a1a2e;
+  padding: 1;
+  border: 1;
+  border-style: solid;
+  border-color: #e94560;
+}
+.toolbar button {
+  background-color: #0f3460;
+  color: #53a8b6;
+  font-weight: bold;
+}
+.toolbar button:hover { background-color: #e94560; color: #fff; }
+
+/* Column layout */
+.column-set {
+  display: flex;
+  flex-direction: column;
+  gap: 1;
+  background-color: #1a1a2e;
+  padding: 2;
+  border: 1;
+  border-style: dashed;
+  border-color: #53a8b6;
+}
+.column-item {
+  background-color: #0f3460;
+  color: #53a8b6;
+  padding: 1;
+  font-weight: bold;
+}
+
+/* Row with space-evenly */
+.evenly-row {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-evenly;
+  background-color: #1a1a2e;
+  padding: 1;
+  border: 1;
+  border-style: dotted;
+  border-color: #f9e069;
+}
+.evenly-row button {
+  background-color: #0f3460;
+  color: #e0e0e0;
+  font-weight: bold;
+}
+.evenly-row button:hover { background-color: #e94560; color: #fff; }
+
+/* Row with center */
+.center-row {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  gap: 3;
+  background-color: #1a1a2e;
+  padding: 1;
+  border: 1;
+  border-style: solid;
+  border-color: #e94560;
+}
+.center-row button {
+  background-color: #e94560;
+  color: #fff;
+  font-weight: bold;
+}
+
+/* Column with space-between */
+.col-between {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 12;
+  background-color: #1a1a2e;
+  padding: 1;
+  border: 1;
+  border-style: solid;
+  border-color: #53a8b6;
+}
+
+.footer { text-align: center; color: #888; margin-top: 2; }
+</style>
+</head>
+<body>
+
+<h1>📐 Test 05: Flex Direction</h1>
+
+<div class="section">
+  <h2>Row — space-between (Toolbar)</h2>
+  <div class="toolbar">
+    <button id="btn-nav-1">🏠 Home</button>
+    <button id="btn-nav-2">📊 Dashboard</button>
+    <button id="btn-nav-3">⚙ Settings</button>
+    <button id="btn-nav-4">👤 Profile</button>
+    <button id="btn-nav-5">🚪 Logout</button>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Row — center (Center Row)</h2>
+  <div class="center-row">
+    <button id="btn-cen-1">Left</button>
+    <button id="btn-cen-2">Center</button>
+    <button id="btn-cen-3">Right</button>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Row — space-evenly</h2>
+  <div class="evenly-row">
+    <button id="btn-ev-1">One</button>
+    <button id="btn-ev-2">Two</button>
+    <button id="btn-ev-3">Three</button>
+    <button id="btn-ev-4">Four</button>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Column Layout (direction: column)</h2>
+  <div class="column-set">
+    <div class="column-item">Step 1: Initialize</div>
+    <div class="column-item">Step 2: Process</div>
+    <div class="column-item">Step 3: Finalize</div>
+    <div class="column-item">Step 4: Cleanup</div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Column — space-between</h2>
+  <div class="col-between">
+    <span class="flex-item">Top</span>
+    <span class="flex-item-alt">Middle</span>
+    <span class="flex-item">Bottom</span>
+  </div>
+</div>
+
+<hr>
+
+<div class="footer">
+  <button id="btn-back">⬅ Back to Menu</button>
+  Test 05 — Flex Direction
+</div>
+
+</body>
+</html>

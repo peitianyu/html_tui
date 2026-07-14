@@ -1,0 +1,144 @@
+<html>
+<head>
+<style>
+/* ===========================
+   Test 10: Details & Textarea
+   Tests: details/summary toggle, textarea multi-line, scroll
+   =========================== */
+body { background-color: #222; color: #ccc; padding: 1; }
+h1 { color: #e94560; text-align: center; font-weight: bold; margin: 1; }
+h2 { color: #53a8b6; font-weight: bold; margin: 1; }
+
+.section { background-color: #333; padding: 2; margin: 1; border: 1; border-style: solid; border-color: #555; }
+
+/* Details / Summary */
+details {
+  background-color: #1a1a2e;
+  padding: 1;
+  margin: 1;
+  border: 1;
+  border-style: solid;
+  border-color: #e94560;
+}
+
+summary {
+  background-color: #0f3460;
+  color: #f9e069;
+  font-weight: bold;
+  padding: 1;
+  cursor: pointer;
+}
+summary:hover {
+  background-color: #e94560;
+  color: #fff;
+}
+
+details p {
+  margin: 1;
+  padding: 1;
+  color: #53a8b6;
+}
+
+details ul {
+  margin: 1;
+  padding: 1;
+}
+details li {
+  color: #53a8b6;
+  margin: 1;
+}
+
+/* Textarea */
+textarea {
+  background-color: #1a1a2e;
+  color: #e0e0e0;
+  width: 60;
+  height: 6;
+  border: 1;
+  border-style: solid;
+  border-color: #53a8b6;
+  padding: 1;
+}
+
+/* Multi textarea for scrolling test */
+textarea#ta-long {
+  height: 4;
+}
+
+.note { color: #888; text-align: center; margin: 1; }
+
+.footer { text-align: center; color: #888; margin-top: 2; }
+</style>
+</head>
+<body>
+
+<h1>🔧 Test 10: Details &amp; Textarea</h1>
+
+<div class="section">
+  <h2>Details / Summary</h2>
+  <p>Tab to focus, Enter to toggle.</p>
+
+  <details id="detail-1">
+    <summary>▶ Click to Expand (starts collapsed)</summary>
+    <p>🎉 Hidden content revealed!</p>
+    <p>Press Enter on the summary to collapse.</p>
+    <ul>
+      <li>Bullet point 1</li>
+      <li>Bullet point 2</li>
+      <li>Bullet point 3</li>
+    </ul>
+  </details>
+
+  <details id="detail-2" open>
+    <summary>▶ This starts OPEN</summary>
+    <p>Content visible by default.</p>
+    <p>Press Enter to collapse this section.</p>
+  </details>
+
+  <details id="detail-3">
+    <summary>▶ Nested Content Test</summary>
+    <p>This details element starts collapsed.</p>
+    <p>Tab navigates to the summary, Enter toggles.</p>
+  </details>
+</div>
+
+<div class="section">
+  <h2>Textarea</h2>
+  <p>Tab to focus, type to edit, Enter for newline, arrows to scroll.</p>
+
+  <label>Standard textarea:</label>
+  <textarea id="ta-std">Hello TUI!
+This is a multi-line
+textarea for testing.</textarea>
+
+  <br>
+
+  <label>Longer content (scroll test):</label>
+  <textarea id="ta-long">Line 1: The quick brown fox jumps over the lazy dog.
+Line 2: Sphinx of black quartz, judge my vow.
+Line 3: How vexingly quick daft zebras jump!
+Line 4: The five boxing wizards jump quickly.
+Line 5: Pack my box with five dozen liquor jugs.
+Line 6: Amazingly few discotheques provide jukeboxes.
+Line 7: Dog bites man, newspaper reports.
+Line 8: Man bites dog, that's news!
+Line 9: This is the ninth line of text.
+Line 10: The last line of the textarea.</textarea>
+
+  <br>
+
+  <label>Empty textarea:</label>
+  <textarea id="ta-empty"></textarea>
+</div>
+
+<p class="note">Tab to navigate | Enter to toggle details or newline in textarea | Scroll with arrow keys</p>
+
+<hr>
+
+<div class="footer">
+  <button id="btn-back">⬅ Back to Menu</button>
+  Test 10 — Details &amp; Textarea
+</div>
+
+</body>
+</html>

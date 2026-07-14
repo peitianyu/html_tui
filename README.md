@@ -21,16 +21,25 @@ tcc -I src -run src/demo.c [page.html]
 
 ### 页面文件
 
-测试页面位于 `pages/` 目录下，每个 HTML 文件包含内联 `<style>` CSS：
+测试页面位于 `pages/` 目录下，每个 HTML 文件专注测试一个功能特性：
 
 ```
 pages/
-├── 00-menu.html              # 主菜单（默认页面）
-├── 01-complex-form.html      # 表单演示
-├── 02-flex-layout.html       # Flex 布局展示
-├── 03-selectors-elements.html# CSS 选择器与元素
-├── 04-new-features.html      # 新功能展示（details/textarea/select/colspan）
-└── 05-advanced-features.html # 高级特性（rowspan/z-index/新input类型/dialog/inline-block）
+├── 00-menu.html              # 主菜单（默认页面，14 个测试入口）
+├── 01-text-colors.html       # 文本 & 颜色（hex/named/rgb, bold, italic, underline, text-align, text-transform）
+├── 02-box-model.html         # 盒模型（padding, margin, border, outline, box-sizing, min/max-width）
+├── 03-inputs.html            # 输入框（text, password, focus, cursor, placeholder, Save/Clear/Reset）
+├── 04-buttons.html           # 按钮（hover, active, 多色样式, sizes, block）
+├── 05-flex-direction.html    # Flex 方向（row/column, space-between, space-evenly, center）
+├── 06-flex-justify.html      # Flex 对齐（flex-start, center, flex-end, space-between/around/evenly）
+├── 07-flex-align-wrap.html   # Flex 对齐 & 换行（align-items, gap, flex-wrap/nowrap）
+├── 08-tables.html            # 表格（table, colspan, striped, colored, thead/tbody）
+├── 09-lists-pseudo.html      # 列表 & 伪类（ul/ol, :first-child, :last-child, :nth-child, :only-child）
+├── 10-details-textarea.html  # 折叠面板 & 多行输入（details/summary toggle, textarea scroll）
+├── 11-select.html            # 下拉选择（select, option 循环, optgroup, menu bar）
+├── 12-css-effects.html       # CSS 效果（::before/::after, position, z-index, @media, outline）
+├── 13-input-types.html       # 输入类型（checkbox, radio, range, color, number）
+└── 14-text-styles.html       # 文本样式（inline-block, del/s/ins, code/kbd/samp, rgb(), currentColor）
 ```
 
 ### 键盘操作

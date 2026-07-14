@@ -1,0 +1,172 @@
+<html>
+<head>
+<style>
+/* ===========================
+   Test 08: Tables
+   Tests: basic tables, colspan, thead/tbody, nth-child striping
+   =========================== */
+body { background-color: #222; color: #ccc; padding: 1; }
+h1 { color: #e94560; text-align: center; font-weight: bold; margin: 1; }
+h2 { color: #53a8b6; font-weight: bold; margin: 1; }
+
+.section { background-color: #333; padding: 2; margin: 1; border: 1; border-style: solid; border-color: #555; }
+
+/* Basic table */
+table {
+  width: 100%;
+  border-style: solid;
+  border-color: #53a8b6;
+  text-align: center;
+}
+
+th {
+  font-weight: bold;
+  background-color: #16213e;
+  color: #f9e069;
+}
+
+td, th {
+  padding: 0 1;
+  border: 1;
+  border-style: solid;
+  border-color: #0f3460;
+}
+
+/* Striped rows */
+.striped tr:nth-child(odd) td {
+  background-color: #1a1a2e;
+}
+
+.striped tr:nth-child(even) td {
+  background-color: #16213e;
+}
+
+/* Colorful table */
+.color-table th {
+  background-color: #e94560;
+  color: #fff;
+}
+
+.color-table td {
+  background-color: #0f3460;
+  color: #53a8b6;
+}
+
+/* Colspan table */
+.colspan-table th {
+  background-color: #53a8b6;
+  color: #1a1a2e;
+}
+
+.colspan-table td {
+  background-color: #16213e;
+}
+
+.colspan-table td.highlight {
+  background-color: #e94560;
+  color: #fff;
+  font-weight: bold;
+}
+
+/* thead / tbody */
+.with-head thead th {
+  background-color: #0f3460;
+  color: #f9e069;
+}
+
+.with-head tbody tr:nth-child(odd) td {
+  background-color: #1a1a2e;
+}
+
+.with-head tbody tr:nth-child(even) td {
+  background-color: #16213e;
+}
+
+.footer { text-align: center; color: #888; margin-top: 2; }
+</style>
+</head>
+<body>
+
+<h1>📊 Test 08: Tables</h1>
+
+<div class="section">
+  <h2>Basic Table</h2>
+  <table>
+    <tr><th>#</th><th>Product</th><th>Price</th><th>Stock</th></tr>
+    <tr><td>1</td><td>Widget Alpha</td><td>$12.99</td><td>142</td></tr>
+    <tr><td>2</td><td>Gadget Beta</td><td>$24.50</td><td>89</td></tr>
+    <tr><td>3</td><td>Doohickey Gamma</td><td>$8.75</td><td>350</td></tr>
+    <tr><td>4</td><td>Thingamajig Delta</td><td>$45.00</td><td>27</td></tr>
+    <tr><td>5</td><td>Whatchamacallit Epsilon</td><td>$99.99</td><td>5</td></tr>
+  </table>
+</div>
+
+<div class="section">
+  <h2>Striped Table (:nth-child)</h2>
+  <table class="striped">
+    <tr><th>Item</th><th>Category</th><th>Rating</th></tr>
+    <tr><td>Alpha</td><td>A</td><td>★★★★★</td></tr>
+    <tr><td>Beta</td><td>B</td><td>★★★★</td></tr>
+    <tr><td>Gamma</td><td>A</td><td>★★★</td></tr>
+    <tr><td>Delta</td><td>C</td><td>★★★★★</td></tr>
+  </table>
+</div>
+
+<div class="section">
+  <h2>Colored Table</h2>
+  <table class="color-table">
+    <tr><th>Name</th><th>Department</th><th>Status</th></tr>
+    <tr><td>Alice</td><td>Engineering</td><td>Active</td></tr>
+    <tr><td>Bob</td><td>Design</td><td>Active</td></tr>
+    <tr><td>Carol</td><td>Marketing</td><td>Inactive</td></tr>
+  </table>
+</div>
+
+<div class="section">
+  <h2>Table with colspan</h2>
+  <table class="colspan-table">
+    <tr>
+      <th>Name</th>
+      <th colspan="2">Details</th>
+    </tr>
+    <tr>
+      <td>Item A</td>
+      <td>Value 1</td>
+      <td>Value 2</td>
+    </tr>
+    <tr>
+      <td colspan="2" class="highlight">Merged Cell (colspan=2)</td>
+      <td>Last</td>
+    </tr>
+    <tr>
+      <td>Normal</td>
+      <td>Cell</td>
+      <td>Here</td>
+    </tr>
+  </table>
+</div>
+
+<div class="section">
+  <h2>Table with thead / tbody</h2>
+  <table class="with-head">
+    <thead>
+      <tr><th>ID</th><th>Task</th><th>Priority</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>001</td><td>Setup server</td><td>High</td></tr>
+      <tr><td>002</td><td>Write tests</td><td>Medium</td></tr>
+      <tr><td>003</td><td>Deploy app</td><td>High</td></tr>
+      <tr><td>004</td><td>Update docs</td><td>Low</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<hr>
+
+<div class="footer">
+  <button id="btn-back">⬅ Back to Menu</button>
+  Test 08 — Tables
+</div>
+
+</body>
+</html>

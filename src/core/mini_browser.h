@@ -274,11 +274,16 @@ static bool mb_default_on_click(const char* btn_text, int focus_idx,
         int page_num = atoi(btn_id + 9);
         if (page_num >= 1 && page_num <= 99) {
             const char* known[] = {
-                "01-complex-form.html", "02-flex-layout.html",
-                "03-selectors-elements.html", "04-new-features.html",
-                "05-advanced-features.html",
+                "01-text-colors.html",       "02-box-model.html",
+                "03-inputs.html",            "04-buttons.html",
+                "05-flex-direction.html",    "06-flex-justify.html",
+                "07-flex-align-wrap.html",   "08-tables.html",
+                "09-lists-pseudo.html",      "10-details-textarea.html",
+                "11-select.html",            "12-css-effects.html",
+                "13-input-types.html",       "14-text-styles.html",
             };
-            if (page_num >= 1 && page_num <= 5) {
+#define KNOWN_PAGES_COUNT ((int)(sizeof(known)/sizeof(known[0])))
+            if (page_num >= 1 && page_num <= KNOWN_PAGES_COUNT) {
                 snprintf(cb->switch_page, sizeof(cb->switch_page),
                          "pages/%s", known[page_num - 1]);
                 cb->quit_flag = true;

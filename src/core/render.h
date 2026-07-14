@@ -362,6 +362,10 @@ void screen_render_node(Screen* s, LayoutNode* n) {
 }
 
 /* ─── Table grid: draw unified grid for <table> ──────────────── */
+/* Max grid dimensions for span suppression tracking */
+#define MAX_GRID_COLS 128
+#define MAX_GRID_ROWS 64
+
 static int sort_ints(const void* a, const void* b) { return *(const int*)a - *(const int*)b; }
 static void add_unique(int** arr, size_t* n, size_t* cap, int val) {
     for (size_t i = 0; i < *n; i++) if ((*arr)[i] == val) return;
@@ -400,11 +404,80 @@ static void collect_grid_from_table(LayoutNode* node, int scroll_x, int scroll_y
         collect_grid_from_table(node->children[i], scroll_x, scroll_y, xs, nx, cap_x, ys, ny, cap_y);
 }
 
-/* Draw a unified grid for a <table> node */
+/* Walk td/th cells and mark grid lines suppressed by colspan/rowspan.
+   suppress_v[col_boundary][row] = true if vertical grid line at xs[col_boundary]
+   should NOT be drawn between ys[row] and ys[row+1].
+   suppress_h[row_boundary][col] = true if horizontal grid line at ys[row_boundary]
+   should NOT be drawn between xs[col] and xs[col+1]. */
+static void collect_span_suppression(LayoutNode* node, int sx, int sy,
+                                      int* xs, size_t nx, int* ys, size_t ny,
+                                      bool suppress_v[MAX_GRID_COLS][MAX_GRID_ROWS],
+                                      bool suppress_h[MAX_GRID_COLS][MAX_GRID_ROWS]) {
+    if (!node || node->display == DISPLAY_NONE) return;
+    if (node->styled && node->styled->node &&
+        node->styled->node->type == GUMBO_NODE_ELEMENT) {
+        GumboTag t = node->styled->node->v.element.tag;
+        if (t == GUMBO_TAG_TD || t == GUMBO_TAG_TH) {
+            int colspan = 1, rowspan = 1;
+            GumboAttribute* ca = gumbo_get_attribute(
+                &node->styled->node->v.element.attributes, "colspan");
+            if (ca && ca->value) { int cv = atoi(ca->value); if (cv > 1) colspan = cv; }
+            GumboAttribute* ra = gumbo_get_attribute(
+                &node->styled->node->v.element.attributes, "rowspan");
+            if (ra && ra->value) { int rv = atoi(ra->value); if (rv > 1) rowspan = rv; }
+
+            if (colspan > 1 || rowspan > 1) {
+                int bx, by, bw, bh;
+                node_abs_box(node, sx, sy, &bx, &by, &bw, &bh);
+                int left = bx, right = bx + bw;
+                int top = by, bottom = by + bh;
+
+                /* Find xs index for left and right edges */
+                size_t xi_left = 0, xi_right = 0;
+                for (size_t i = 0; i < nx; i++) {
+                    if (xs[i] == left) xi_left = i;
+                    if (xs[i] == right) xi_right = i;
+                }
+
+                /* Find ys index for top and bottom edges */
+                size_t yi_top = 0, yi_bottom = 0;
+                for (size_t i = 0; i < ny; i++) {
+                    if (ys[i] == top) yi_top = i;
+                    if (ys[i] == bottom) yi_bottom = i;
+                }
+
+                /* Colspan > 1: suppress interior vertical boundaries for this row's Y segment */
+                if (colspan > 1 && xi_right > xi_left + 1) {
+                    for (size_t xi = xi_left + 1; xi < xi_right; xi++) {
+                        for (size_t yi = yi_top; yi < yi_bottom && yi < ny - 1; yi++) {
+                            if (xi < MAX_GRID_COLS && yi < MAX_GRID_ROWS)
+                                suppress_v[xi][yi] = true;
+                        }
+                    }
+                }
+
+                /* Rowspan > 1: suppress interior horizontal boundaries for this column's X segment */
+                if (rowspan > 1 && yi_bottom > yi_top + 1) {
+                    for (size_t yi = yi_top + 1; yi < yi_bottom; yi++) {
+                        for (size_t xi = xi_left; xi < xi_right && xi < nx - 1; xi++) {
+                            if (yi < MAX_GRID_ROWS && xi < MAX_GRID_COLS)
+                                suppress_h[yi][xi] = true;
+                        }
+                    }
+                }
+            }
+            return;
+        }
+    }
+    for (size_t i = 0; i < node->num_children; i++)
+        collect_span_suppression(node->children[i], sx, sy, xs, nx, ys, ny, suppress_v, suppress_h);
+}
+
+/* Draw a unified grid for a <table> node, respecting colspan/rowspan */
 static void draw_table_grid(Screen* s, LayoutNode* table) {
     int sx = s->scroll_x, sy = s->scroll_y;
 
-    /* Collect column (x) and row (y) boundaries from cells only */
+    /* Collect column (x) and row (y) boundaries from cells */
     size_t cap_x = 64, nx = 0; int* xs = malloc(cap_x * sizeof(int));
     size_t cap_y = 64, ny = 0; int* ys = malloc(cap_y * sizeof(int));
 
@@ -416,7 +489,7 @@ static void draw_table_grid(Screen* s, LayoutNode* table) {
     qsort(xs, nx, sizeof(int), sort_ints);
     qsort(ys, ny, sizeof(int), sort_ints);
 
-    /* Determine line style from table; cells inherit same style */
+    /* Determine line style from table */
     BorderChars bc_ch = get_border_chars(table->border_style);
     uint32_t ch_h = bc_ch.h, ch_v = bc_ch.v;
     uint32_t ch_tl = bc_ch.tl, ch_tr = bc_ch.tr;
@@ -425,41 +498,78 @@ static void draw_table_grid(Screen* s, LayoutNode* table) {
     ResolvedColor bc = table->border_color;
     if (!bc.valid) { bc.r = 180; bc.g = 180; bc.b = 180; bc.valid = true; }
 
-    /* Draw horizontal grid lines — continuous from leftmost to rightmost */
+    /* Build span suppression maps */
+    bool suppress_v[MAX_GRID_COLS][MAX_GRID_ROWS];
+    bool suppress_h[MAX_GRID_COLS][MAX_GRID_ROWS];
+    memset(suppress_v, 0, sizeof(suppress_v));
+    memset(suppress_h, 0, sizeof(suppress_h));
+
+    if (nx <= MAX_GRID_COLS && ny <= MAX_GRID_ROWS)
+        collect_span_suppression(table, sx, sy, xs, nx, ys, ny, suppress_v, suppress_h);
+
+    /* ─── Draw horizontal lines ───
+       Draw segments between each pair of adjacent X positions,
+       skipping segments suppressed by rowspan */
     for (size_t yi = 0; yi < ny; yi++) {
         int y = ys[yi];
         if (y < 0 || y >= s->rows) continue;
-        int x_start = xs[0] + 1;
-        int x_end   = xs[nx - 1];
-        if (x_start >= x_end) continue;
-        for (int cx = x_start; cx < x_end && cx < s->cols; cx++) {
-            if (cx >= 0) { scr_set(s, cx, y, ch_h); scr_fg(s,cx,y,bc.r,bc.g,bc.b); }
+        for (size_t xi = 0; xi + 1 < nx; xi++) {
+            int x_start = xs[xi] + 1;
+            int x_end   = xs[xi + 1];
+            if (x_start >= x_end) continue;
+            /* Skip if this segment is suppressed by rowspan */
+            if (yi < ny - 1 && yi < MAX_GRID_ROWS && xi < MAX_GRID_COLS && suppress_h[yi][xi])
+                continue;
+            for (int cx = x_start; cx < x_end && cx < s->cols; cx++) {
+                if (cx >= 0) { scr_set(s, cx, y, ch_h); scr_fg(s,cx,y,bc.r,bc.g,bc.b); }
+            }
         }
     }
 
-    /* Draw vertical grid lines — continuous from topmost to bottommost */
+    /* ─── Draw vertical lines ───
+       Draw segments between each pair of adjacent Y positions,
+       skipping segments suppressed by colspan */
     for (size_t xi = 0; xi < nx; xi++) {
         int x = xs[xi];
         if (x < 0 || x >= s->cols) continue;
-        int y_start = ys[0] + 1;
-        int y_end   = ys[ny - 1];
-        if (y_start >= y_end) continue;
-        for (int cy = y_start; cy < y_end && cy < s->rows; cy++) {
-            if (cy >= 0) { scr_set(s, x, cy, ch_v); scr_fg(s,x,cy,bc.r,bc.g,bc.b); }
+        for (size_t yi = 0; yi + 1 < ny; yi++) {
+            int y_start = ys[yi] + 1;
+            int y_end   = ys[yi + 1];
+            if (y_start >= y_end) continue;
+            /* Skip if this segment is suppressed by colspan */
+            if (xi < MAX_GRID_COLS && yi < MAX_GRID_ROWS && suppress_v[xi][yi])
+                continue;
+            for (int cy = y_start; cy < y_end && cy < s->rows; cy++) {
+                if (cy >= 0) { scr_set(s, x, cy, ch_v); scr_fg(s,x,cy,bc.r,bc.g,bc.b); }
+            }
         }
     }
 
-    /* Draw intersection characters at each grid point */
+    /* ─── Draw intersection characters at each grid point ───
+       Determine which adjacent segments are actually drawn. */
     for (size_t yi = 0; yi < ny; yi++) {
         int y = ys[yi];
         if (y < 0 || y >= s->rows) continue;
         for (size_t xi = 0; xi < nx; xi++) {
             int x = xs[xi];
             if (x < 0 || x >= s->cols) continue;
-            bool up    = yi > 0;
-            bool down  = yi + 1 < ny;
-            bool left  = xi > 0;
-            bool right = xi + 1 < nx;
+
+            /* Check horizontal: line at ys[yi] goes LEFT and/or RIGHT? */
+            bool h_left = false, h_right = false;
+            if (xi > 0 && yi < ny - 1 && yi < MAX_GRID_ROWS && (xi - 1) < MAX_GRID_COLS)
+                h_left = !suppress_h[yi][xi - 1];
+            if (xi + 1 < nx && yi < ny - 1 && yi < MAX_GRID_ROWS && xi < MAX_GRID_COLS)
+                h_right = !suppress_h[yi][xi];
+
+            /* Check vertical: line at xs[xi] goes UP and/or DOWN? */
+            bool v_up = false, v_down = false;
+            if (yi > 0 && xi < MAX_GRID_COLS && (yi - 1) < MAX_GRID_ROWS)
+                v_up = !suppress_v[xi][yi - 1];
+            if (yi + 1 < ny && xi < MAX_GRID_COLS && yi < MAX_GRID_ROWS)
+                v_down = !suppress_v[xi][yi];
+
+            bool up = v_up, down = v_down;
+            bool left = h_left, right = h_right;
 
             uint32_t isect;
             if      (up && down && left && right) isect = 0x253C; /* ┼ */

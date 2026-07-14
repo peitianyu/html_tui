@@ -1,0 +1,162 @@
+<html>
+<head>
+<style>
+/* ===========================
+   Test 09: Lists & Pseudo-classes
+   Tests: ul/ol/li, :first-child, :last-child, :nth-child, :only-child
+   =========================== */
+body { background-color: #222; color: #ccc; padding: 1; }
+h1 { color: #e94560; text-align: center; font-weight: bold; margin: 1; }
+h2 { color: #53a8b6; font-weight: bold; margin: 1; }
+
+.section { background-color: #333; padding: 2; margin: 1; border: 1; border-style: solid; border-color: #555; }
+
+/* Unordered list */
+ul {
+  margin: 1;
+}
+ul li {
+  margin: 1 0;
+}
+ul li:first-child {
+  color: #e94560;
+  font-weight: bold;
+}
+ul li:last-child {
+  color: #53a8b6;
+}
+
+/* Ordered list */
+ol {
+  margin: 1;
+}
+ol li {
+  margin: 1 0;
+}
+
+/* :nth-child variants */
+.nth-demo tr:nth-child(1) td { background-color: #e94560; color: #fff; font-weight: bold; }
+.nth-demo tr:nth-child(2) td { background-color: #333; }
+.nth-demo tr:nth-child(3) td { background-color: #0f3460; color: #53a8b6; }
+.nth-demo tr:nth-child(4) td { background-color: #444; }
+.nth-demo tr:nth-child(5) td { background-color: #1a1a2e; }
+
+/* Even/odd */
+.nth-odd tr:nth-child(odd) td { background-color: #1a1a2e; color: #e0e0e0; }
+.nth-odd tr:nth-child(even) td { background-color: #16213e; color: #e94560; }
+
+/* :only-child */
+.only-parent {
+  background-color: #1a1a2e;
+  padding: 1;
+  border: 1;
+  border-style: dashed;
+  border-color: #f9e069;
+  margin: 1;
+  text-align: center;
+}
+.only-parent span:only-child {
+  color: #f9e069;
+  font-weight: bold;
+}
+
+/* Nested :first-child section */
+.section:first-child {
+  border-color: #e94560;
+}
+.section:last-child {
+  border-color: #f9e069;
+}
+
+/* Link styles */
+a {
+  color: #53a8b6;
+  text-decoration: underline;
+}
+a:hover {
+  color: #e94560;
+  font-weight: bold;
+}
+
+.footer { text-align: center; color: #888; margin-top: 2; }
+</style>
+</head>
+<body>
+
+<h1>📋 Test 09: Lists &amp; Pseudo-classes</h1>
+
+<div class="section">
+  <h2>Unordered List</h2>
+  <ul>
+    <li>First item (:first-child — red/bold)</li>
+    <li>Middle item (normal)</li>
+    <li>Last item (:last-child — teal)</li>
+  </ul>
+</div>
+
+<div class="section">
+  <h2>Ordered List</h2>
+  <ol>
+    <li>Step one</li>
+    <li>Step two</li>
+    <li>Step three</li>
+    <li>Step four</li>
+    <li>Step five</li>
+  </ol>
+</div>
+
+<div class="section">
+  <h2>:nth-child Table</h2>
+  <p>Each row has a different background via nth-child(1..5):</p>
+  <table class="nth-demo">
+    <tr><td>Row 1 (nth-child 1)</td></tr>
+    <tr><td>Row 2 (nth-child 2)</td></tr>
+    <tr><td>Row 3 (nth-child 3)</td></tr>
+    <tr><td>Row 4 (nth-child 4)</td></tr>
+    <tr><td>Row 5 (nth-child 5)</td></tr>
+  </table>
+</div>
+
+<div class="section">
+  <h2>:nth-child(even/odd)</h2>
+  <table class="nth-odd">
+    <tr><td>Odd row (dark bg)</td><td>normal</td></tr>
+    <tr><td>Even row (darker bg)</td><td>red text</td></tr>
+    <tr><td>Odd row</td><td>normal</td></tr>
+    <tr><td>Even row</td><td>red text</td></tr>
+  </table>
+</div>
+
+<div class="section">
+  <h2>:only-child</h2>
+  <div class="only-parent">
+    <span>I am the only child (gold/bold)</span>
+  </div>
+  <div class="only-parent">
+    <span>First</span>
+    <span>Second (not only child)</span>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Link Hover</h2>
+  <p>Try clicking: <a href="https://example.com">Example Link</a> and <a href="https://test.org">Test Link</a></p>
+  <p>(Links show hover color when focused)</p>
+</div>
+
+<div class="section">
+  <h2>Section Pseudo-class</h2>
+  <p>:first-child section has red border, :last-child has gold border.</p>
+  <p>This section is the last child so it has a gold border.</p>
+  <button id="btn-info">ℹ Show Info</button>
+</div>
+
+<hr>
+
+<div class="footer">
+  <button id="btn-back">⬅ Back to Menu</button>
+  Test 09 — Lists &amp; Pseudo-classes
+</div>
+
+</body>
+</html>

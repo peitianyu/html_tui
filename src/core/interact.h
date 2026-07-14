@@ -503,6 +503,7 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
     int  select_popup_sel = 0;          /* currently highlighted option index */
     int  select_popup_count = 0;        /* total option count */
     char select_popup_vals[32][64];     /* option display labels */
+    int  select_popup_types[32];        /* 0=option, 1=group header */
     int  select_popup_scroll = 0;       /* vertical scroll offset in popup list */
 
     /* Collect interactive nodes (INPUT/BUTTON) for focus */
@@ -646,11 +647,19 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                 int row = pop_y + 1 + oi;
                 if (row >= s->rows) break;
                 bool is_sel = (idx == select_popup_sel);
-                int bg_r = is_sel ? 80 : 20, bg_g = is_sel ? 80 : 20, bg_b = is_sel ? 140 : 40;
+                bool is_header = (select_popup_types[idx] == 1);
+                int bg_r = is_sel ? 80 : (is_header ? 30 : 20);
+                int bg_g = is_sel ? 80 : (is_header ? 40 : 20);
+                int bg_b = is_sel ? 140 : (is_header ? 60 : 40);
                 int col = pop_x + 1;
                 const char* label = select_popup_vals[idx];
                 screen_scr_bg(s, col, row, bg_r, bg_g, bg_b);
-                if (is_sel) {
+                if (is_header) {
+                    /* Group header: bold-ish look, no pointer */
+                    screen_scr_set(s, col, row, 0x2503);
+                    screen_scr_fg(s, col, row, 180, 200, 120);
+                    screen_scr_bold(s, col, row, true);
+                } else if (is_sel) {
                     screen_scr_set(s, col, row, 0x25B6);
                     screen_scr_fg(s, col, row, 200, 200, 255);
                 } else {
@@ -662,8 +671,9 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                     uint32_t cp = uc_dec(&lp);
                     if (cp == 0) break;
                     screen_scr_set(s, ci, row, cp);
-                    screen_scr_fg(s, ci, row, 220, 220, 220);
+                    screen_scr_fg(s, ci, row, is_header ? 180 : 220, is_header ? 200 : 220, is_header ? 120 : 220);
                     screen_scr_bg(s, ci, row, bg_r, bg_g, bg_b);
+                    if (is_header) screen_scr_bold(s, ci, row, true);
                     int w = uc_wid((int)cp);
                     ci += w;
                     if (w == 2 && ci < s->cols) screen_scr_set(s, ci, row, 0);
@@ -896,6 +906,29 @@ end_mouse_left:
                         prev_active = g_interact_active;
                         g_interact_active = NULL;
                         restyle = true;
+                    }
+                }
+
+                /* Right click → context menu (show element info in status bar) */
+                if (ev.key == TB_KEY_MOUSE_RIGHT && !(ev.mod & TB_MOD_MOTION) && cb) {
+                    GumboNode* clicked = find_deepest_node_at(current_root, ev.x, ev.y, scroll_x, scroll_y);
+                    if (clicked && clicked->type == GUMBO_NODE_ELEMENT) {
+                        const char* tn = gumbo_normalized_tagname(clicked->v.element.tag);
+                        GumboAttribute* id_a = gumbo_get_attribute(&clicked->v.element.attributes, "id");
+                        GumboAttribute* cl_a = gumbo_get_attribute(&clicked->v.element.attributes, "class");
+                        char ctx[128] = "";
+                        snprintf(ctx, sizeof(ctx), "📍 <%s>", tn);
+                        if (id_a && id_a->value) {
+                            int cl = (int)strlen(ctx);
+                            snprintf(ctx + cl, sizeof(ctx) - cl, " #%s", id_a->value);
+                        }
+                        if (cl_a && cl_a->value) {
+                            int cl = (int)strlen(ctx);
+                            snprintf(ctx + cl, sizeof(ctx) - cl, " .%s", cl_a->value);
+                        }
+                        snprintf(cb->status_msg, sizeof(cb->status_msg), "%s", ctx);
+                    } else {
+                        snprintf(cb->status_msg, sizeof(cb->status_msg), "📍 (no element)");
                     }
                 }
 
@@ -1431,7 +1464,7 @@ handle_scroll_keys:
                 focus_list[focus_idx]->styled->node->type == GUMBO_NODE_ELEMENT &&
                 focus_list[focus_idx]->styled->node->v.element.tag == GUMBO_TAG_SELECT &&
                 !select_popup_active) {
-                /* Collect option values from the <select>'s <option> children */
+                /* Collect option values from the <select>'s children (<option> and <optgroup>) */
                 select_popup_focus_idx = focus_idx;
                 select_popup_count = 0;
                 select_popup_sel = 0;
@@ -1440,13 +1473,37 @@ handle_scroll_keys:
                 GumboVector* ch = &focus_list[focus_idx]->styled->node->v.element.children;
                 for (unsigned int oi = 0; oi < ch->length && select_popup_count < 32; oi++) {
                     GumboNode* oc = (GumboNode*)ch->data[oi];
-                    if (oc->type == GUMBO_NODE_ELEMENT && oc->v.element.tag == GUMBO_TAG_OPTION) {
+                    if (oc->type != GUMBO_NODE_ELEMENT) continue;
+                    if (oc->v.element.tag == GUMBO_TAG_OPTION) {
                         GumboAttribute* oa = gumbo_get_attribute(&oc->v.element.attributes, "value");
                         if (oa && oa->value) {
                             snprintf(select_popup_vals[select_popup_count], 64, "%s", oa->value);
+                            select_popup_types[select_popup_count] = 0;
                             if (cur_val && strcmp(oa->value, cur_val) == 0)
                                 select_popup_sel = select_popup_count;
                             select_popup_count++;
+                        }
+                    } else if (oc->v.element.tag == GUMBO_TAG_OPTGROUP) {
+                        GumboAttribute* gl = gumbo_get_attribute(&oc->v.element.attributes, "label");
+                        if (gl && gl->value && gl->value[0] && select_popup_count < 32) {
+                            snprintf(select_popup_vals[select_popup_count], 64, "%s", gl->value);
+                            select_popup_types[select_popup_count] = 1;
+                            select_popup_count++;
+                        }
+                        /* Add optgroup's <option> children */
+                        GumboVector* og_ch = &oc->v.element.children;
+                        for (unsigned int gi = 0; gi < og_ch->length && select_popup_count < 32; gi++) {
+                            GumboNode* ogc = (GumboNode*)og_ch->data[gi];
+                            if (ogc->type == GUMBO_NODE_ELEMENT && ogc->v.element.tag == GUMBO_TAG_OPTION) {
+                                GumboAttribute* oa = gumbo_get_attribute(&ogc->v.element.attributes, "value");
+                                if (oa && oa->value) {
+                                    snprintf(select_popup_vals[select_popup_count], 64, "%s", oa->value);
+                                    select_popup_types[select_popup_count] = 0;
+                                    if (cur_val && strcmp(oa->value, cur_val) == 0)
+                                        select_popup_sel = select_popup_count;
+                                    select_popup_count++;
+                                }
+                            }
                         }
                     }
                 }

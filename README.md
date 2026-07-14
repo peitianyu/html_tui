@@ -11,16 +11,7 @@
 # 指定页面
 ./run.sh pages/01-complex-form.html
 
-# 一键模式 (最简, 仅 mini_browser.h)
-tcc -I src -run src/demo_simple.c [page.html]
-
-# 高级模式 (自定义回调计数器)
-tcc -I src -run src/demo_counter.c
-```
-
-或直接使用 tcc 编译运行（完整 demo）：
-
-```bash
+# 或直接使用 tcc 编译运行
 tcc -I src -run src/demo.c [page.html]
 ```
 
@@ -38,8 +29,8 @@ pages/
 ├── 01-complex-form.html      # 表单演示：输入框、按钮、选择器、边框
 ├── 02-flex-layout.html       # Flex 布局展示：对齐、间距、弹性
 ├── 03-selectors-elements.html# CSS 选择器与元素：伪类、表格、列表
-├── 04-new-features.html      # 新功能展示：折叠面板、多行输入、下拉选择、colspan、flex-wrap
-└── 05-counter.html           # 计数器演示页（配合 demo_counter.c）```
+└── 04-new-features.html      # 新功能展示：折叠面板、多行输入、下拉选择、colspan、flex-wrap
+```
 
 ### 键盘操作
 
@@ -53,13 +44,13 @@ pages/
 | 任意字符键 | 在输入框中输入文本 |
 | `←` / `→` | 输入框中光标左/右移动 |
 | `Home` / `End` | 输入框中光标到开头/末尾 |
-| `Delete` | 输入框中删除光标处字符 |
+| `Delete` / `Backspace` | 输入框中删除光标处/前一个字符 |
 
-> 鼠标点击也支持（终端需支持鼠标事件）。
+> 鼠标点击 + 滚轮也支持（终端需启用鼠标事件）。
 
 ### 页面跳转
 
-- 按钮 `id` 为 `btn-page-NN` 时，自动跳转到 `pages/NN-*.html`（当前支持 01~05）
+- 按钮 `id` 为 `btn-page-NN` 时，自动跳转到 `pages/NN-*.html`（当前支持 01~04）
 - 按钮 `id` 为 `btn-back` 或 `btn-back-N` 时，返回菜单 `00-menu.html`
 
 ---
@@ -104,12 +95,9 @@ HTML (.html 含 <style>)
 
 | 模块 | 文件 | 职责 |
 |:--|:--|:--|
-| **Public API** | `src/mini_browser.h` | **最小化接口 — 只需包含它 (stb-style)** |
-| **页面配置** | `src/demo_page.h` | 按钮行为注册 (使用 mini_browser.h 回调) |
-| **入口** | `src/demo.c` | 使用 mini_browser.h API 的完整入口 |
-| **最简入口** | `src/demo_simple.c` | 仅 3 行代码的一键模式 (< 10 行文件) |
-| **回调示例** | `src/demo_counter.c` | 自定义按钮+按键回调示例 |
-| **交互框架** | `src/core/interact.h` | 交互循环、焦点遍历、事件分发 |
+| **Public API** | `src/core/mini_browser.h` | **最小化接口 — 只需包含它 (stb-style)** |
+| **入口 + 按钮回调** | `src/demo.c` | 使用 mini_browser.h API，内联按钮行为配置 |
+| **交互框架** | `src/core/interact.h` | 交互循环、焦点遍历、事件分发、输入编辑 |
 | **渲染引擎** | `src/core/render.h` | 屏幕缓冲、节点渲染、边框/表格绘制 |
 | **布局引擎** | `src/core/layout.h` | 盒模型、Flexbox 布局计算 |
 | **样式引擎** | `src/core/styletree.h` | 样式树构建、选择器匹配、属性继承 |
@@ -124,12 +112,12 @@ HTML (.html 含 <style>)
 
 ## API 设计
 
-`mini_browser.h` 提供了最小化接口：
+`src/core/mini_browser.h` 提供了最小化接口：
 
 ```c
 // ── 一键模式 (3 行) ──
 #define MINI_BROWSER_IMPLEMENTATION
-#include "mini_browser.h"
+#include "core/mini_browser.h"
 mini_browser_run("page.html");
 
 // ── 高级模式 ──
@@ -139,12 +127,12 @@ mini_browser_run_loop(mb);
 mini_browser_close(mb);
 
 // ── 运行时 API (在回调中调用) ──
-mb_set_status(mb, "消息");       // 设置状态栏
-mb_set_text(mb, "element-id", "文本"); // 按 id 设置元素文本
-mb_get_text(mb, "element-id");  // 获取元素文本
-mb_set_visible(mb, "id", true); // 显示/隐藏元素 (需返回 true)
-mb_switch_page(mb, "path");     // 切换页面
-mb_quit(mb);                    // 退出
+mb_set_status(mb, "消息");        // 设置状态栏
+mb_set_text(mb, "element-id", "文本");  // 按 id 设置元素文本
+mb_get_text(mb, "element-id");   // 获取元素文本
+mb_set_visible(mb, "id", true);  // 显示/隐藏元素 (需返回 true)
+mb_switch_page(mb, "path");      // 切换页面
+mb_quit(mb);                     // 退出
 ```
 
 ---
@@ -153,208 +141,135 @@ mb_quit(mb);                    // 退出
 
 ### CSS 选择器
 
-| 类型 | 示例 | 状态 |
-|:--|:--|:--:|
-| 类型选择器 | `div`, `p`, `h1` | ✅ |
-| 通用选择器 | `*` | ✅ |
-| 类选择器 | `.box`, `.foo.bar` | ✅ |
-| ID 选择器 | `#header` | ✅ |
-| 属性选择器 | `[id]`, `[type="text"]`, `[attr^="val"]`, `[attr$="val"]`, `[attr*="val"]`, `[attr~="val"]`, `[attr\|="val"]` | ✅ |
-| 伪类（结构） | `:first-child`, `:last-child`, `:nth-child(n)`, `:nth-last-child`, `:first-of-type`, `:last-of-type`, `:only-of-type`, `:only-child`, `:empty` | ✅ |
-| 伪类（链接/交互） | `:link`, `:any-link`, `:hover`, `:focus`, `:active` | ✅ |
-| 后代组合器 | `div span` | ✅ |
-| 子组合器 | `div > p` | ✅ |
-| 相邻兄弟 | `h1 + p` | ✅ |
-| 后续兄弟 | `h1 ~ p` | ✅ |
+| 类型 | 示例 |
+|:--|:--|
+| 类型选择器 | `div`, `p`, `h1` |
+| 通用选择器 | `*` |
+| 类选择器 | `.box`, `.foo.bar` |
+| ID 选择器 | `#header` |
+| 属性选择器 | `[id]`, `[type="text"]`, `[attr^="val"]`, `[attr$="val"]`, `[attr*="val"]`, `[attr~="val"]`, `[attr\|"val"]` |
+| 伪类（结构） | `:first-child`, `:last-child`, `:nth-child(n)`, `:nth-last-child`, `:first-of-type`, `:last-of-type`, `:only-of-type`, `:only-child`, `:empty` |
+| 伪类（否定） | `:not()`（支持嵌套选择器） |
+| 伪类（复杂公式） | `:nth-child(an+b)`（支持 `3n+1`、`-n+3` 等） |
+| 伪类（链接/交互） | `:link`, `:any-link`, `:hover`, `:focus`, `:active` |
+| 伪元素 | `::before`, `::after`（`content` 属性） |
+| 后代组合器 | `div span` |
+| 子组合器 | `div > p` |
+| 相邻兄弟 | `h1 + p` |
+| 后续兄弟 | `h1 ~ p` |
 
-### CSS 属性（有视觉效果）
+### CSS 属性
 
 | 属性 | 说明 |
 |:--|:--|
 | `display` | `block`, `inline`, `flex`, `grid`（降级为 block）, `table`, `inline-block`（降级为 block）, `none` |
-| `position` | ✅ `static`, `relative`（`top`/`left`/`right`/`bottom` 偏移） |
+| `position` | `static`, `relative`（`top`/`left`/`right`/`bottom` 偏移） |
 | `width` / `height` | `px`, `%` 单位 |
+| `min-width` / `max-width` | 宽度约束（`px` 单位） |
+| `min-height` / `max-height` | 高度约束（`px` 单位） |
 | `padding` | 简写 1~4 值 |
-| `margin` | 简写 1~4 值（透明间距，margin 折叠已修复） |
+| `margin` | 简写 1~4 值（支持 `margin: auto` 水平居中，支持负 margin） |
+| margin 折叠 | 相邻垂直 margin 取最大值 |
 | `border` | 简写 + `px`，Unicode 框线绘制 |
-| `border-style` | `solid`, `dashed`, `dotted`, `double`, `heavy`, `rounded`, `groove`/`ridge`/`inset`/`outset`（后四种降级为 solid） |
+| `border-style` | `solid`, `dashed`, `dotted`, `double`, `heavy`, `rounded`（`groove`/`ridge`/`inset`/`outset` 降级为 solid） |
 | `border-color` | `#RRGGBB`, 命名色 |
 | `border-width` | 数值 |
 | `color` | 前景色 |
 | `background-color` | 背景色填充 |
+| `outline` | 边框外轮廓（支持 `width` + `color` 简写） |
+| `box-sizing` | `content-box`（默认）, `border-box` |
+| `overflow` | `hidden`, `auto`, `scroll`（递归裁剪子节点，滚动容器指示器） |
+| `visibility` | `hidden`（元素占位不可见） |
 | `text-align` | `left`, `center`, `right` |
 | `font-weight` | `bold`, `700`, `bolder`（终端粗体 ANSI） |
-| `text-decoration` | `underline`（终端下划线 ANSI），`overline`（Macron `¯`），`line-through`（删除线 `-`） |
-| `flex-direction` | `row`, `column` |
-| `flex-wrap` | ✅ 换行支持（`wrap` 自动折行，空间不足时换新行） |
-| `justify-content` | `start`, `center`, `end`, `space-between`, `space-around`, `space-evenly` |
-| `align-items` | `start`, `center`, `end`, `stretch` |
-| `gap` | flex 子元素间距 |
-| `flex-grow` | 剩余空间分配 |
-| `flex-shrink` | ✅ 超出容器时按比例收缩 |
-| `flex-basis` | `px` 单位 |
-| `outline` | 边框外轮廓（支持 `width` + `color` 简写） |
-| `overflow` | `hidden`, `auto`, `scroll`（递归裁剪子节点） |
-| `visibility` | ✅ `hidden`（元素占位不可见） |
-| `white-space` | ✅ `pre`/`pre-wrap`/`pre-line`（保留空白） |
+| `font-style` | `italic`（ANSI `\033[3m` 转义码） |
+| `text-decoration` | `underline`（终端下划线）, `overline`（Macron `¯`）, `line-through`（删除线 `-`） |
+| `text-transform` | `uppercase`, `lowercase`, `capitalize` |
 | `line-height` | 行高（数值，默认 1） |
 | `letter-spacing` | 字符间距（`px` 单位） |
 | `word-spacing` | 单词间距（`px` 单位） |
-| `box-sizing` | `content-box`（默认），`border-box` |
-| `max-width` / `min-width` | 宽度约束（`px` 单位） |
-| `max-height` / `min-height` | 高度约束（`px` 单位） |
-| `vertical-align` | `top`/`middle`/`bottom` |
+| `white-space` | `pre`, `pre-wrap`, `pre-line`（保留空白） |
+| `vertical-align` | `top`, `middle`, `bottom` |
+| `flex-direction` | `row`, `column` |
+| `flex-wrap` | `wrap` 自动折行 |
+| `align-content` | `start`, `center`, `end`, `space-between`, `space-around`, `stretch` |
+| `flex-grow` | 剩余空间分配 |
+| `flex-shrink` | 超出容器时按比例收缩 |
+| `flex-basis` | `px` 单位 |
+| `justify-content` | `start`, `center`, `end`, `space-between`, `space-around`, `space-evenly` |
+| `align-items` | `start`, `center`, `end`, `stretch` |
+| `gap` | flex 子元素间距 |
+| `@media` 查询 | 基础支持（`min-width`/`max-width`，匹配 `screen`/`all`） |
+| 颜色格式 | `#RGB`/`#RRGGBB`、命名色、`rgb(r,g,b)`/`rgba(r,g,b,a)`、`hsl()`/`hsla()`、`transparent`、`currentColor` |
+| CSS 关键字 | `inherit`（从父层继承）, `initial`/`unset`（恢复默认） |
 
 ### HTML 标签
 
-| 类别 | 标签 | 状态 |
-|:--|:--|:--:|
-| Block 元素 | `html`, `body`, `div`, `p`, `h1`-`h6`, `ul`, `ol`, `li`, `header`, `footer`, `section`, `article`, `nav`, `main`, `form`, `fieldset`, `legend`, `hr`, `pre`, `details`, `summary`, `textarea`, `select`, `table`, `tr`, `td`, `th` | ✅ 默认 block |
-| Inline 元素 | `span`, `a`, `em`, `strong`, `b`, `i`, `u`, `code`, `small`, `br`, `img`, `input`, `button` | ✅ 默认 inline |
-| Block 元素 | `select` | ✅ 默认 block（经调整，确保 block 流中正确换行） |
-| 折叠面板 | `<details>` / `<summary>` | ✅ 点击 `<summary>` 切换展开/折叠（`open` 属性控制默认状态） |
-| 多行输入 | `<textarea>` | ✅ 支持多行文本编辑，Enter 换行 |
-| 下拉选择 | `<select>` / `<option>` | ✅ Tab 聚焦，Enter 循环切换选项，`<option>` 隐藏 |
-| 输入框 | `<input>` | ✅ 聚焦后键盘输入，支持 `type="password"` 和 `placeholder` |
-| 按钮 | `<button>` | ✅ 背景色 + 粗体，可点击 |
-| 超链接 | `<a href>` | ✅ 默认蓝色 + 下划线 |
-| 图片 | `<img>` | ✅ `[img]` 占位符显示 |
-| 表格 | `<table>` / `<tr>` / `<td>` / `<th>` | ✅ 自动列宽 + 等高等列，支持 `colspan` |
-| 列表 | `<ul>` / `<ol>` / `<li>` | ✅ `•` 和 `1.` 前缀 |
-| 水平线 | `<hr>` | ✅ `─` 字符横线 |
-| 预格式化 | `<pre>` | ✅ 保留空白和换行 |
-| 脚本/样式 | `<script>`, `<style>` | ✅ 自动跳过/隐藏 |
+| 类别 | 标签 |
+|:--|:--|
+| 块级元素 | `html`, `body`, `div`, `p`, `h1`-`h6`, `ul`, `ol`, `li`, `header`, `footer`, `section`, `article`, `nav`, `main`, `form`, `fieldset`, `legend`, `hr`, `pre`, `details`, `summary`, `textarea`, `select`, `table`, `tr`, `td`, `th` |
+| 行内元素 | `span`, `a`, `em`, `strong`, `b`, `i`, `u`, `code`, `small`, `br`, `img`, `input`, `button`, `s`, `del`, `kbd`, `samp` |
+| 交互元素 | `<details>` / `<summary>`（折叠/展开，`open` 属性控制默认状态） |
+| | `<textarea>`（多行文本编辑，Enter 换行，双向滚动 + 滚动条拖拽） |
+| | `<select>` / `<option>` / `<optgroup>`（Tab 聚焦，Enter 循环切换选项，`<optgroup>` 分组显示） |
+| | `<input>`（支持 `type="text"` / `type="password"`（`•` 掩码）/ `checkbox`（`[x]`）/ `radio`（`(•)`）/ `range`（滑块）/ `color`（色块）/ `number` / `search` / `email` / `url` / `tel`，以及 `placeholder` 属性） |
+| | `<label for="id">`（点击自动聚焦目标输入框） |
+| | `<button>`（背景色 + 粗体） |
+| | `<a href>`（默认蓝色 + 下划线） |
+| 列表 | `<ul>` / `<ol>` / `<li>`（`•` 和 `1.` 前缀） |
+| 表格 | `<table>` / `<tr>` / `<td>` / `<th>`（自动列宽 + 等高等列，支持 `colspan`） |
+| | `<thead>` / `<tbody>` / `<tfoot>`（统一按行处理） |
+| 其他 | `<img>`（显示 `[alt文本]` 占位符），`<hr>`（`─` 横线），`<pre>`（保留空白和换行） |
+| 默认样式 | `<s>` / `<del>`（`line-through` 删除线），`<kbd>` / `<samp>` / `<code>`（深色背景） |
+| 隐藏元素 | `<script>`, `<style>` 自动跳过/隐藏 |
 
 ### 渲染能力
 
 | 功能 | 说明 |
 |:--|:--|
 | 24-bit 真彩色 | ANSI `\033[38;2;R;G;Bm` / `\033[48;2;R;G;Bm` |
-| 粗体 / 下划线 | ANSI 转义序列 |
-| 边框绘制 | 6 种样式（solid/dashed/dotted/double/heavy/rounded），Unicode 框线字符 |
+| 粗体 / 下划线 / 斜体 | ANSI 转义序列 |
+| 边框绘制 | 6 种样式，Unicode 框线字符 |
 | 表格边框交点 | 自动识别 `┼├┤┴┬` 等交叉字符 |
 | 文本对齐 | 居中/右对齐 |
-| 换行 | `<br>` → 新行 |
-| 滚动 | 屏幕滚动支持 |
-| 显示隐藏 | `display: none` |
-| 内容裁剪 | `overflow: hidden` |
 | 文本截断 | 超出宽度显示 `…` |
+| 滚动容器 | `overflow: auto/scroll` 裁剪 + 状态栏滚动指示 `▲▼` |
+| textarea 滚动条 | 右侧垂直滚动条（`│` 轨道 + `▒` 滑块），支持鼠标拖拽 |
+| 显示隐藏 | `display: none`，`visibility: hidden` |
 | 焦点指示器 | 选中元素外周条状高亮 |
 | 状态栏 | 底部固定行，交互反馈 |
-| 输入框编辑 | 实时键盘输入 |
+| 输入框编辑 | 实时键盘输入，光标移动（`←`/`→`/`Home`/`End`/`Delete`/`Backspace`） |
 | UTF-8 支持 | 中文 / Emoji 多字节字符 |
+| 终端 Resize | SIGWINCH 信号处理 + 事件轮询双检测 |
+| 鼠标交互 | 点击、悬停（`:hover`）、滚轮滚动、滚动条拖拽、右键查看元素信息 |
 
 ---
 
 ## ❌ 不支持的功能
 
-### CSS 选择器
+### 🔴 终端限制 — 不可能实现
 
-| 选择器 | 说明 |
+| 功能/属性 | 原因 |
 |:--|:--|
-| `:not()` | ✅ 已实现（否定伪类，Katana 已解析，支持嵌套选择器） |
-| `::before` / `::after` | ✅ 已实现（`content` 属性生成文本内容，前置或附加到元素文本） |
-| `:nth-child(an+b)` 复杂公式 | ✅ 已实现（支持 `3n+1`、`n+2`、`-n+3` 等公式） |
-
-### CSS 布局属性
-
-| 属性 | 说明 |
-|:--|:--|
-| `float`, `clear` | 未实现，推荐 Flexbox 替代 |
-| `position: absolute / fixed` | 未实现，仅支持 `static` 和 `relative` |
-| `z-index` | 无层叠上下文，元素顺序依赖 DOM |
-| `grid-template-*` 及 Grid 相关 | Grid 降级为 `block` 处理 |
-| `flex-wrap` | ✅ 已实现（`wrap` 折行支持，`align-content` 未实现） |
-| `flex-shrink` | ✅ 已实现（超出容器时按比例收缩） |
-| `max-width` / `min-width` / `max-height` / `min-height` | ✅ 已实现（尺寸约束，仅支持 `px` 单位） |
-| `box-sizing` | ✅ 已实现（支持 `border-box`，padding/border 从宽高中扣除） |
-| `margin: auto` | ✅ 已实现（水平居中） |
-| 负 `margin` | ✅ 已实现（块布局中允许，可产生重叠效果） |
-| margin 折叠 | ✅ 已修复（相邻垂直 margin 取最大值） |
-
-### CSS 视觉样式
-
-| 属性 | 说明 |
-|:--|:--|
-| `vertical-align` | ✅ 已实现（`top`/`middle`/`bottom`） |
 | `opacity`, `box-shadow`, `border-radius` | 终端无法渲染透明、阴影、圆角 |
-| `transform`, `transition`, `animation` | 终端渲染无实际意义 |
-| 字体相关：`font-family`, `font-size`, `font-style` | 仅支持 `font-weight` 粗体 |
-| `text-decoration` 的 `overline` / `line-through` | ✅ 已实现（Macron `¯` / 删除线 `-`） |
-| `line-height` | ✅ 已实现（支持数值，行距可调） |
-| `text-transform` | ✅ 已实现（`uppercase`/`lowercase`/`capitalize`） |
-| `letter-spacing`, `word-spacing` | ✅ 已实现（字符间距 + 单词间距，`px` 单位） |
-| `white-space` | ✅ 已实现（`pre`/`pre-wrap`/`pre-line` 保留空白） |
-| `visibility` | ✅ 已实现（`hidden` 占位不可见） |
-| `outline` | ✅ 已实现（`outline-width` + `outline-color`，简写 `outline`） |
-| `cursor` | 终端光标样式不可控 |
+| `transform`, `transition`, `animation` | 终端无动画/变换能力 |
+| `font-family`, `font-size` | 终端固定字体，无法更改 |
+| `@font-face`, `@keyframes` | 在终端无实际意义 |
+| `<iframe>`, `<video>`, `<audio>`, `<canvas>` | 需要浏览器能力，TUI 中不可用 |
+| 终端文本选中/复制 | 终端 TUI 无选择复制机制（可用终端原生选择） |
 
-### 颜色格式
+### 🟡 可实现但工作量大
 
-| 格式 | 说明 |
-|:--|:--|
-| `rgb(r,g,b)` / `rgba(r,g,b,a)` | ✅ 已实现（支持函数式 RGB，含 `%` 单位） |
-| `hsl()` / `hsla()` | ✅ 已实现（HSL→RGB 转换） |
-| `transparent` 关键字 | ✅ 已实现（`transparent` → 无色） |
-| `currentColor` 关键字 | ✅ 已实现（解析为当前 `color` 值） |
-
-### 渲染与盒模型
-
-| 功能 | 说明 |
-|:--|:--|
-| `display: inline-block` | 该中间模式未实现（降级为 block 处理） |
-| 独立滚动容器（`overflow: auto / scroll`） | ✅ 已实现（`overflow: auto/scroll` 裁剪+状态栏滚动指示 `▲▼`） |
-| 层叠顺序 | 重叠元素仅按 DOM 顺序，无真正层叠 |
-| 终端 resize 信号 | ✅ SIGWINCH 信号处理 + 事件轮询双检测 |
-| 文本选中/复制 | 终端 TUI 无选择复制机制 |
-| `<img>` 的 `alt` 属性 | ✅ 已实现（读取 `alt` 属性，显示 `[alt文本]`） |
-
-### HTML 标签/元素
-
-| 标签 | 说明 |
-|:--|:--|
-| `<iframe>`, `<video>`, `<audio>`, `<canvas>` | 嵌入/多媒体/绘图元素不支持 |
-| `<input type="radio/checkbox/email/password/number/range/date">` 等 | 仅支持 `type="text"` 和 `type="password"`（`•` 掩码），支持 `placeholder` 属性 |
-| 折叠面板 | `<details>` / `<summary>` | ✅ 已实现（Tab+Enter 切换展开/折叠，`open` 属性控制默认状态） |
-| 多行输入 | `<textarea>` | ✅ 已实现（Enter 换行，多行编辑） |
-| 下拉选择 | `<select>` / `<option>` | ✅ 已实现（Tab 聚焦，Enter 循环选项） |
-| 语义标签 | `<dialog>`, `<figure>` 等 | 不支持 |
-| `<label for>` | ✅ 已实现（点击 `<label for="id">` 自动聚焦目标输入框） |
-| `<fieldset>`, `<legend>` | 已解析（默认 block 渲染，legend 自动放到 fieldset 顶部） |
-| `<optgroup>` | 不支持 |
-
-### 表格
-
-| 特性 | 说明 |
-|:--|:--|
-| `colspan` | ✅ 已实现（跨列合并，单元格自动均分列宽） |
-| `rowspan` | 跨行合并未实现 |
-| `<thead>` / `<tbody>` / `<tfoot>` | 表格行组已解析（统一按 `display: table-row` 处理） |
-| `border-collapse` | 始终使用 collapsed 网格绘制模式 |
-
-### CSS 其他
-
-| 特性 | 说明 |
-|:--|:--|
-| `@media` 查询 | ✅ 基础支持（`min-width`/`max-width`，匹配 `screen`/`all` 类型） |
-| `background` 简写（除 `background-color`）| 仅支持纯色背景填充，`background-image` 等不支持 |
-| `border` 部分样式（`groove` / `ridge` / `inset` / `outset`）| 降级为 `solid` 绘制 |
-| `@font-face` | 字体定义无意义 |
-| `@keyframes` / `animation` | 动画不支持 |
-| `inherit` / `initial` / `unset` 关键字 | ✅ 已实现（`inherit` 从父层继承，`initial`/`unset` 恢复默认） |
-
-### 交互
-
-| 功能 | 说明 |
-|:--|:--|
-| `Shift+Tab` | ✅ 已实现（`TB_KEY_BACK_TAB`，反向遍历焦点） |
-| `<details>` 折叠 | ✅ 聚焦 `<summary>` 后按 Enter/Space 切换展开/折叠 |
-| `<textarea>` 编辑 | ✅ 多行文本编辑，Enter 换行，方向键导航 |
-| `<select>` 选择 | ✅ 聚焦后按 Enter/Space 循环切换选项 |
-| 鼠标悬停 `:hover` | ✅ 键盘输入自动清除悬停，鼠标离开检测 |
-| 终端 Resize 信号 | ✅ SIGWINCH 信号处理 + 事件轮询双检测 |
-| 键盘/鼠标事件扩展 | 仅支持焦点切换、点击、输入，无拖拽、右键菜单等 |
-| 输入框光标位置 | ✅ 已实现（`←`/`→`/`Home`/`End` 移动，`Delete`/`Backspace` 删除） |
+| 功能/属性 | 说明 | 难度 |
+|:--|:--|:--:|
+| `float`, `clear` | 需要多遍浮动布局算法，已推荐 Flexbox 替代 | ★★★ |
+| `position: absolute / fixed` | 需要引入包含块系统 + 脱离文档流的布局通道 | ★★★ |
+| `z-index` | 需要渲染时按 z-index 排序；与绝对定位配合才有意义 | ★★☆ |
+| Grid 布局 | 完整的 Grid 布局引擎，含 template/area/fr 单位 | ★★★ |
+| `rowspan` | 需要追踪跨行单元格并动态调整行高（现已支持 colspan） | ★★☆ |
+| `display: inline-block` | 需要真正的行内流 + 块级盒模型组合（当前降级为 block） | ★★☆ |
+| 拖拽交互 | 通用拖拽模型（除现有滚动条拖拽外） | ★★★ |
+| `<dialog>` 模态框 | 需要叠加层渲染 + 焦点捕获 | ★★☆ |
 
 ---
 
@@ -363,10 +278,15 @@ mb_quit(mb);                    // 退出
 ```
 ├── run.sh                        # 运行脚本
 ├── pages/                        # 测试页面（HTML + 内联 CSS）
+│   ├── 00-menu.html              # 主菜单（默认页面）
+│   ├── 01-complex-form.html      # 表单演示
+│   ├── 02-flex-layout.html       # Flex 布局展示
+│   ├── 03-selectors-elements.html# CSS 选择器与元素
+│   └── 04-new-features.html      # 新功能展示
 ├── src/
-│   ├── demo.c               # 入口：组装模块并启动
-│   ├── demo_page.h               # 用户页面配置（可编辑）
+│   ├── demo.c                    # 入口：组装模块 + 按钮回调配置
 │   └── core/
+│       ├── mini_browser.h        # Public API (stb-style single header)
 │       ├── gumbo.h               # HTML 解析器
 │       ├── interact.h            # 交互框架
 │       ├── katana.h              # CSS 解析器
@@ -376,8 +296,6 @@ mb_quit(mb);                    // 退出
 │       ├── termbox2.h            # 终端 I/O
 │       └── uc.h                  # Unicode 工具
 ├── doc/
-│   ├── 实现状态.md               # 详细的功能实现状态
-│   ├── 解耦方案.md               # 架构解耦设计文档
-│   └── test_pages/               # 历史测试页面 (已迁移到 pages/)
+│   └── optimization-analysis.md  # 性能优化分析
 └── README.md
 ```

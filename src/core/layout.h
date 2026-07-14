@@ -38,7 +38,16 @@ typedef enum {
     JUSTIFY_SPACE_EVENLY
 } JustifyContent;
 
-/** Align items */
+/* Align content (for flex-wrap multi-line) */
+typedef enum {
+    ALIGN_CONTENT_START = 0,
+    ALIGN_CONTENT_CENTER,
+    ALIGN_CONTENT_END,
+    ALIGN_CONTENT_SPACE_BETWEEN,
+    ALIGN_CONTENT_SPACE_AROUND,
+    ALIGN_CONTENT_STRETCH
+} AlignContent;
+
 typedef enum {
     ALIGN_START = 0,
     ALIGN_CENTER,
@@ -85,6 +94,7 @@ typedef struct LayoutNode {
 
     /* text styling */
     bool font_bold;
+    bool font_italic;   /* font-style: italic */
     int font_underline; /* 0=none, 1=underline, 2=overline, 3=line-through */
 
     /* vertical-align: 0=baseline(default), 1=top, 2=middle, 3=bottom */
@@ -109,6 +119,7 @@ typedef struct LayoutNode {
     FlexDirection flex_direction;
     JustifyContent justify_content;
     AlignItems align_items;
+    AlignContent align_content;
     int gap;             /* gap between flex items */
     int flex_grow;
     int flex_shrink;
@@ -872,9 +883,13 @@ static void apply_styles(LayoutNode* ln) {
 
     /* text styling */
     ln->font_bold = false;
+    ln->font_italic = false;
     const char* fw = get_style(sn, "font-weight");
     if (fw && (strcmp(fw, "bold") == 0 || strcmp(fw, "700") == 0 || strcmp(fw, "bolder") == 0))
         ln->font_bold = true;
+
+    const char* fsi = get_style(sn, "font-style");
+    if (fsi && strcmp(fsi, "italic") == 0) ln->font_italic = true;
 
     ln->font_underline = 0;
     const char* td = get_style(sn, "text-decoration");
@@ -977,8 +992,17 @@ static void apply_styles(LayoutNode* ln) {
 
     /* flex-wrap */
     ln->flex_wrap = 0;
+    ln->align_content = ALIGN_CONTENT_START;
     const char* fwrap = get_style(sn, "flex-wrap");
     if (fwrap && strcmp(fwrap, "wrap") == 0) ln->flex_wrap = 1;
+    const char* ac = get_style(sn, "align-content");
+    if (ac) {
+        if (strcmp(ac, "center") == 0) ln->align_content = ALIGN_CONTENT_CENTER;
+        else if (strcmp(ac, "end") == 0 || strcmp(ac, "flex-end") == 0) ln->align_content = ALIGN_CONTENT_END;
+        else if (strcmp(ac, "space-between") == 0) ln->align_content = ALIGN_CONTENT_SPACE_BETWEEN;
+        else if (strcmp(ac, "space-around") == 0) ln->align_content = ALIGN_CONTENT_SPACE_AROUND;
+        else if (strcmp(ac, "stretch") == 0) ln->align_content = ALIGN_CONTENT_STRETCH;
+    }
 
     /* position: relative */
     ln->position_type = 0;
@@ -1310,6 +1334,9 @@ static void layout_flex_children(LayoutNode* parent, int content_w, int content_
     /* flex-wrap tracking */
     int cross_cursor = 0;
     int line_max_cross = 0;
+    /* Collect line heights for align-content support */
+    int line_heights[128];
+    int line_count = 0;
 
     for (size_t i = 0; i < parent->num_children; i++) {
         LayoutNode* child = parent->children[i];
@@ -1319,6 +1346,7 @@ static void layout_flex_children(LayoutNode* parent, int content_w, int content_
 
         /* flex-wrap: if item doesn't fit on current line, start new line */
         if (parent->flex_wrap && main_cursor + child_main > main_size && main_cursor > 0) {
+            if (line_count < 128) line_heights[line_count++] = line_max_cross;
             cross_cursor += line_max_cross + parent->gap;
             main_cursor = justify_offset;
             line_max_cross = 0;
@@ -1409,6 +1437,7 @@ static void layout_flex_children(LayoutNode* parent, int content_w, int content_
 
         /* compute child's children after dimensions are set */
         compute_child_layouts(child, child->width);
+        apply_position_offset(child);
 
         /* Track max cross size for flex-wrap */
         {
@@ -1417,8 +1446,69 @@ static void layout_flex_children(LayoutNode* parent, int content_w, int content_
                      child->margin_top + child->margin_bottom;
             if (ch > line_max_cross) line_max_cross = ch;
         }
+    }
 
-        apply_position_offset(child);
+    if (line_count < 128) line_heights[line_count++] = line_max_cross;
+
+    /* Apply align-content for flex-wrap multi-line layout */
+    if (parent->flex_wrap && line_count > 1 && parent->align_content != ALIGN_CONTENT_START) {
+        int total_line_height = 0;
+        for (int li = 0; li < line_count; li++) total_line_height += line_heights[li];
+        int total_gap_height = (line_count - 1) * parent->gap;
+        int used_cross = total_line_height + total_gap_height;
+        int remaining_cross = cross_size - used_cross;
+        if (remaining_cross > 0 && cross_size > 0) {
+            int target_line_pos[128] = {0};
+            int cur = 0;
+            if (parent->align_content == ALIGN_CONTENT_CENTER) {
+                cur = remaining_cross / 2;
+                for (int li = 0; li < line_count; li++) {
+                    target_line_pos[li] = cur;
+                    cur += line_heights[li] + parent->gap;
+                }
+            } else if (parent->align_content == ALIGN_CONTENT_END) {
+                cur = remaining_cross;
+                for (int li = 0; li < line_count; li++) {
+                    target_line_pos[li] = cur;
+                    cur += line_heights[li] + parent->gap;
+                }
+            } else if (parent->align_content == ALIGN_CONTENT_SPACE_BETWEEN) {
+                int extra_gap = remaining_cross / (line_count - 1);
+                for (int li = 0; li < line_count; li++) {
+                    target_line_pos[li] = cur;
+                    cur += line_heights[li] + parent->gap + (li < line_count - 1 ? extra_gap : 0);
+                }
+            } else if (parent->align_content == ALIGN_CONTENT_SPACE_AROUND) {
+                int half_gap = remaining_cross / (line_count * 2);
+                cur = half_gap;
+                for (int li = 0; li < line_count; li++) {
+                    target_line_pos[li] = cur;
+                    cur += line_heights[li] + parent->gap + half_gap * 2;
+                }
+            }
+
+            /* Re-position children to match target line positions */
+            int li = 0;
+            int line_y = target_line_pos[0];
+            for (size_t i = 0; i < parent->num_children; i++) {
+                LayoutNode* child = parent->children[i];
+                if (child->display == DISPLAY_NONE) continue;
+                /* Detect line transition (by checking if Y changed) */
+                if (is_row && child->y > line_y + line_heights[li] + parent->gap) {
+                    li++;
+                    if (li >= line_count) break;
+                    line_y = target_line_pos[li];
+                } else if (!is_row && child->x > line_y + line_heights[li] + parent->gap) {
+                    li++;
+                    if (li >= line_count) break;
+                    line_y = target_line_pos[li];
+                }
+                int old_cross_pos = is_row ? (child->y - child->margin_top - child->border_top - child->padding_top) : (child->x - child->margin_left - child->border_left - child->padding_left);
+                int new_cross_pos = line_y + child->margin_top + child->border_top + child->padding_top;
+                child->x += (is_row ? 0 : new_cross_pos - old_cross_pos);
+                child->y += (is_row ? new_cross_pos - old_cross_pos : 0);
+            }
+        }
     }
 
     free(natural_mains);
@@ -1954,36 +2044,112 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
         }
     }
 
-    /* <input>: render as value or placeholder */
+    /* <s> / <del>: default line-through */
+    if (snode->node->type == GUMBO_NODE_ELEMENT &&
+        (snode->node->v.element.tag == GUMBO_TAG_S ||
+         snode->node->v.element.tag == GUMBO_TAG_DEL)) {
+        ln->font_underline = 3; /* line-through */
+    }
+
+    /* <kbd> / <samp> / <code>: distinct background */
+    if (snode->node->type == GUMBO_NODE_ELEMENT &&
+        (snode->node->v.element.tag == GUMBO_TAG_KBD ||
+         snode->node->v.element.tag == GUMBO_TAG_SAMP ||
+         snode->node->v.element.tag == GUMBO_TAG_CODE)) {
+        if (!ln->bg_color.valid) {
+            ln->bg_color.r = 40; ln->bg_color.g = 40; ln->bg_color.b = 50;
+            ln->bg_color.valid = true;
+        }
+    }
+
+    /* <input>: render as value or placeholder, support multiple types */
     if (snode->node->type == GUMBO_NODE_ELEMENT &&
         snode->node->v.element.tag == GUMBO_TAG_INPUT) {
-        /* Detect type=password — mask with dots */
         const char* type_val = NULL;
         GumboAttribute* type_attr = gumbo_get_attribute(&snode->node->v.element.attributes, "type");
         if (type_attr && type_attr->value) type_val = type_attr->value;
-        bool is_password = (type_val && strcmp(type_val, "password") == 0);
+        if (!type_val) type_val = "text";
 
         const char* val = NULL;
         GumboAttribute* attr = gumbo_get_attribute(&snode->node->v.element.attributes, "value");
         if (attr && attr->value) val = attr->value;
         char buf[128];
-        if (val && *val) {
-            if (is_password) {
-                int vlen = (int)strlen(val);
-                for (int k = 0; k < vlen && k < 126; k++) buf[k] = 0x2022; /* • */
-                buf[vlen > 126 ? 126 : vlen] = '\0';
+        bool is_password = (strcmp(type_val, "password") == 0);
+        bool is_checkbox = (strcmp(type_val, "checkbox") == 0);
+        bool is_radio    = (strcmp(type_val, "radio") == 0);
+        bool is_range    = (strcmp(type_val, "range") == 0);
+        bool is_color    = (strcmp(type_val, "color") == 0);
+        bool is_number   = (strcmp(type_val, "number") == 0);
+
+        if (is_checkbox) {
+            const char* checked = NULL;
+            GumboAttribute* ck = gumbo_get_attribute(&snode->node->v.element.attributes, "checked");
+            if (ck) checked = ck->value;
+            const char* cb_label = (val && val[0]) ? val : "";
+            if (checked) {
+                snprintf(buf, sizeof(buf), "[x] %s", cb_label);
+                ln->color.r = 120; ln->color.g = 220; ln->color.b = 120;
             } else {
-                snprintf(buf, sizeof(buf), "%s", val);
+                snprintf(buf, sizeof(buf), "[ ] %s", cb_label);
+                ln->color.r = 200; ln->color.g = 200; ln->color.b = 200;
+            }
+        } else if (is_radio) {
+            const char* checked = NULL;
+            GumboAttribute* ck = gumbo_get_attribute(&snode->node->v.element.attributes, "checked");
+            if (ck) checked = ck->value;
+            const char* rb_label = (val && val[0]) ? val : "";
+            if (checked) {
+                snprintf(buf, sizeof(buf), "(•) %s", rb_label);
+                ln->color.r = 120; ln->color.g = 220; ln->color.b = 120;
+            } else {
+                snprintf(buf, sizeof(buf), "( ) %s", rb_label);
+                ln->color.r = 200; ln->color.g = 200; ln->color.b = 200;
+            }
+        } else if (is_range) {
+            int rv = 50;
+            if (val && val[0]) rv = (int)strtol(val, NULL, 10);
+            if (rv < 0) rv = 0; if (rv > 100) rv = 100;
+            int bar_w = 20, thumb_pos = (rv * (bar_w - 1)) / 100;
+            buf[0] = '[';
+            for (int k = 1; k < bar_w; k++) buf[k] = (k <= thumb_pos) ? 0x2550 : (k == thumb_pos + 1) ? 0x25CF : ' ';
+            buf[bar_w] = ']'; buf[bar_w + 1] = '\0';
+            int off = bar_w + 1;
+            snprintf(buf + off, sizeof(buf) - off, " %d%%", rv);
+            ln->color.r = 180; ln->color.g = 220; ln->color.b = 255;
+        } else if (is_color) {
+            const char* cv = (val && val[0]) ? val : "#000000";
+            snprintf(buf, sizeof(buf), "[■] %s", cv);
+            /* Parse color for swatch background */
+            ResolvedColor rc = parse_color(cv);
+            if (rc.valid) {
+                ln->bg_color = rc;
             }
         } else {
-            /* Try placeholder */
-            GumboAttribute* ph = gumbo_get_attribute(&snode->node->v.element.attributes, "placeholder");
-            if (ph && ph->value && ph->value[0]) {
-                snprintf(buf, sizeof(buf), "%s", ph->value);
-                ln->color.r = 120; ln->color.g = 120; ln->color.b = 120;
+            if (val && *val) {
+                if (is_password) {
+                    int vlen = (int)strlen(val);
+                    for (int k = 0; k < vlen && k < 126; k++) buf[k] = 0x2022;
+                    buf[vlen > 126 ? 126 : vlen] = '\0';
+                } else if (is_number) {
+                    /* Validate numeric */
+                    const char* np = val;
+                    bool valid_num = true;
+                    if (*np == '-') np++;
+                    while (*np) { if (*np < '0' || *np > '9') { valid_num = false; break; } np++; }
+                    if (valid_num) snprintf(buf, sizeof(buf), "%s", val);
+                    else snprintf(buf, sizeof(buf), "[invalid]");
+                } else {
+                    snprintf(buf, sizeof(buf), "%s", val);
+                }
             } else {
-                strcpy(buf, " ");
-                ln->color.r = 180; ln->color.g = 180; ln->color.b = 180;
+                GumboAttribute* ph = gumbo_get_attribute(&snode->node->v.element.attributes, "placeholder");
+                if (ph && ph->value && ph->value[0]) {
+                    snprintf(buf, sizeof(buf), "%s", ph->value);
+                    ln->color.r = 120; ln->color.g = 120; ln->color.b = 120;
+                } else {
+                    strcpy(buf, " ");
+                    ln->color.r = 180; ln->color.g = 180; ln->color.b = 180;
+                }
             }
         }
         if (ln->text_content) free(ln->text_content);

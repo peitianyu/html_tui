@@ -565,7 +565,6 @@ static size_t compute_specificity(KatanaSelector* selector) {
                 c++;
                 break;
             default:
-                c++;
                 break;
         }
         cur = cur->tagHistory;

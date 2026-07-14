@@ -10,7 +10,6 @@
 | 文件 | 行数(约) | 职责 | 优化等级 |
 |------|---------|------|---------|
 | `src/demo.c` | 35 | 入口 | ⭐ 低 |
-| `src/demo_page.h` | 280 | 页面配置/回调/CSS提取 | ⭐⭐ 中 |
 | `src/core/styletree.h` | ~550 | 样式树/选择器匹配 | ⭐⭐⭐ 高 |
 | `src/core/layout.h` | ~1800 | 布局引擎 | ⭐⭐⭐ 高 |
 | `src/core/render.h` | ~550 | 渲染引擎 | ⭐⭐ 中 |
@@ -282,21 +281,7 @@ char** pieces = (char**)calloc(children->length, sizeof(char*));
 
 ---
 
-## 六、构建/编译优化
-
-### 6.1 全 header-only 导致编译慢
-
-所有实现都在 `.h` 文件中，任何修改都触发全量重编译。目前 `tcc -run` 掩盖了这个问题，但如果切换到 gcc/clang 编译会明显变慢。
-
-**建议**: 考虑将稳定模块（uc.h）预编译为对象文件。
-
-### 6.2 `demo_page.h` 中的 `static` 函数
-
-`extract_css_from_html` 和 `read_file_content` 被标记为 `static` 但放在 `.h` 中，如果被多个 `.c` 包含可能会重复定义。当前只有 `demo.c` 包含它，但这是脆弱的。
-
----
-
-## 七、优先级建议
+## 六、优先级建议
 
 ### 高优先级（显著改进用户体验/性能）
 

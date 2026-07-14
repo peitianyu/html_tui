@@ -132,19 +132,6 @@ static int dwchars[][2] = {
 	{0x20000, 0x2FFFD}, {0x30000, 0x3FFFD},
 };
 
-/* ---------- binary search ---------- */
-
-static int find(int c, int tab[][2], int n) {
-	if (c < tab[0][0] || !n) return 0;
-	int l = 0, h = n - 1;
-	while (l <= h) {
-		int m = (h + l) / 2;
-		if (c >= tab[m][0] && c <= tab[m][1]) return 1;
-		if (c < tab[m][0]) h = m - 1; else l = m + 1;
-	}
-	return 0;
-}
-
 /* ---------- public API implementation ---------- */
 
 int uc_slen(const char *s) {

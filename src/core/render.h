@@ -79,8 +79,10 @@ void node_abs_box(LayoutNode* n, int scroll_x, int scroll_y,
 
 Screen* screen_create(int cols, int rows) {
     Screen* s = (Screen*)calloc(1, sizeof(Screen));
+    if (!s) return NULL;
     s->cols = cols; s->rows = rows;
     s->cells = (Cell*)calloc((size_t)(rows * cols), sizeof(Cell));
+    if (!s->cells) { free(s); return NULL; }
     for (int i = 0; i < rows * cols; i++) {
         s->cells[i].ch = 0x0020;
         s->cells[i].fg_r = 255; s->cells[i].fg_g = 255; s->cells[i].fg_b = 255;
@@ -120,15 +122,8 @@ static void scr_uline(Screen* s, int c, int r, bool u) { if(scr_vis(s,c,r)) scr_
 /* ─── Compute absolute screen position of a layout node ──────── */
 void node_abs_box(LayoutNode* n, int scroll_x, int scroll_y,
                          int* out_x, int* out_y, int* out_w, int* out_h) {
-    int ax = 0, ay = 0;
-    LayoutNode* p = n;
-    while (p) {
-        ax += p->x;
-        ay += p->y;
-        p = p->parent;
-    }
-    *out_x = ax - n->border_left - n->padding_left - scroll_x;
-    *out_y = ay - n->border_top - n->padding_top - scroll_y;
+    *out_x = n->abs_x - n->border_left - n->padding_left - scroll_x;
+    *out_y = n->abs_y - n->border_top - n->padding_top - scroll_y;
     *out_w = n->width + n->padding_left + n->padding_right + n->border_left + n->border_right;
     *out_h = n->height + n->padding_top + n->padding_bottom + n->border_top + n->border_bottom;
 }

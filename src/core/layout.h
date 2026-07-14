@@ -63,6 +63,9 @@ typedef struct LayoutNode {
     /* computed position (relative to parent top-left) */
     int x, y;
 
+    /* cached absolute position (relative to root, computed after layout, used by node_abs_box) */
+    int abs_x, abs_y;
+
     /* computed dimensions (content area, excluding padding/border/margin) */
     int width, height;
 
@@ -327,28 +330,58 @@ static ResolvedColor parse_color(const char* str) {
 
     while (*str == ' ' || *str == '\t') str++;
 
-    /* named colors */
-    if (strcmp(str, "red") == 0)      { c.r = 255; c.g = 0;   c.b = 0;   c.valid = true; return c; }
-    if (strcmp(str, "green") == 0)    { c.r = 0;   c.g = 128; c.b = 0;   c.valid = true; return c; }
-    if (strcmp(str, "blue") == 0)     { c.r = 0;   c.g = 0;   c.b = 255; c.valid = true; return c; }
-    if (strcmp(str, "white") == 0)    { c.r = 255; c.g = 255; c.b = 255; c.valid = true; return c; }
-    if (strcmp(str, "black") == 0)    { c.r = 0;   c.g = 0;   c.b = 0;   c.valid = true; return c; }
-    if (strcmp(str, "gray") == 0 || strcmp(str, "grey") == 0)
-                                      { c.r = 128; c.g = 128; c.b = 128; c.valid = true; return c; }
-    if (strcmp(str, "yellow") == 0)   { c.r = 255; c.g = 255; c.b = 0;   c.valid = true; return c; }
-    if (strcmp(str, "cyan") == 0)     { c.r = 0;   c.g = 255; c.b = 255; c.valid = true; return c; }
-    if (strcmp(str, "magenta") == 0)  { c.r = 255; c.g = 0;   c.b = 255; c.valid = true; return c; }
-    if (strcmp(str, "silver") == 0)   { c.r = 192; c.g = 192; c.b = 192; c.valid = true; return c; }
-    if (strcmp(str, "maroon") == 0)   { c.r = 128; c.g = 0;   c.b = 0;   c.valid = true; return c; }
-    if (strcmp(str, "olive") == 0)    { c.r = 128; c.g = 128; c.b = 0;   c.valid = true; return c; }
-    if (strcmp(str, "navy") == 0)     { c.r = 0;   c.g = 0;   c.b = 128; c.valid = true; return c; }
-    if (strcmp(str, "purple") == 0)   { c.r = 128; c.g = 0;   c.b = 128; c.valid = true; return c; }
-    if (strcmp(str, "teal") == 0)     { c.r = 0;   c.g = 128; c.b = 128; c.valid = true; return c; }
-    if (strcmp(str, "orange") == 0)   { c.r = 255; c.g = 165; c.b = 0;   c.valid = true; return c; }
-    if (strcmp(str, "pink") == 0)     { c.r = 255; c.g = 192; c.b = 203; c.valid = true; return c; }
-    if (strcmp(str, "lime") == 0)     { c.r = 0;   c.g = 255; c.b = 0;   c.valid = true; return c; }
-    if (strcmp(str, "transparent") == 0) { c.valid = false; return c; }
-    if (strcmp(str, "currentColor") == 0) { c.valid = false; return c; /* resolved at apply_styles */ }
+    /* faster dispatch using a switch on first char */
+    switch (str[0]) {
+        case 'r':
+            if (strcmp(str, "red") == 0)      { c.r = 255; c.g = 0;   c.b = 0;   c.valid = true; return c; }
+            break;
+        case 'g':
+            if (strcmp(str, "green") == 0)    { c.r = 0;   c.g = 128; c.b = 0;   c.valid = true; return c; }
+            if (strcmp(str, "gray") == 0)     { c.r = 128; c.g = 128; c.b = 128; c.valid = true; return c; }
+            if (strcmp(str, "grey") == 0)     { c.r = 128; c.g = 128; c.b = 128; c.valid = true; return c; }
+            break;
+        case 'b':
+            if (strcmp(str, "blue") == 0)     { c.r = 0;   c.g = 0;   c.b = 255; c.valid = true; return c; }
+            if (strcmp(str, "black") == 0)    { c.r = 0;   c.g = 0;   c.b = 0;   c.valid = true; return c; }
+            break;
+        case 'w':
+            if (strcmp(str, "white") == 0)    { c.r = 255; c.g = 255; c.b = 255; c.valid = true; return c; }
+            break;
+        case 'y':
+            if (strcmp(str, "yellow") == 0)   { c.r = 255; c.g = 255; c.b = 0;   c.valid = true; return c; }
+            break;
+        case 'c':
+            if (strcmp(str, "cyan") == 0)     { c.r = 0;   c.g = 255; c.b = 255; c.valid = true; return c; }
+            if (strcmp(str, "currentColor") == 0) { c.valid = false; return c; }
+            break;
+        case 'm':
+            if (strcmp(str, "magenta") == 0)  { c.r = 255; c.g = 0;   c.b = 255; c.valid = true; return c; }
+            if (strcmp(str, "maroon") == 0)   { c.r = 128; c.g = 0;   c.b = 0;   c.valid = true; return c; }
+            break;
+        case 's':
+            if (strcmp(str, "silver") == 0)   { c.r = 192; c.g = 192; c.b = 192; c.valid = true; return c; }
+            break;
+        case 'o':
+            if (strcmp(str, "olive") == 0)    { c.r = 128; c.g = 128; c.b = 0;   c.valid = true; return c; }
+            if (strcmp(str, "orange") == 0)   { c.r = 255; c.g = 165; c.b = 0;   c.valid = true; return c; }
+            break;
+        case 'n':
+            if (strcmp(str, "navy") == 0)     { c.r = 0;   c.g = 0;   c.b = 128; c.valid = true; return c; }
+            break;
+        case 'p':
+            if (strcmp(str, "purple") == 0)   { c.r = 128; c.g = 0;   c.b = 128; c.valid = true; return c; }
+            if (strcmp(str, "pink") == 0)     { c.r = 255; c.g = 192; c.b = 203; c.valid = true; return c; }
+            break;
+        case 't':
+            if (strcmp(str, "teal") == 0)     { c.r = 0;   c.g = 128; c.b = 128; c.valid = true; return c; }
+            if (strcmp(str, "transparent") == 0) { c.valid = false; return c; }
+            break;
+        case 'l':
+            if (strcmp(str, "lime") == 0)     { c.r = 0;   c.g = 255; c.b = 0;   c.valid = true; return c; }
+            break;
+        default:
+            break;
+    }
 
     /* rgb(r,g,b) or rgba(r,g,b,a) */
     if (strncmp(str, "rgb", 3) == 0) {
@@ -460,61 +493,130 @@ static ResolvedColor parse_color(const char* str) {
     return c;
 }
 
+/* ─── Apply position:relative offset (inline helper) ─── */
+static inline void apply_position_offset(LayoutNode* child) {
+    if (child->position_type == 1) {
+        child->x += child->position_left - child->position_right;
+        child->y += child->position_top - child->position_bottom;
+    }
+}
+
 /* ---------- display type helpers ---------- */
 
-/** Get default display type from tag name */
+/** Tag name → default display type mapping (sorted for binary search) */
+typedef struct { const char* tag; DisplayType display; } TagDisplay;
+
+static int cmp_tag_display(const void* a, const void* b) {
+    return strcmp(((const TagDisplay*)a)->tag, ((const TagDisplay*)b)->tag);
+}
+
 static DisplayType get_default_display(const char* tagname) {
     if (!tagname) return DISPLAY_BLOCK;
 
-    /* block elements */
-    if (strcmp(tagname, "div") == 0)    return DISPLAY_BLOCK;
-    if (strcmp(tagname, "p") == 0)      return DISPLAY_BLOCK;
-    if (strcmp(tagname, "h1") == 0)     return DISPLAY_BLOCK;
-    if (strcmp(tagname, "h2") == 0)     return DISPLAY_BLOCK;
-    if (strcmp(tagname, "h3") == 0)     return DISPLAY_BLOCK;
-    if (strcmp(tagname, "h4") == 0)     return DISPLAY_BLOCK;
-    if (strcmp(tagname, "h5") == 0)     return DISPLAY_BLOCK;
-    if (strcmp(tagname, "h6") == 0)     return DISPLAY_BLOCK;
-    if (strcmp(tagname, "li") == 0)     return DISPLAY_BLOCK;
-    if (strcmp(tagname, "ul") == 0)     return DISPLAY_BLOCK;
-    if (strcmp(tagname, "ol") == 0)     return DISPLAY_BLOCK;
-    if (strcmp(tagname, "header") == 0) return DISPLAY_BLOCK;
-    if (strcmp(tagname, "footer") == 0) return DISPLAY_BLOCK;
-    if (strcmp(tagname, "section") == 0) return DISPLAY_BLOCK;
-    if (strcmp(tagname, "article") == 0) return DISPLAY_BLOCK;
-    if (strcmp(tagname, "nav") == 0)    return DISPLAY_BLOCK;
-    if (strcmp(tagname, "body") == 0)   return DISPLAY_BLOCK;
-    if (strcmp(tagname, "html") == 0)   return DISPLAY_BLOCK;
-    if (strcmp(tagname, "main") == 0)   return DISPLAY_BLOCK;
-    if (strcmp(tagname, "form") == 0)   return DISPLAY_BLOCK;
-    if (strcmp(tagname, "hr") == 0)     return DISPLAY_BLOCK;
-    if (strcmp(tagname, "pre") == 0)    return DISPLAY_BLOCK;
-    if (strcmp(tagname, "table") == 0)  return DISPLAY_TABLE;
-    if (strcmp(tagname, "tr") == 0)     return DISPLAY_TABLE_ROW;
-    if (strcmp(tagname, "td") == 0)     return DISPLAY_BLOCK;
-    if (strcmp(tagname, "th") == 0)     return DISPLAY_BLOCK;
-    if (strcmp(tagname, "details") == 0) return DISPLAY_BLOCK;
-    if (strcmp(tagname, "summary") == 0) return DISPLAY_BLOCK;
-    if (strcmp(tagname, "textarea") == 0) return DISPLAY_BLOCK;
-    if (strcmp(tagname, "select") == 0)  return DISPLAY_BLOCK;
-    if (strcmp(tagname, "option") == 0)  return DISPLAY_NONE;
+    static const TagDisplay map[] = {
+        {"a",        DISPLAY_INLINE},
+        {"abbr",     DISPLAY_INLINE},
+        {"address",  DISPLAY_BLOCK},
+        {"article",  DISPLAY_BLOCK},
+        {"b",        DISPLAY_INLINE},
+        {"bdi",      DISPLAY_INLINE},
+        {"bdo",      DISPLAY_INLINE},
+        {"blockquote", DISPLAY_BLOCK},
+        {"body",     DISPLAY_BLOCK},
+        {"br",       DISPLAY_INLINE},
+        {"button",   DISPLAY_INLINE},
+        {"canvas",   DISPLAY_INLINE},
+        {"caption",  DISPLAY_BLOCK},
+        {"cite",     DISPLAY_INLINE},
+        {"code",     DISPLAY_INLINE},
+        {"col",      DISPLAY_NONE},
+        {"colgroup", DISPLAY_NONE},
+        {"data",     DISPLAY_INLINE},
+        {"datalist", DISPLAY_NONE},
+        {"dd",       DISPLAY_BLOCK},
+        {"del",      DISPLAY_INLINE},
+        {"details",  DISPLAY_BLOCK},
+        {"dfn",      DISPLAY_INLINE},
+        {"dialog",   DISPLAY_BLOCK},
+        {"div",      DISPLAY_BLOCK},
+        {"dl",       DISPLAY_BLOCK},
+        {"dt",       DISPLAY_BLOCK},
+        {"em",       DISPLAY_INLINE},
+        {"fieldset", DISPLAY_BLOCK},
+        {"figcaption", DISPLAY_BLOCK},
+        {"figure",   DISPLAY_BLOCK},
+        {"footer",   DISPLAY_BLOCK},
+        {"form",     DISPLAY_BLOCK},
+        {"h1",       DISPLAY_BLOCK},
+        {"h2",       DISPLAY_BLOCK},
+        {"h3",       DISPLAY_BLOCK},
+        {"h4",       DISPLAY_BLOCK},
+        {"h5",       DISPLAY_BLOCK},
+        {"h6",       DISPLAY_BLOCK},
+        {"header",   DISPLAY_BLOCK},
+        {"hr",       DISPLAY_BLOCK},
+        {"html",     DISPLAY_BLOCK},
+        {"i",        DISPLAY_INLINE},
+        {"img",      DISPLAY_INLINE},
+        {"input",    DISPLAY_INLINE},
+        {"ins",      DISPLAY_INLINE},
+        {"kbd",      DISPLAY_INLINE},
+        {"label",    DISPLAY_INLINE},
+        {"legend",   DISPLAY_BLOCK},
+        {"li",       DISPLAY_BLOCK},
+        {"main",     DISPLAY_BLOCK},
+        {"mark",     DISPLAY_INLINE},
+        {"meter",    DISPLAY_INLINE},
+        {"nav",      DISPLAY_BLOCK},
+        {"noscript", DISPLAY_NONE},
+        {"ol",       DISPLAY_BLOCK},
+        {"optgroup", DISPLAY_NONE},
+        {"option",   DISPLAY_NONE},
+        {"output",   DISPLAY_INLINE},
+        {"p",        DISPLAY_BLOCK},
+        {"picture",  DISPLAY_INLINE},
+        {"pre",      DISPLAY_BLOCK},
+        {"progress", DISPLAY_INLINE},
+        {"q",        DISPLAY_INLINE},
+        {"s",        DISPLAY_INLINE},
+        {"samp",     DISPLAY_INLINE},
+        {"script",   DISPLAY_NONE},
+        {"section",  DISPLAY_BLOCK},
+        {"select",   DISPLAY_BLOCK},
+        {"small",    DISPLAY_INLINE},
+        {"span",     DISPLAY_INLINE},
+        {"strong",   DISPLAY_INLINE},
+        {"style",    DISPLAY_NONE},
+        {"sub",      DISPLAY_INLINE},
+        {"summary",  DISPLAY_BLOCK},
+        {"sup",      DISPLAY_INLINE},
+        {"table",    DISPLAY_TABLE},
+        {"tbody",    DISPLAY_NONE},
+        {"td",       DISPLAY_BLOCK},
+        {"template", DISPLAY_NONE},
+        {"textarea", DISPLAY_BLOCK},
+        {"tfoot",    DISPLAY_NONE},
+        {"th",       DISPLAY_BLOCK},
+        {"thead",    DISPLAY_NONE},
+        {"time",     DISPLAY_INLINE},
+        {"tr",       DISPLAY_TABLE_ROW},
+        {"u",        DISPLAY_INLINE},
+        {"ul",       DISPLAY_BLOCK},
+        {"var",      DISPLAY_INLINE},
+        {"video",    DISPLAY_INLINE},
+    };
+    static const int map_len = sizeof(map) / sizeof(map[0]);
 
-    /* inline elements */
-    if (strcmp(tagname, "span") == 0)   return DISPLAY_INLINE;
-    if (strcmp(tagname, "a") == 0)      return DISPLAY_INLINE;
-    if (strcmp(tagname, "em") == 0)     return DISPLAY_INLINE;
-    if (strcmp(tagname, "strong") == 0) return DISPLAY_INLINE;
-    if (strcmp(tagname, "b") == 0)      return DISPLAY_INLINE;
-    if (strcmp(tagname, "i") == 0)      return DISPLAY_INLINE;
-    if (strcmp(tagname, "u") == 0)      return DISPLAY_INLINE;
-    if (strcmp(tagname, "code") == 0)   return DISPLAY_INLINE;
-    if (strcmp(tagname, "small") == 0)  return DISPLAY_INLINE;
-    if (strcmp(tagname, "br") == 0)     return DISPLAY_INLINE;
-    if (strcmp(tagname, "img") == 0)    return DISPLAY_INLINE;
-    if (strcmp(tagname, "input") == 0)  return DISPLAY_INLINE;
-    if (strcmp(tagname, "button") == 0) return DISPLAY_INLINE;
-
-    return DISPLAY_BLOCK; /* default */
+    /* Binary search */
+    int lo = 0, hi = map_len - 1;
+    while (lo <= hi) {
+        int mid = (lo + hi) / 2;
+        int cmp = strcmp(tagname, map[mid].tag);
+        if (cmp == 0) return map[mid].display;
+        if (cmp < 0) hi = mid - 1;
+        else lo = mid + 1;
+    }
+    return DISPLAY_BLOCK; /* default for unknown tags */
 }
 
 /** Parse display string to enum */
@@ -560,30 +662,38 @@ static char* extract_text(GumboNode* node) {
         GumboVector* children = &node->v.element.children;
         size_t total_len = 0;
 
-        /* first pass: calculate total length from text/br/inline children */
-        char** pieces = (char**)calloc(children->length, sizeof(char*));
-        size_t piece_count = 0;
+        /* first pass: count TEXT/BR nodes and calculate total length */
+        int text_count = 0;
         for (unsigned int i = 0; i < children->length; i++) {
             GumboNode* child = (GumboNode*)children->data[i];
             if (child->type == GUMBO_NODE_TEXT) {
-                char* text = strdup(child->v.text.text);
-                pieces[piece_count++] = text;
-                total_len += strlen(text);
+                text_count++;
+                total_len += strlen(child->v.text.text);
             } else if (child->type == GUMBO_NODE_ELEMENT &&
                        child->v.element.tag == GUMBO_TAG_BR) {
-                char* text = strdup("\n");
-                pieces[piece_count++] = text;
+                text_count++;
                 total_len += 1;
             }
-            /* skip other ELEMENT nodes */
         }
 
-        if (total_len == 0) {
-            free(pieces);
+        if (total_len == 0 || text_count == 0) {
             return NULL;
         }
 
-        /* second pass: combine */
+        /* second pass: allocate only for TEXT/BR nodes */
+        char** pieces = (char**)calloc(text_count, sizeof(char*));
+        size_t piece_count = 0;
+        for (unsigned int i = 0; i < children->length && piece_count < (size_t)text_count; i++) {
+            GumboNode* child = (GumboNode*)children->data[i];
+            if (child->type == GUMBO_NODE_TEXT) {
+                pieces[piece_count++] = strdup(child->v.text.text);
+            } else if (child->type == GUMBO_NODE_ELEMENT &&
+                       child->v.element.tag == GUMBO_TAG_BR) {
+                pieces[piece_count++] = strdup("\n");
+            }
+        }
+
+        /* third pass: combine */
         char* result = (char*)malloc(total_len + 1);
         result[0] = '\0';
         for (size_t i = 0; i < piece_count; i++) {
@@ -1001,11 +1111,7 @@ static void layout_block_children(LayoutNode* parent, int content_w) {
             inline_cursor += child->width + child->padding_left + child->padding_right +
                              child->border_left + child->border_right +
                              child->margin_left + child->margin_right;
-            /* position: relative offset for inline children */
-            if (child->position_type == 1) {
-                child->x += child->position_left - child->position_right;
-                child->y += child->position_top - child->position_bottom;
-            }
+            apply_position_offset(child);
         } else {
             /* Block children: stack vertically, full width */
 
@@ -1028,11 +1134,7 @@ static void layout_block_children(LayoutNode* parent, int content_w) {
 
             child->x = child->margin_left + child->border_left + child->padding_left;
             child->y = y_cursor + child->margin_top + child->border_top + child->padding_top;
-            /* position: relative offset */
-            if (child->position_type == 1) {
-                child->x += child->position_left - child->position_right;
-                child->y += child->position_top - child->position_bottom;
-            }
+            apply_position_offset(child);
 
             compute_child_layouts(child, child->width);
 
@@ -1208,9 +1310,6 @@ static void layout_flex_children(LayoutNode* parent, int content_w, int content_
     /* flex-wrap tracking */
     int cross_cursor = 0;
     int line_max_cross = 0;
-    int* line_starts = (int*)calloc(visible + 1, sizeof(int));
-    int line_count = 0;
-    line_starts[line_count++] = 0;
 
     for (size_t i = 0; i < parent->num_children; i++) {
         LayoutNode* child = parent->children[i];
@@ -1223,7 +1322,6 @@ static void layout_flex_children(LayoutNode* parent, int content_w, int content_
             cross_cursor += line_max_cross + parent->gap;
             main_cursor = justify_offset;
             line_max_cross = 0;
-            line_starts[line_count++] = i;
         }
 
         /* flex-grow: distribute remaining */
@@ -1320,15 +1418,10 @@ static void layout_flex_children(LayoutNode* parent, int content_w, int content_
             if (ch > line_max_cross) line_max_cross = ch;
         }
 
-        /* position: relative offset */
-        if (child->position_type == 1) {
-            child->x += child->position_left - child->position_right;
-            child->y += child->position_top - child->position_bottom;
-        }
+        apply_position_offset(child);
     }
 
     free(natural_mains);
-    free(line_starts);
 
     /* set parent height (for row) or width+height (for column) */
     if (visible > 0) {
@@ -1579,6 +1672,7 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
     if (!snode || !snode->node) return NULL;
 
     LayoutNode* ln = (LayoutNode*)calloc(1, sizeof(LayoutNode));
+    if (!ln) return NULL;
     ln->styled = snode;
     ln->parent = parent;
 
@@ -1713,6 +1807,7 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
 
         size_t total = snode->num_children + gumbo_text_count;
         ln->children = (LayoutNode**)calloc(total, sizeof(LayoutNode*));
+        if (!ln->children) { free_layout_tree(ln); return NULL; }
         size_t idx = 0, elem_i = 0;
 
         /* <details> collapse: when closed, only allow summary child and skip others */
@@ -2024,6 +2119,9 @@ static void number_list_items(LayoutNode* node) {
     }
 }
 
+/* Forward declaration */
+static void compute_abs_coords(LayoutNode* node, int ax, int ay);
+
 /* ---------- public API ---------- */
 
 LayoutNode* build_layout_tree(StyledNode* styled_root, int viewport_w, int viewport_h) {
@@ -2055,7 +2153,20 @@ LayoutNode* build_layout_tree(StyledNode* styled_root, int viewport_w, int viewp
         root->bg_color.valid = true;
     }
 
+    /* Compute absolute coordinates for all nodes (cached for node_abs_box) */
+    compute_abs_coords(root, 0, 0);
+
     return root;
+}
+
+/* ─── Compute absolute coordinates for the entire layout tree ─── */
+static void compute_abs_coords(LayoutNode* node, int ax, int ay) {
+    if (!node) return;
+    node->abs_x = ax + node->x;
+    node->abs_y = ay + node->y;
+    for (size_t i = 0; i < node->num_children; i++) {
+        compute_abs_coords(node->children[i], node->abs_x, node->abs_y);
+    }
 }
 
 void free_layout_tree(LayoutNode* tree) {

@@ -1554,26 +1554,50 @@ skip_mouse_processing:
 
         /* If hover/focus/active changed, rebuild styles and layout */
         if (restyle && saved_css && saved_st) {
-            /* Recompute previous hover node (remove old :hover styles) */
+            /* Collect all nodes needing restyle, deduplicate by pointer */
+            StyledNode* restyle_nodes[8];
+            int restyle_count = 0;
+            StyledNode* sn;
+
+            /* previous hover node (remove old :hover styles) */
             if (prev_hover && prev_hover != g_interact_hover && prev_hover != g_interact_focus) {
-                StyledNode* sn = find_styled_node(saved_st, prev_hover);
-                if (sn) recompute_style_subtree(sn, saved_css, NULL);
+                sn = find_styled_node(saved_st, prev_hover);
+                if (sn) restyle_nodes[restyle_count++] = sn;
             }
+            /* new hover node */
             if (g_interact_hover) {
-                StyledNode* sn = find_styled_node(saved_st, g_interact_hover);
-                if (sn) recompute_style_subtree(sn, saved_css, NULL);
+                sn = find_styled_node(saved_st, g_interact_hover);
+                if (sn) {
+                    bool dup = false;
+                    for (int i = 0; i < restyle_count; i++) if (restyle_nodes[i] == sn) { dup = true; break; }
+                    if (!dup) restyle_nodes[restyle_count++] = sn;
+                }
             }
+            /* focus node (if different from hover) */
             if (g_interact_focus && g_interact_focus != g_interact_hover) {
-                StyledNode* sn = find_styled_node(saved_st, g_interact_focus);
-                if (sn) recompute_style_subtree(sn, saved_css, NULL);
+                sn = find_styled_node(saved_st, g_interact_focus);
+                if (sn) {
+                    bool dup = false;
+                    for (int i = 0; i < restyle_count; i++) if (restyle_nodes[i] == sn) { dup = true; break; }
+                    if (!dup) restyle_nodes[restyle_count++] = sn;
+                }
             }
-            /* Recompute previous active node (remove old :active styles) */
+            /* previous active node (remove old :active styles) */
             if (prev_active && prev_active != g_interact_hover && prev_active != g_interact_focus && prev_active != g_interact_active) {
-                StyledNode* sn = find_styled_node(saved_st, prev_active);
-                if (sn) recompute_style_subtree(sn, saved_css, NULL);
+                sn = find_styled_node(saved_st, prev_active);
+                if (sn) {
+                    bool dup = false;
+                    for (int i = 0; i < restyle_count; i++) if (restyle_nodes[i] == sn) { dup = true; break; }
+                    if (!dup) restyle_nodes[restyle_count++] = sn;
+                }
             }
             prev_hover = NULL;
             prev_active = NULL;
+
+            /* Recompute each unique node once */
+            for (int i = 0; i < restyle_count; i++) {
+                recompute_style_subtree(restyle_nodes[i], saved_css, NULL);
+            }
             LayoutNode* new_root = build_layout_tree(saved_st, vw_cache, vh_cache);
             if (new_root) {
                 /* Free old root */

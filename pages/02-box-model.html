@@ -5,24 +5,24 @@
    Test 02: Box Model
    Tests: padding, margin, border styles/colors, box-sizing, outline
    =========================== */
-body { background-color: #222; color: #ccc; padding: 1; }
-h1 { color: #e94560; text-align: center; font-weight: bold; margin: 1; }
-h2 { color: #53a8b6; font-weight: bold; margin: 1; }
+body { background-color: #1a1a1a; color: #c8c3b8; padding: 1; }
+h1 { color: #d44545; text-align: center; font-weight: bold; margin: 1; }
+h2 { color: #6d8a7a; font-weight: bold; margin: 1; }
 
-.section { background-color: #333; padding: 2; margin: 1; border: 1; border-style: solid; border-color: #555; }
+.section { background-color: #242424; padding: 2; margin: 1; border: 1; border-style: solid; border-color: #3a3a3a; }
 
 /* Basic padding */
-.pad-small  { padding: 1; background-color: #3a3a3a; border: 1; border-style: solid; border-color: #53a8b6; }
-.pad-medium { padding: 2; background-color: #3a3a3a; border: 1; border-style: solid; border-color: #53a8b6; margin: 1; }
-.pad-large  { padding: 3; background-color: #3a3a3a; border: 1; border-style: solid; border-color: #53a8b6; margin: 1; }
+.pad-small  { padding: 1; background-color: #2e2e2e; border: 1; border-style: solid; border-color: #6d8a7a; }
+.pad-medium { padding: 2; background-color: #2e2e2e; border: 1; border-style: solid; border-color: #6d8a7a; margin: 1; }
+.pad-large  { padding: 3; background-color: #2e2e2e; border: 1; border-style: solid; border-color: #6d8a7a; margin: 1; }
 
 /* Asymmetric padding */
-.pad-asym   { padding: 1 4 2 1; background-color: #3a3a3a; border: 1; border-style: solid; border-color: #e94560; margin: 1; }
+.pad-asym   { padding: 1 4 2 1; background-color: #2e2e2e; border: 1; border-style: solid; border-color: #d44545; margin: 1; }
 
 /* Margin */
-.margin-all   { margin: 2; background-color: #2a2a3a; border: 1; border-style: dotted; border-color: #f9e069; }
-.margin-top   { margin-top: 3; background-color: #2a2a3a; border: 1; border-style: dotted; border-color: #f9e069; }
-.margin-bottom { margin-bottom: 3; background-color: #2a2a3a; border: 1; border-style: dotted; border-color: #f9e069; }
+.margin-all   { margin: 2; background-color: #2a2a2a; border: 1; border-style: dotted; border-color: #c9a84c; }
+.margin-top   { margin-top: 3; background-color: #2a2a2a; border: 1; border-style: dotted; border-color: #c9a84c; }
+.margin-bottom { margin-bottom: 3; background-color: #2a2a2a; border: 1; border-style: dotted; border-color: #c9a84c; }
 
 /* Negative margin (overlap) */
 .neg-margin {
@@ -33,24 +33,24 @@ h2 { color: #53a8b6; font-weight: bold; margin: 1; }
   padding: 1;
   border: 1;
   border-style: solid;
-  border-color: #e94560;
+  border-color: #d44545;
 }
 
 /* Border styles */
-.border-dashed  { border: 1; border-style: dashed; border-color: #e94560; padding: 1; margin: 1; background-color: #2a2a2a; }
-.border-dotted  { border: 1; border-style: dotted; border-color: #53a8b6; padding: 1; margin: 1; background-color: #2a2a2a; }
-.border-solid   { border: 1; border-style: solid; border-color: #f9e069; padding: 1; margin: 1; background-color: #2a2a2a; }
-.border-double  { border: 2; border-style: double; border-color: #e94560; padding: 1; margin: 1; background-color: #2a2a2a; }
-.border-heavy   { border: 2; border-style: heavy; border-color: #53a8b6; padding: 1; margin: 1; background-color: #2a2a2a; }
+.border-dashed  { border: 1; border-style: dashed; border-color: #d44545; padding: 1; margin: 1; background-color: #2e2e2e; }
+.border-dotted  { border: 1; border-style: dotted; border-color: #6d8a7a; padding: 1; margin: 1; background-color: #2e2e2e; }
+.border-solid   { border: 1; border-style: solid; border-color: #c9a84c; padding: 1; margin: 1; background-color: #2e2e2e; }
+.border-double  { border: 2; border-style: double; border-color: #d44545; padding: 1; margin: 1; background-color: #2e2e2e; }
+.border-heavy   { border: 2; border-style: heavy; border-color: #6d8a7a; padding: 1; margin: 1; background-color: #2e2e2e; }
 
 /* Thick border */
-.border-thick   { border: 2; border-style: solid; border-color: #e94560; padding: 1; margin: 1; background-color: #2a2a2a; }
+.border-thick   { border: 2; border-style: solid; border-color: #d44545; padding: 1; margin: 1; background-color: #2e2e2e; }
 
 /* Multi-border sides */
-.border-sides   { border-top: 1; border-bottom: 1; border-left: 2; border-right: 2; border-style: solid; border-color: #e94560; padding: 1; margin: 1; background-color: #2a2a2a; }
+.border-sides   { border-top: 1; border-bottom: 1; border-left: 2; border-right: 2; border-style: solid; border-color: #d44545; padding: 1; margin: 1; background-color: #2e2e2e; }
 
 /* Outline */
-.outline-demo   { outline: 1; outline-style: solid; outline-color: #f9e069; padding: 1; margin: 2; background-color: #2a2a2a; }
+.outline-demo   { outline: 1; outline-style: solid; outline-color: #c9a84c; padding: 1; margin: 2; background-color: #2e2e2e; }
 
 /* Box-sizing */
 .border-box-demo {
@@ -58,9 +58,9 @@ h2 { color: #53a8b6; font-weight: bold; margin: 1; }
   width: 30;
   border: 1;
   border-style: solid;
-  border-color: #53a8b6;
+  border-color: #6d8a7a;
   padding: 2;
-  background-color: #2a2a2a;
+  background-color: #2e2e2e;
   margin: 1;
 }
 .content-box-demo {
@@ -68,30 +68,30 @@ h2 { color: #53a8b6; font-weight: bold; margin: 1; }
   width: 30;
   border: 1;
   border-style: solid;
-  border-color: #e94560;
+  border-color: #d44545;
   padding: 2;
-  background-color: #2a2a2a;
+  background-color: #2e2e2e;
   margin: 1;
 }
 
 /* min-width / max-width */
-.minw { min-width: 30; background-color: #2a2a3a; border: 1; border-style: solid; border-color: #53a8b6; padding: 1; margin: 1; }
-.maxw { max-width: 30; background-color: #2a2a3a; border: 1; border-style: solid; border-color: #e94560; padding: 1; margin: 1; }
+.minw { min-width: 30; background-color: #2a2a2a; border: 1; border-style: solid; border-color: #6d8a7a; padding: 1; margin: 1; }
+.maxw { max-width: 30; background-color: #2a2a2a; border: 1; border-style: solid; border-color: #d44545; padding: 1; margin: 1; }
 
 /* margin auto (centering) */
 .margin-auto {
   width: 20;
   margin: 1 auto;
-  background-color: #661111;
-  color: #fff;
+  background-color: #4a2525;
+  color: #c8c3b8;
   padding: 1;
   border: 1;
   border-style: solid;
-  border-color: #f9e069;
+  border-color: #c9a84c;
   text-align: center;
 }
 
-.footer { text-align: center; color: #888; margin-top: 2; }
+.footer { text-align: center; color: #8a8580; margin-top: 2; }
 </style>
 </head>
 <body>

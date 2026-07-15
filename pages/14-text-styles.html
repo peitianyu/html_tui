@@ -5,11 +5,11 @@
    Test 14: Text Styles
    Tests: inline-block, del/s/ins, code/kbd/samp, italic, rgb()/rgba(), currentColor
    =========================== */
-body { background-color: #222; color: #ccc; padding: 1; }
-h1 { color: #e94560; text-align: center; font-weight: bold; margin: 1; }
-h2 { color: #53a8b6; font-weight: bold; margin: 1; }
+body { background-color: #1a1a1a; color: #c8c3b8; padding: 1; }
+h1 { color: #d44545; text-align: center; font-weight: bold; margin: 1; }
+h2 { color: #6d8a7a; font-weight: bold; margin: 1; }
 
-.section { background-color: #333; padding: 2; margin: 1; border: 1; border-style: solid; border-color: #555; }
+.section { background-color: #242424; padding: 2; margin: 1; border: 1; border-style: solid; border-color: #3a3a3a; }
 
 /* ─── Inline-block (降级为block) ─── */
 .ib-container {
@@ -21,13 +21,13 @@ h2 { color: #53a8b6; font-weight: bold; margin: 1; }
   display: inline-block;
   width: 15;
   height: 4;
-  background-color: #16213e;
+  background-color: #2e2e2e;
   border: 1;
   border-style: solid;
-  border-color: #53a8b6;
+  border-color: #6d8a7a;
   text-align: center;
   font-weight: bold;
-  color: #53a8b6;
+  color: #6d8a7a;
   padding: 1;
 }
 
@@ -35,59 +35,59 @@ h2 { color: #53a8b6; font-weight: bold; margin: 1; }
   display: inline-block;
   width: 12;
   height: 5;
-  background-color: #0f3460;
+  background-color: #3a3a3a;
   border: 1;
   border-style: solid;
-  border-color: #e94560;
+  border-color: #d44545;
   text-align: center;
   font-weight: bold;
-  color: #e94560;
+  color: #d44545;
   padding: 1;
 }
 
 /* ─── Deleted / inserted / struck text ─── */
 del {
-  color: #e94560;
+  color: #d44545;
 }
 
 s {
-  color: #888;
+  color: #8a8580;
 }
 
 ins {
-  color: #53a8b6;
+  color: #6d8a7a;
   font-weight: bold;
 }
 
 /* ─── Code / kbd / samp ─── */
 code {
-  background-color: #16213e;
+  background-color: #2e2e2e;
   font-weight: bold;
-  color: #f9e069;
+  color: #c9a84c;
 }
 
 kbd {
-  background-color: #16213e;
+  background-color: #2e2e2e;
   font-weight: bold;
-  color: #53a8b6;
+  color: #6d8a7a;
 }
 
 samp {
-  background-color: #16213e;
+  background-color: #2e2e2e;
   font-style: italic;
-  color: #e0e0e0;
+  color: #c8c3b8;
 }
 
 /* ─── Italic ─── */
 .emph {
   font-style: italic;
-  color: #f9e069;
+  color: #c9a84c;
 }
 
 .emph-bold {
   font-style: italic;
   font-weight: bold;
-  color: #e94560;
+  color: #d44545;
 }
 
 /* ─── rgb() / rgba() colors ─── */
@@ -114,7 +114,7 @@ samp {
 
 /* ─── currentColor ─── */
 .current-color-box {
-  color: #e94560;
+  color: #d44545;
   border: 1;
   border-style: solid;
   border-color: currentColor;
@@ -126,12 +126,12 @@ samp {
 
 /* ─── Select with optgroup ─── */
 select.optgroup {
-  background-color: #1a1a2e;
-  color: #e0e0e0;
+  background-color: #2e2e2e;
+  color: #c8c3b8;
   width: 24;
   border: 1;
   border-style: solid;
-  border-color: #f9e069;
+  border-color: #c9a84c;
 }
 
 /* ─── width/height constraint ─── */
@@ -142,7 +142,7 @@ select.optgroup {
   margin: 1;
 }
 
-.footer { text-align: center; color: #888; margin-top: 2; }
+.footer { text-align: center; color: #8a8580; margin-top: 2; }
 </style>
 </head>
 <body>

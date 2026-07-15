@@ -5,84 +5,84 @@
    Test 08: Tables
    Tests: basic tables, colspan, thead/tbody, nth-child striping
    =========================== */
-body { background-color: #222; color: #ccc; padding: 1; }
-h1 { color: #e94560; text-align: center; font-weight: bold; margin: 1; }
-h2 { color: #53a8b6; font-weight: bold; margin: 1; }
+body { background-color: #1a1a1a; color: #c8c3b8; padding: 1; }
+h1 { color: #d44545; text-align: center; font-weight: bold; margin: 1; }
+h2 { color: #6d8a7a; font-weight: bold; margin: 1; }
 
-.section { background-color: #333; padding: 2; margin: 1; border: 1; border-style: solid; border-color: #555; }
+.section { background-color: #242424; padding: 2; margin: 1; border: 1; border-style: solid; border-color: #3a3a3a; }
 
 /* Basic table */
 table {
   width: 100%;
   border-style: solid;
-  border-color: #53a8b6;
+  border-color: #6d8a7a;
   text-align: center;
 }
 
 th {
   font-weight: bold;
-  background-color: #16213e;
-  color: #f9e069;
+  background-color: #2e2e2e;
+  color: #c9a84c;
 }
 
 td, th {
   padding: 0 1;
   border: 1;
   border-style: solid;
-  border-color: #0f3460;
+  border-color: #3a3a3a;
 }
 
 /* Striped rows */
 .striped tr:nth-child(odd) td {
-  background-color: #1a1a2e;
+  background-color: #2e2e2e;
 }
 
 .striped tr:nth-child(even) td {
-  background-color: #16213e;
+  background-color: #242424;
 }
 
 /* Colorful table */
 .color-table th {
-  background-color: #e94560;
-  color: #fff;
+  background-color: #d44545;
+  color: #1a1a1a;
 }
 
 .color-table td {
-  background-color: #0f3460;
-  color: #53a8b6;
+  background-color: #2e2e2e;
+  color: #6d8a7a;
 }
 
 /* Colspan table */
 .colspan-table th {
-  background-color: #53a8b6;
-  color: #1a1a2e;
+  background-color: #6d8a7a;
+  color: #1a1a1a;
 }
 
 .colspan-table td {
-  background-color: #16213e;
+  background-color: #242424;
 }
 
 .colspan-table td.highlight {
-  background-color: #e94560;
-  color: #fff;
+  background-color: #d44545;
+  color: #1a1a1a;
   font-weight: bold;
 }
 
 /* thead / tbody */
 .with-head thead th {
-  background-color: #0f3460;
-  color: #f9e069;
+  background-color: #2e2e2e;
+  color: #c9a84c;
 }
 
 .with-head tbody tr:nth-child(odd) td {
-  background-color: #1a1a2e;
+  background-color: #2e2e2e;
 }
 
 .with-head tbody tr:nth-child(even) td {
-  background-color: #16213e;
+  background-color: #242424;
 }
 
-.footer { text-align: center; color: #888; margin-top: 2; }
+.footer { text-align: center; color: #8a8580; margin-top: 2; }
 </style>
 </head>
 <body>

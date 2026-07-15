@@ -5,11 +5,11 @@
    Test 09: Lists & Pseudo-classes
    Tests: ul/ol/li, :first-child, :last-child, :nth-child, :only-child
    =========================== */
-body { background-color: #222; color: #ccc; padding: 1; }
-h1 { color: #e94560; text-align: center; font-weight: bold; margin: 1; }
-h2 { color: #53a8b6; font-weight: bold; margin: 1; }
+body { background-color: #1a1a1a; color: #c8c3b8; padding: 1; }
+h1 { color: #d44545; text-align: center; font-weight: bold; margin: 1; }
+h2 { color: #6d8a7a; font-weight: bold; margin: 1; }
 
-.section { background-color: #333; padding: 2; margin: 1; border: 1; border-style: solid; border-color: #555; }
+.section { background-color: #242424; padding: 2; margin: 1; border: 1; border-style: solid; border-color: #3a3a3a; }
 
 /* Unordered list */
 ul {
@@ -19,11 +19,11 @@ ul li {
   margin: 1 0;
 }
 ul li:first-child {
-  color: #e94560;
+  color: #d44545;
   font-weight: bold;
 }
 ul li:last-child {
-  color: #53a8b6;
+  color: #6d8a7a;
 }
 
 /* Ordered list */
@@ -35,50 +35,50 @@ ol li {
 }
 
 /* :nth-child variants */
-.nth-demo tr:nth-child(1) td { background-color: #e94560; color: #fff; font-weight: bold; }
-.nth-demo tr:nth-child(2) td { background-color: #333; }
-.nth-demo tr:nth-child(3) td { background-color: #0f3460; color: #53a8b6; }
-.nth-demo tr:nth-child(4) td { background-color: #444; }
-.nth-demo tr:nth-child(5) td { background-color: #1a1a2e; }
+.nth-demo tr:nth-child(1) td { background-color: #d44545; color: #1a1a1a; font-weight: bold; }
+.nth-demo tr:nth-child(2) td { background-color: #2e2e2e; }
+.nth-demo tr:nth-child(3) td { background-color: #3a3a3a; color: #6d8a7a; }
+.nth-demo tr:nth-child(4) td { background-color: #242424; }
+.nth-demo tr:nth-child(5) td { background-color: #1a1a1a; }
 
 /* Even/odd */
-.nth-odd tr:nth-child(odd) td { background-color: #1a1a2e; color: #e0e0e0; }
-.nth-odd tr:nth-child(even) td { background-color: #16213e; color: #e94560; }
+.nth-odd tr:nth-child(odd) td { background-color: #2e2e2e; color: #c8c3b8; }
+.nth-odd tr:nth-child(even) td { background-color: #242424; color: #d44545; }
 
 /* :only-child */
 .only-parent {
-  background-color: #1a1a2e;
+  background-color: #2e2e2e;
   padding: 1;
   border: 1;
   border-style: dashed;
-  border-color: #f9e069;
+  border-color: #c9a84c;
   margin: 1;
   text-align: center;
 }
 .only-parent span:only-child {
-  color: #f9e069;
+  color: #c9a84c;
   font-weight: bold;
 }
 
 /* Nested :first-child section */
 .section:first-child {
-  border-color: #e94560;
+  border-color: #d44545;
 }
 .section:last-child {
-  border-color: #f9e069;
+  border-color: #c9a84c;
 }
 
 /* Link styles */
 a {
-  color: #53a8b6;
+  color: #6d8a7a;
   text-decoration: underline;
 }
 a:hover {
-  color: #e94560;
+  color: #d44545;
   font-weight: bold;
 }
 
-.footer { text-align: center; color: #888; margin-top: 2; }
+.footer { text-align: center; color: #8a8580; margin-top: 2; }
 </style>
 </head>
 <body>

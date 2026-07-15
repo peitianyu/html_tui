@@ -5,33 +5,33 @@
    Test 12: CSS Effects
    Tests: ::before/::after, position:relative, z-index, @media, outline, attribute selectors
    =========================== */
-body { background-color: #222; color: #ccc; padding: 1; }
-h1 { color: #e94560; text-align: center; font-weight: bold; margin: 1; }
-h2 { color: #53a8b6; font-weight: bold; margin: 1; }
+body { background-color: #1a1a1a; color: #c8c3b8; padding: 1; }
+h1 { color: #d44545; text-align: center; font-weight: bold; margin: 1; }
+h2 { color: #6d8a7a; font-weight: bold; margin: 1; }
 
-.section { background-color: #333; padding: 2; margin: 1; border: 1; border-style: solid; border-color: #555; }
+.section { background-color: #242424; padding: 2; margin: 1; border: 1; border-style: solid; border-color: #3a3a3a; }
 
 /* ─── ::before / ::after ─── */
 .with-before::before {
   content: ">>> ";
-  color: #e94560;
+  color: #d44545;
   font-weight: bold;
 }
 
 .with-after::after {
   content: " <<<";
-  color: #53a8b6;
+  color: #6d8a7a;
   font-weight: bold;
 }
 
 .with-both::before {
   content: "[[[ ";
-  color: #f9e069;
+  color: #c9a84c;
   font-weight: bold;
 }
 .with-both::after {
   content: " ]]]";
-  color: #f9e069;
+  color: #c9a84c;
   font-weight: bold;
 }
 
@@ -40,12 +40,12 @@ h2 { color: #53a8b6; font-weight: bold; margin: 1; }
   position: relative;
   top: 1;
   left: 5;
-  background-color: #e94560;
-  color: #fff;
+  background-color: #d44545;
+  color: #1a1a1a;
   padding: 1;
   border: 1;
   border-style: solid;
-  border-color: #fff;
+  border-color: #c8c3b8;
   font-weight: bold;
 }
 
@@ -53,12 +53,12 @@ h2 { color: #53a8b6; font-weight: bold; margin: 1; }
   position: relative;
   top: -1;
   left: 3;
-  background-color: #53a8b6;
-  color: #fff;
+  background-color: #6d8a7a;
+  color: #1a1a1a;
   padding: 1;
   border: 1;
   border-style: solid;
-  border-color: #fff;
+  border-color: #c8c3b8;
   font-weight: bold;
 }
 
@@ -79,23 +79,23 @@ h2 { color: #53a8b6; font-weight: bold; margin: 1; }
 }
 
 .z-box.z1 {
-  background-color: #e94560;
-  color: #fff;
+  background-color: #d44545;
+  color: #1a1a1a;
   left: 0;
   z-index: 1;
 }
 
 .z-box.z2 {
-  background-color: #53a8b6;
-  color: #1a1a2e;
+  background-color: #6d8a7a;
+  color: #1a1a1a;
   left: 8;
   margin-top: -3;
   z-index: 2;
 }
 
 .z-box.z3 {
-  background-color: #f9e069;
-  color: #1a1a2e;
+  background-color: #c9a84c;
+  color: #1a1a1a;
   left: 16;
   margin-top: -3;
   z-index: 3;
@@ -104,7 +104,7 @@ h2 { color: #53a8b6; font-weight: bold; margin: 1; }
 /* ─── @media query ─── */
 @media (min-width: 80) {
   .wide-only {
-    color: #e94560;
+    color: #d44545;
     font-weight: bold;
   }
   .narrow-only {
@@ -126,40 +126,40 @@ h2 { color: #53a8b6; font-weight: bold; margin: 1; }
 .outline-demo {
   outline: 1;
   outline-style: solid;
-  outline-color: #f9e069;
+  outline-color: #c9a84c;
   padding: 1;
   margin: 1;
-  background-color: #1a1a2e;
+  background-color: #2e2e2e;
 }
 
 .outline-dashed {
   outline: 1;
   outline-style: dashed;
-  outline-color: #e94560;
+  outline-color: #d44545;
   padding: 1;
   margin: 2;
-  background-color: #1a1a2e;
+  background-color: #2e2e2e;
 }
 
 /* ─── Attribute selectors ─── */
 input[type="text"].attr-demo {
-  background-color: #1a1a2e;
-  color: #e0e0e0;
+  background-color: #2e2e2e;
+  color: #c8c3b8;
   width: 24;
 }
 
 input[required] {
   border: 1;
   border-style: solid;
-  border-color: #e94560;
+  border-color: #d44545;
 }
 
 input[disabled] {
-  background-color: #333;
-  color: #888;
+  background-color: #242424;
+  color: #8a8580;
 }
 
-.footer { text-align: center; color: #888; margin-top: 2; }
+.footer { text-align: center; color: #8a8580; margin-top: 2; }
 </style>
 </head>
 <body>

@@ -141,7 +141,7 @@ HTML (.html 含 <style>)
 mini_browser_run("page.html");
 
 // ── 高级模式 ──
-MB_Config cfg = { .on_button_click = my_callback, .show_scrollbars = true };
+MB_Config cfg = { .on_button_click = my_callback, .on_key = NULL, .show_scrollbars = true };
 MiniBrowser* mb = mini_browser_open("page.html", &cfg);
 mini_browser_run_loop(mb);
 mini_browser_close(mb);

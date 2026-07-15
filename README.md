@@ -13,7 +13,10 @@
 # 指定页面
 ./run.sh pages/01-complex-form.html
 
-# 或直接编译运行（支持 tcc 和 gcc）
+# 或直接编译运行（支持 cosmocc、tcc 和 gcc）
+# cosmocc（Actually Portable Executable）:
+cosmocc -x c -I src -o /tmp/mini_browser.com src/demo.c && /tmp/mini_browser.com [page.html]
+
 # tcc（推荐，最快）:
 tcc -I src -run src/demo.c [page.html]
 
@@ -21,8 +24,8 @@ tcc -I src -run src/demo.c [page.html]
 gcc -I src -o /tmp/mini_browser src/demo.c -lm && /tmp/mini_browser [page.html]
 ```
 
-> 支持 [tcc](https://bellard.org/tcc/)（Tiny C Compiler，推荐）和 GCC 编译。
-> `run.sh` 自动检测编译器，优先使用 tcc。
+> 支持 [cosmocc](https://github.com/jart/cosmopolitan)（生成 Actually Portable Executable）、[tcc](https://bellard.org/tcc/)（Tiny C Compiler，推荐）和 GCC 编译。
+> `run.sh` 自动检测编译器，优先级：cosmocc > tcc > gcc。
 
 ## 使用方法
 

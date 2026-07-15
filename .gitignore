@@ -1,5 +1,6 @@
 # 编译产物
 mini_browser
+*.com
 *.o
 
 # 编辑器

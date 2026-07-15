@@ -5,13 +5,18 @@
 #   Use src/demo_simple.c for the simplest setup (just mini_browser.h)
 #   Use src/demo_counter.c for custom callback example
 #
-# Supports both tcc (Tiny C Compiler) and gcc.
+# Supports cosmocc (Cosmopolitan), tcc (Tiny C Compiler) and gcc.
 PAGE="${1:-pages/00-menu.html}"
 
-if command -v tcc &>/dev/null; then
-    # tcc auto-links math library, no -lm needed
-    exec tcc -I src -run src/demo.c "$PAGE" -lm
+# cosmocc: 生成 Actually Portable Executable (.com)
+if command -v cosmocc &>/dev/null; then
+    cosmocc -x c -I src -o demo.exe src/demo.c
 fi
 
-# Fallback to gcc
-gcc -I src -o /tmp/mini_browser src/demo.c -lm && exec /tmp/mini_browser "$PAGE"
+# Try gcc (MinGW) → .exe
+if command -v gcc &>/dev/null; then
+    gcc -I src -o mini_browser.exe src/demo.c -lm && exec ./mini_browser.exe "$PAGE"
+fi
+
+echo "No compiler found (tried: cosmocc, tcc, gcc)" >&2
+exit 1

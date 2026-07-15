@@ -958,6 +958,32 @@ static void apply_styles(LayoutNode* ln) {
     const char* bs_str = get_style(sn, "box-sizing");
     if (bs_str && strcmp(bs_str, "border-box") == 0) ln->box_sizing = 1;
 
+    /* explicit width / height (from CSS, used by flex layout to preserve container size) */
+    const char* w_str = get_style(sn, "width");
+    if (w_str) {
+        ParsedDim wdim = parse_dimension(w_str);
+        if (wdim.valid && wdim.unit == 0 && wdim.value > 0) {
+            int set_w = (int)wdim.value;
+            if (ln->box_sizing == 1) {
+                set_w -= ln->padding_left + ln->padding_right +
+                         ln->border_left + ln->border_right;
+            }
+            if (set_w > 0) ln->width = set_w;
+        }
+    }
+    const char* h_str = get_style(sn, "height");
+    if (h_str) {
+        ParsedDim hdim = parse_dimension(h_str);
+        if (hdim.valid && hdim.unit == 0 && hdim.value > 0) {
+            int set_h = (int)hdim.value;
+            if (ln->box_sizing == 1) {
+                set_h -= ln->padding_top + ln->padding_bottom +
+                         ln->border_top + ln->border_bottom;
+            }
+            if (set_h > 0) ln->height = set_h;
+        }
+    }
+
     /* text-align */
     ln->text_align = 0; /* left */
     const char* ta = get_style(sn, "text-align");

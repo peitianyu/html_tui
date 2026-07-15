@@ -46,11 +46,12 @@ typedef struct {
     MB_KeyFn         on_key;            /* 全局按键 (NULL=默认) */
     void*            userdata;          /* 透传给回调 */
     bool             show_scrollbars;   /* 显示滚动条 (默认 true) */
+    bool             show_statusbar;    /* 显示状态栏 (默认 true) */
 } MB_Config;
 
 #define MB_CONFIG_DEFAULT \
     { .on_button_click = NULL, .on_key = NULL, \
-      .userdata = NULL, .show_scrollbars = true }
+      .userdata = NULL, .show_scrollbars = true, .show_statusbar = true }
 
 /* ═══════════════════════════════════════════════════════════════════ */
 /*  核心 API                                                         */
@@ -117,6 +118,9 @@ void mb_switch_page(MiniBrowser* mb, const char* page_path);
 
 /** 退出交互循环 */
 void mb_quit(MiniBrowser* mb);
+
+/** 显示/隐藏状态栏 (运行时切换, 立即生效) */
+void mb_show_statusbar(MiniBrowser* mb, bool show);
 
 #ifdef __cplusplus
 }
@@ -393,6 +397,7 @@ static bool mb_load_page(MiniBrowser* mb) {
     mb->cb.switch_page[0]  = '\0';
     mb->cb.layout_root     = mb->layout_root;
     mb->cb.show_scrollbars = mb->config.show_scrollbars;
+    mb->cb.show_statusbar  = mb->config.show_statusbar;
 
     /* 状态栏: 显示当前文件名 */
     const char* base = strrchr(mb->current_path, '/');
@@ -511,6 +516,10 @@ void mb_switch_page(MiniBrowser* mb, const char* page_path) {
 
 void mb_quit(MiniBrowser* mb) {
     if (mb) mb->cb.quit_flag = true;
+}
+
+void mb_show_statusbar(MiniBrowser* mb, bool show) {
+    if (mb) mb->cb.show_statusbar = show;
 }
 
 #endif /* MINI_BROWSER_IMPLEMENTATION */

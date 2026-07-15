@@ -93,6 +93,14 @@ struct InteractCallbacks {
      * Supports click-to-jump and drag-to-scroll interactions.
      */
     bool show_scrollbars;
+
+    /* ─── Status bar configuration ─── */
+    /**
+     * Set to true to show the status bar at the bottom of the screen.
+     * When false, the status bar row is used for content rendering instead.
+     * Default: true.
+     */
+    bool show_statusbar;
 };
 
 /* ======================== Element Query Helpers ======================== */
@@ -498,7 +506,7 @@ static void draw_focus_indicator(Screen* s, LayoutNode* f, int scroll_x, int scr
 /* ─── Draw status bar at bottom ─────────────────────────────── */
 static void draw_status_bar(Screen* s, InteractCallbacks* cb, int scroll_x, int scroll_y,
                              LayoutNode* current_root) {
-    if (!cb || !cb->status_msg[0]) return;
+    if (!cb || !cb->show_statusbar || !cb->status_msg[0]) return;
     int sb_row = s->rows - 1;
     for (int ci = 0; ci < s->cols; ci++) {
         screen_scr_set(s, ci, sb_row, ' ');

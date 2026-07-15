@@ -115,6 +115,7 @@ int main(int argc, char** argv) {
     MB_Config config = MB_CONFIG_DEFAULT;
     config.on_button_click = demo_on_click;
     config.show_scrollbars = true;
+    config.show_statusbar = false;
 
     MiniBrowser* mb = mini_browser_open(filepath, &config);
     if (!mb) return 1;

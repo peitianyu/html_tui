@@ -9,7 +9,8 @@
 PAGE="${1:-pages/00-menu.html}"
 
 if command -v tcc &>/dev/null; then
-    tcc -I src -o mini_browser.exe src/demo.c -lm && exec ./mini_browser.exe "$PAGE"
+    tcc -I src -run src/demo.c "$PAGE"
+    exit 0
 fi
 
 # cosmocc: 生成 Actually Portable Executable (.com)

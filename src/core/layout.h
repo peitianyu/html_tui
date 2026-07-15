@@ -1102,13 +1102,14 @@ static void layout_block_children(LayoutNode* parent, int content_w) {
             if (child->styled && child->styled->node &&
                 child->styled->node->type == GUMBO_NODE_ELEMENT &&
                 child->styled->node->v.element.tag == GUMBO_TAG_BR) {
+                int br_lh = child->line_height > 0 ? child->line_height : 1;
                 child->x = 0;
                 child->y = y_cursor + child->margin_top + child->border_top + child->padding_top;
                 child->width = 0;
-                child->height = 1;
+                child->height = br_lh;
                 apply_position_offset(child);
                 inline_cursor = 0;
-                y_cursor += 1 + child->margin_top + child->border_top + child->padding_top +
+                y_cursor += br_lh + child->margin_top + child->border_top + child->padding_top +
                             child->margin_bottom + child->border_bottom + child->padding_bottom;
                 prev_mb = child->margin_bottom;
                 continue;
@@ -1133,7 +1134,7 @@ static void layout_block_children(LayoutNode* parent, int content_w) {
             if (child->max_width > 0 && child->width > child->max_width) child->width = child->max_width;
 
             child->x = inline_cursor + child->margin_left + child->border_left + child->padding_left;
-            child->y = child->margin_top + child->border_top + child->padding_top;
+            child->y = y_cursor + child->margin_top + child->border_top + child->padding_top;
             /* vertical-align adjustment for inline children */
             if (child->vertical_align == 2) { /* middle */
                 child->y = (1 - child->height) / 2 + child->margin_top + child->border_top + child->padding_top;
@@ -2105,6 +2106,7 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
         int mw = viewport_w - ln->padding_left - ln->padding_right -
                  ln->border_left - ln->border_right;
         if (mw < 1) mw = 1;
+        int lh = ln->line_height > 0 ? ln->line_height : 1;
 
         if (ln->preserve_ws) {
             /* <pre>: line count = newlines + 1, no word-wrap */
@@ -2112,7 +2114,7 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
             for (const char* p = ln->text_content; *p; p++) {
                 if (*p == '\n') lines++;
             }
-            ln->height = lines;
+            ln->height = lines * lh;
         } else {
             /* estimate word-wrapped height using display widths */
             int lines = 0, lpos = 0;
@@ -2136,7 +2138,7 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
                 while (*p == '\n') { lines++; lpos = 0; p++; }
             }
             if (lines == 0) lines = 1;
-            ln->height = lines;
+            ln->height = lines * lh;
         }
     }
 

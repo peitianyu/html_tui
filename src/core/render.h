@@ -17,6 +17,8 @@ typedef struct {
     bool bold;
     bool underline;
     bool italic;
+    bool strikeout;
+    bool overline;
 } Cell;
 
 typedef struct {
@@ -105,6 +107,8 @@ void screen_clear(Screen* s) {
         s->cells[i].bold = false;
         s->cells[i].underline = false;
         s->cells[i].italic = false;
+        s->cells[i].strikeout = false;
+        s->cells[i].overline = false;
     }
 }
 
@@ -123,6 +127,8 @@ static void scr_fg(Screen* s, int c, int r, int R, int G, int B) { screen_scr_fg
 static void scr_bg(Screen* s, int c, int r, int R, int G, int B) { screen_scr_bg(s,c,r,R,G,B); }
 static void scr_bold(Screen* s, int c, int r, bool b) { screen_scr_bold(s,c,r,b); }
 static void scr_uline(Screen* s, int c, int r, bool u) { if(scr_vis(s,c,r)) scr_at(s,c,r)->underline=u; }
+static void scr_strike(Screen* s, int c, int r, bool st) { if(scr_vis(s,c,r)) scr_at(s,c,r)->strikeout=st; }
+static void scr_oline(Screen* s, int c, int r, bool ol) { if(scr_vis(s,c,r)) scr_at(s,c,r)->overline=ol; }
 static void scr_italic(Screen* s, int c, int r, bool i) { if(scr_vis(s,c,r)) scr_at(s,c,r)->italic=i; }
 
 /* ─── Compute absolute screen position of a layout node ──────── */
@@ -202,8 +208,8 @@ static void render_preserved_ws(Screen* s, LayoutNode* n, const char* p,
             if (n->font_bold) scr_bold(s, render_cx, *cy, true);
             if (n->font_italic) scr_italic(s, render_cx, *cy, true);
             if (n->font_underline == 1) scr_uline(s, render_cx, *cy, true);
-            else if (n->font_underline == 2 && render_cx < s->cols) { scr_set(s, render_cx, *cy, 0x00AF); scr_fg(s, render_cx, *cy, n->color.r, n->color.g, n->color.b); }
-            else if (n->font_underline == 3 && render_cx < s->cols) { scr_set(s, render_cx, *cy, 0x002D); scr_fg(s, render_cx, *cy, n->color.r, n->color.g, n->color.b); }
+            else if (n->font_underline == 2) scr_oline(s, render_cx, *cy, true);
+            else if (n->font_underline == 3) scr_strike(s, render_cx, *cy, true);
             if (w == 2 && render_cx + 1 < s->cols) scr_set(s, render_cx + 1, *cy, 0);
         }
         cx += w + n->letter_spacing;
@@ -245,7 +251,7 @@ static void render_word_wrapped(Screen* s, LayoutNode* n, const char* p,
     if (n->text_align == 1 || n->text_align == 2) {
         int line_w = 0;
         const char* q = p;
-        while (*q && *q != '\n') { uint32_t cp = uc_dec(&q); if (cp == 0) break; if (cp != ' ' && cp != '\t') line_w += uc_wid((int)cp); }
+        while (*q && *q != '\n') { uint32_t cp = uc_dec(&q); if (cp == 0) break; line_w += uc_wid((int)cp); }
         if (n->text_align == 1 && line_w < mw) cx = lnx + (mw - line_w) / 2;
         else if (n->text_align == 2 && line_w < mw) cx = lnx + mw - line_w;
     }
@@ -268,7 +274,9 @@ static void render_word_wrapped(Screen* s, LayoutNode* n, const char* p,
                 scr_set(s, cx, *cy, cp); scr_fg(s, cx, *cy, n->color.r, n->color.g, n->color.b);
                 if (n->font_bold) scr_bold(s, cx, *cy, true);
                 if (n->font_italic) scr_italic(s, cx, *cy, true);
-                if (n->font_underline) scr_uline(s, cx, *cy, true);
+                if (n->font_underline == 1) scr_uline(s, cx, *cy, true);
+                else if (n->font_underline == 2) scr_oline(s, cx, *cy, true);
+                else if (n->font_underline == 3) scr_strike(s, cx, *cy, true);
                 if (w == 2 && cx + 1 < s->cols) scr_set(s, cx + 1, *cy, 0);
             }
             cx += w + n->letter_spacing;
@@ -705,7 +713,7 @@ void screen_flush(Screen* s) {
     /* Move cursor to home */
     FLUSH_PUTS("\033[H");
 
-    int pfr=-1,pfg=-1,pfb=-1,pbr=-1,pbg=-1,pbb=-1; bool pb=false,pu=false,pi=false;
+    int pfr=-1,pfg=-1,pfb=-1,pbr=-1,pbg=-1,pbb=-1; bool pb=false,pu=false,pi=false,pst=false,pol=false;
     for (int r=0; r<s->rows; r++) {
         for (int c=0; c<s->cols; c++) {
             Cell* cl = &s->cells[r*s->cols + c];
@@ -724,6 +732,8 @@ void screen_flush(Screen* s) {
             if (cl->bold!=pb) { FLUSH_PUTS(cl->bold?"\033[1m":"\033[22m"); pb=cl->bold; }
             if (cl->underline!=pu) { FLUSH_PUTS(cl->underline?"\033[4m":"\033[24m"); pu=cl->underline; }
             if (cl->italic!=pi) { FLUSH_PUTS(cl->italic?"\033[3m":"\033[23m"); pi=cl->italic; }
+            if (cl->strikeout!=pst) { FLUSH_PUTS(cl->strikeout?"\033[9m":"\033[29m"); pst=cl->strikeout; }
+            if (cl->overline!=pol) { FLUSH_PUTS(cl->overline?"\033[53m":"\033[55m"); pol=cl->overline; }
             char buf[4];
             int n = uc_enc(cl->ch, buf);
             for (int i = 0; i < n; i++) FLUSH_PUTC(buf[i]);

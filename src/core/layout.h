@@ -1098,6 +1098,21 @@ static void layout_block_children(LayoutNode* parent, int content_w) {
         if (child->display == DISPLAY_NONE) continue;
 
         if (child->display == DISPLAY_INLINE) {
+            /* <br>: force line break */
+            if (child->styled && child->styled->node &&
+                child->styled->node->type == GUMBO_NODE_ELEMENT &&
+                child->styled->node->v.element.tag == GUMBO_TAG_BR) {
+                child->x = 0;
+                child->y = y_cursor + child->margin_top + child->border_top + child->padding_top;
+                child->width = 0;
+                child->height = 1;
+                apply_position_offset(child);
+                inline_cursor = 0;
+                y_cursor += 1 + child->margin_top + child->border_top + child->padding_top +
+                            child->margin_bottom + child->border_bottom + child->padding_bottom;
+                prev_mb = child->margin_bottom;
+                continue;
+            }
             /* Inline children flow horizontally on the same line */
             child->width = content_w - child->margin_left - child->margin_right -
                            child->padding_left - child->padding_right -
@@ -1176,13 +1191,19 @@ static void layout_block_children(LayoutNode* parent, int content_w) {
             if (child->min_height > 0 && child->height < child->min_height) child->height = child->min_height;
             if (child->max_height > 0 && child->height > child->max_height) child->height = child->max_height;
 
-            /* Margin collapse: adjacent vertical margins collapse to max */
+            /* Margin collapse: collapse prev_mb with child's margin_top,
+               advance y_cursor BEFORE positioning the child so the gap
+               appears above this child, not below the previous one */
             if (child->margin_top > 0 || prev_mb > 0) {
                 int collapsed_mt = (prev_mb > child->margin_top) ? prev_mb : child->margin_top;
-                y_cursor += collapsed_mt + total_height(child);
+                y_cursor += collapsed_mt;
             } else {
                 y_cursor += total_height(child) + child->margin_bottom;
+                prev_mb = child->margin_bottom;
+                continue;
             }
+            child->y = y_cursor + child->border_top + child->padding_top;
+            y_cursor += total_height(child);
             prev_mb = child->margin_bottom;
         }
     }
@@ -2022,6 +2043,8 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
             for (unsigned int gi = 0; gi < gchildren->length; gi++) {
                 GumboNode* gc = (GumboNode*)gchildren->data[gi];
                 if (gc->type == GUMBO_NODE_TEXT || gc->type == GUMBO_NODE_WHITESPACE) {
+                    /* Skip if parent already has extracted text_content (no element children) */
+                    if (ln->text_content) continue;
                     /* Text/whitespace node → create inline fragment */
                     if (!gc->v.text.text || !*gc->v.text.text) continue;
                     bool only_ws = true;

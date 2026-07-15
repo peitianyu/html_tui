@@ -60,7 +60,7 @@ pages/
 
 ### 页面跳转
 
-- 按钮 `id` 为 `btn-page-NN` 时，自动跳转到 `pages/NN-*.html`（当前支持 01~05）
+- 按钮 `id` 为 `btn-page-NN` 时，自动跳转到 `pages/NN-*.html`（当前支持 01~14）
 - 按钮 `id` 为 `btn-back` 或 `btn-back-N` 时，返回菜单 `00-menu.html`
 
 ---
@@ -285,12 +285,21 @@ mb_quit(mb);                     // 退出
 ```
 ├── run.sh                        # 运行脚本
 ├── pages/                        # 测试页面（HTML + 内联 CSS）
-│   ├── 00-menu.html              # 主菜单（默认页面）
-│   ├── 01-complex-form.html      # 表单演示
-│   ├── 02-flex-layout.html       # Flex 布局展示
-│   ├── 03-selectors-elements.html# CSS 选择器与元素
-│   ├── 04-new-features.html      # 新功能展示（details/textarea/select/colspan）
-│   └── 05-advanced-features.html # 高级特性（rowspan/z-index/新input类型/dialog/inline-block）
+│   ├── 00-menu.html              # 主菜单（默认页面，14 个测试入口）
+│   ├── 01-text-colors.html       # 文本 & 颜色
+│   ├── 02-box-model.html         # 盒模型
+│   ├── 03-inputs.html            # 输入框
+│   ├── 04-buttons.html           # 按钮
+│   ├── 05-flex-direction.html    # Flex 方向
+│   ├── 06-flex-justify.html      # Flex 对齐
+│   ├── 07-flex-align-wrap.html   # Flex 对齐 & 换行
+│   ├── 08-tables.html            # 表格
+│   ├── 09-lists-pseudo.html      # 列表 & 伪类
+│   ├── 10-details-textarea.html  # 折叠面板 & 多行输入
+│   ├── 11-select.html            # 下拉选择
+│   ├── 12-css-effects.html       # CSS 效果
+│   ├── 13-input-types.html       # 输入类型
+│   └── 14-text-styles.html       # 文本样式
 ├── src/
 │   ├── demo.c                    # 入口：组装模块 + 按钮回调配置
 │   └── core/

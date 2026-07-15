@@ -467,7 +467,8 @@ static void draw_focus_indicator(Screen* s, LayoutNode* f, int scroll_x, int scr
     if (tag == GUMBO_TAG_INPUT) {
         GumboAttribute* ft = gumbo_get_attribute(&f->styled->node->v.element.attributes, "type");
         if (ft && ft->value &&
-            (strcmp(ft->value, "range") == 0 || strcmp(ft->value, "color") == 0)) return;
+            (strcmp(ft->value, "range") == 0 || strcmp(ft->value, "color") == 0 ||
+             strcmp(ft->value, "checkbox") == 0 || strcmp(ft->value, "radio") == 0)) return;
     }
 
     int cursor_pos = input_cursor[focus_idx];

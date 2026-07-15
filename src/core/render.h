@@ -557,11 +557,14 @@ static void draw_table_grid(Screen* s, LayoutNode* table) {
             int x = xs[xi];
             if (x < 0 || x >= s->cols) continue;
 
-            /* Check horizontal: line at ys[yi] goes LEFT and/or RIGHT? */
+            /* Check horizontal: line at ys[yi] goes LEFT and/or RIGHT?
+               suppress_h[yi][xi] applies to the segment BETWEEN xs[xi] and xs[xi+1]
+               at row yi. For yi == 0 (top edge) or yi == ny-1 (bottom edge),
+               the suppression map has no entries, so the line is always drawn. */
             bool h_left = false, h_right = false;
-            if (xi > 0 && yi < ny - 1 && yi < MAX_GRID_ROWS && (xi - 1) < MAX_GRID_COLS)
+            if (xi > 0 && yi < MAX_GRID_ROWS && (xi - 1) < MAX_GRID_COLS)
                 h_left = !suppress_h[yi][xi - 1];
-            if (xi + 1 < nx && yi < ny - 1 && yi < MAX_GRID_ROWS && xi < MAX_GRID_COLS)
+            if (xi + 1 < nx && yi < MAX_GRID_ROWS && xi < MAX_GRID_COLS)
                 h_right = !suppress_h[yi][xi];
 
             /* Check vertical: line at xs[xi] goes UP and/or DOWN? */

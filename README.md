@@ -2,6 +2,8 @@
 
 一个基于终端的迷你浏览器引擎，在终端中渲染 HTML + CSS，支持交互操作（焦点切换、按钮点击、输入框编辑）。
 
+![Demo](assert/20260715_102454.gif)
+
 ## 快速开始
 
 ```bash
@@ -11,11 +13,16 @@
 # 指定页面
 ./run.sh pages/01-complex-form.html
 
-# 或直接使用 tcc 编译运行
+# 或直接编译运行（支持 tcc 和 gcc）
+# tcc（推荐，最快）:
 tcc -I src -run src/demo.c [page.html]
+
+# gcc:
+gcc -I src -o /tmp/mini_browser src/demo.c -lm && /tmp/mini_browser [page.html]
 ```
 
-> 依赖 [tcc](https://bellard.org/tcc/)（Tiny C Compiler），无需 Makefile 或其他构建工具。
+> 支持 [tcc](https://bellard.org/tcc/)（Tiny C Compiler，推荐）和 GCC 编译。
+> `run.sh` 自动检测编译器，优先使用 tcc。
 
 ## 使用方法
 

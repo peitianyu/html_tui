@@ -50,7 +50,7 @@ typedef bool (*InteractKeyFn)(struct tb_event* ev, InteractCallbacks* cb);
 /** Interact callbacks — user fills this in to customize behavior */
 struct InteractCallbacks {
     /* Status message buffer. interact_run draws this on the status bar. */
-    char status_msg[64];
+    char status_msg[256];
 
     /* Button click handler. Required. */
     InteractButtonClickFn on_button_click;
@@ -747,7 +747,7 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
     struct tb_event ev;
 
     /* Input buffers: keyed by the same order as focus_list */
-    char input_buf[256][4096] = {{{0}}};
+    char input_buf[256][4096] = {{0}};
     int  input_cursor[256] = {0}; /* cursor position within each input */
     int  textarea_target_col[256] = {0}; /* target visual column for textarea up/down nav */
     int  textarea_scroll_y[256] = {0}; /* vertical scroll offset for textarea content */

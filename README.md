@@ -1,4 +1,4 @@
-# Mini Browser — 终端 TUI 浏览器
+# Mini Browser — 跨平台终端 TUI 浏览器
 
 一个基于终端的迷你浏览器引擎，在终端中渲染 HTML + CSS，支持交互操作（焦点切换、按钮点击、输入框编辑）。
 

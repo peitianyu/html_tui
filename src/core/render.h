@@ -450,12 +450,18 @@ static void collect_span_suppression(LayoutNode* node, int sx, int sy,
                     if (xs[i] == right) xi_right = i;
                 }
 
-                /* Find ys index for top and bottom edges */
-                size_t yi_top = 0, yi_bottom = 0;
+                /* Find Y boundary indices that enclose the cell.
+                   Cell's absolute box (from node_abs_box) has a +1 Y offset
+                   (cell->y = padding_top + 1) that doesn't match the TR row's
+                   Y grid positions exactly. Use range comparison instead. */
+                size_t yi_top = 0, yi_bottom = ny - 1;
                 for (size_t i = 0; i < ny; i++) {
-                    if (ys[i] == top) yi_top = i;
-                    if (ys[i] == bottom) yi_bottom = i;
+                    if (ys[i] <= top) yi_top = i;
                 }
+                for (size_t i = ny - 1; i > 0; i--) {
+                    if (ys[i] >= bottom) yi_bottom = i;
+                }
+                if (yi_bottom <= yi_top) yi_bottom = yi_top + 1;
 
                 /* Colspan > 1: suppress interior vertical boundaries for this row's Y segment */
                 if (colspan > 1 && xi_right > xi_left + 1) {

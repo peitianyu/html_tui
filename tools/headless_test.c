@@ -208,7 +208,7 @@ int main(int argc, char** argv) {
     GumboOutput* dom = gumbo_parse(html);
     KatanaOutput* ko = katana_parse(css, strlen(css), KatanaParserModeStylesheet);
     StyledNode* st = build_style_tree(dom->root, ko->stylesheet, vw);
-    LayoutNode* lt = build_layout_tree(st, vw, vh);
+    LayoutNode* lt = build_layout_tree(st, vw, vh, base_dir);
     Screen* s = screen_create(vw, vh);
     screen_render_tree(s, lt);
 
@@ -335,6 +335,35 @@ int main(int argc, char** argv) {
             }
             if (cnt == want) printf("OK   : count[%s]=%d\n", sub, cnt);
             else { printf("FAIL : count[%s] got %d want %d\n", sub, cnt, want); fail = 1; }
+        } else if (strncmp(arg, "--expect-cell=", 14) == 0) {
+            /* --expect-cell=X,Y=fg:r,g,b;bg:r,g,b (直接查 Screen cell, 图片块图验证) */
+            char cbuf[256]; snprintf(cbuf, sizeof(cbuf), "%s", arg + 14);
+            char* cc = strchr(cbuf, ',');
+            if (!cc) { printf("FAIL : bad --expect-cell (need X,Y=fg:...;bg:...)\n"); fail = 1; continue; }
+            int cx = atoi(cbuf); int cy = atoi(cc + 1);
+            char* ceq = strchr(cc + 1, '=');
+            if (!ceq) { printf("FAIL : bad --expect-cell (need =fg:...;bg:...)\n"); fail = 1; continue; }
+            char* fgp = ceq + 1;
+            char* bgp = strchr(fgp, ';');
+            if (!bgp) { printf("FAIL : bad --expect-cell (need ;bg:...)\n"); fail = 1; continue; }
+            *bgp = '\0'; bgp++;
+            int fr=0,fgv=0,fbb=0,brr=0,bgv=0,bbb=0;
+            if (sscanf(fgp, "fg:%d,%d,%d", &fr,&fgv,&fbb) != 3 ||
+                sscanf(bgp, "bg:%d,%d,%d", &brr,&bgv,&bbb) != 3) {
+                printf("FAIL : bad --expect-cell format\n"); fail = 1; continue;
+            }
+            if (cy < 0 || cy >= s->rows || cx < 0 || cx >= s->cols) {
+                printf("FAIL : cell (%d,%d) out of range\n", cx, cy); fail = 1; continue;
+            }
+            Cell* cl = &s->cells[cy * s->cols + cx];
+            if (cl->fg_r==fr && cl->fg_g==fgv && cl->fg_b==fbb &&
+                cl->bg_r==brr && cl->bg_g==bgv && cl->bg_b==bbb)
+                printf("OK   : cell(%d,%d) fg=%d,%d,%d bg=%d,%d,%d\n", cx,cy,fr,fgv,fbb,brr,bgv,bbb);
+            else {
+                printf("FAIL : cell(%d,%d) got fg=%d,%d,%d bg=%d,%d,%d want fg=%d,%d,%d bg=%d,%d,%d\n",
+                       cx,cy,cl->fg_r,cl->fg_g,cl->fg_b,cl->bg_r,cl->bg_g,cl->bg_b,fr,fgv,fbb,brr,bgv,bbb);
+                fail = 1;
+            }
         }
     }
 

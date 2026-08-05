@@ -534,8 +534,8 @@ static bool mb_load_page(MiniBrowser* mb) {
     mb->styled_root = build_style_tree(mb->dom->root,
                                         mb->css_output->stylesheet, vw);
 
-    /* 构建布局 */
-    mb->layout_root = build_layout_tree(mb->styled_root, vw, vh);
+    /* 构建布局 (base_dir 供 <img src> 相对路径解析) */
+    mb->layout_root = build_layout_tree(mb->styled_root, vw, vh, base_dir);
 
     /* 设置 InteractCallbacks */
     memset(&mb->cb, 0, sizeof(mb->cb));
@@ -548,6 +548,7 @@ static bool mb_load_page(MiniBrowser* mb) {
     mb->cb.status_msg[0]   = '\0';
     mb->cb.switch_page[0]  = '\0';
     mb->cb.layout_root     = mb->layout_root;
+    mb->cb.base_dir        = base_dir;
     mb->cb.show_scrollbars = mb->config.show_scrollbars;
     mb->cb.show_statusbar  = mb->config.show_statusbar;
 

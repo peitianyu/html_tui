@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head><body>
+  <h3>21-image — 图片渲染 (PPM 块字符图)</h3>
+  <p>PPM P6 (8x8 四象限):</p>
+  <img src="21-img.ppm" alt="color-block">
+  <p>灰度 PGM (4x4):</p>
+  <img src="21-img-gray.pgm" alt="gray-block">
+  <p>指定尺寸 (width=12 height=4):</p>
+  <img src="21-img.ppm" width="12" height="4" alt="sized">
+  <p>缺失文件 → alt 回退:</p>
+  <img src="missing.png" alt="fallback-text">
+  <p><button id="btn-back">Back</button></p>
+</body></html>

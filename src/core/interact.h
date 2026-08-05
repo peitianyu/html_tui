@@ -89,6 +89,9 @@ struct InteractCallbacks {
     /** 当前焦点是否在 INPUT/TEXTAREA 编辑中 (interact_run 每帧维护; on_key 可据此区分编辑键) */
     bool edit_active;
 
+    /** 页面文件所在目录 (供 <img src> 相对路径解析; 由宿主设置) */
+    const char* base_dir;
+
     /**
      * Set to a file path to switch to a new page.
      * The main loop will read this file, parse HTML/CSS, and rebuild everything.
@@ -737,7 +740,7 @@ static void geo_summary(StyledNode* sn, char* out, size_t cap) {
 
 static void do_restyle(KatanaStylesheet* css, StyledNode* st_root,
                        LayoutNode** current_root, LayoutNode* original_root,
-                       int w, int h,
+                       int w, int h, const char* base_dir,
                        LayoutNode** focus_list, int focus_cap, int* focus_count,
                        char input_buf[][4096], int input_buf_count,
                        GumboNode* g_hover, GumboNode* g_focus,
@@ -775,7 +778,7 @@ static void do_restyle(KatanaStylesheet* css, StyledNode* st_root,
         return;
     }
 
-    LayoutNode* nr = build_layout_tree(st_root, w, h);
+    LayoutNode* nr = build_layout_tree(st_root, w, h, base_dir);
     if (nr) { if (*current_root != original_root) free_layout_tree(*current_root); *current_root = nr; }
     *focus_count = collect_focus_list(*current_root, focus_list, focus_cap);
     patch_input_text(focus_list, *focus_count, input_buf, input_buf_count);
@@ -2121,7 +2124,7 @@ skip_mouse_processing:
         /* If hover/focus/active changed, rebuild styles and layout */
         if (restyle && saved_css && saved_st) {
             do_restyle(saved_css, saved_st, &current_root, root,
-                       vw_cache, vh_cache,
+                       vw_cache, vh_cache, cb ? cb->base_dir : NULL,
                        focus_list, focus_cap, &focus_count, input_buf, input_buf_count,
                        g_interact_hover, g_interact_focus, g_interact_active,
                        &prev_hover, &prev_active, cb);

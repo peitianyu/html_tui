@@ -342,7 +342,37 @@ void screen_render_node(Screen* s, LayoutNode* n) {
             if (col >= 0) { scr_set(s, col, hy, cw); scr_fg(s,col,hy,n->color.r,n->color.g,n->color.b); }
         }
     }
-    if (!vis_hidden && n->text_content && n->color.valid) {
+    if (!vis_hidden && n->img && n->img->rgb) {
+        /* 块图: 每 cell = 2 像素行 x 1 像素列; ▀ 上半=前景色, 下半=背景色 */
+        int ix = scr_x + n->border_left + n->padding_left;
+        int iy = scr_y + n->border_top + n->padding_top;
+        int cw = n->img_cw, chh = n->img_ch;
+        int pw = n->img->pw, ph = n->img->ph;
+        const unsigned char* rgb = n->img->rgb;
+        for (int r = 0; r < chh; r++) {
+            int row = iy + r;
+            if (row < 0 || row >= s->rows) continue;
+            int py_t = (r * 2 * ph) / (chh * 2);
+            int py_b = ((r * 2 + 1) * ph) / (chh * 2);
+            if (py_b >= ph) py_b = ph - 1;
+            for (int c = 0; c < cw; c++) {
+                int col = ix + c;
+                if (col < 0 || col >= s->cols) continue;
+                int px = (c * pw + pw / 2) / cw;
+                if (px >= pw) px = pw - 1;
+                const unsigned char* t = rgb + ((size_t)py_t * pw + px) * 3;
+                const unsigned char* b = rgb + ((size_t)py_b * pw + px) * 3;
+                if (t[0] == b[0] && t[1] == b[1] && t[2] == b[2]) {
+                    scr_set(s, col, row, ' ');
+                    scr_bg(s, col, row, t[0], t[1], t[2]);
+                } else {
+                    scr_set(s, col, row, 0x2580); /* ▀ */
+                    scr_fg(s, col, row, t[0], t[1], t[2]);
+                    scr_bg(s, col, row, b[0], b[1], b[2]);
+                }
+            }
+        }
+    } else if (!vis_hidden && n->text_content && n->color.valid) {
         /* disabled → 灰显; placeholder → 斜体 (临时替换, 渲染后恢复) */
         ResolvedColor saved_col = n->color;
         bool saved_italic = n->font_italic;

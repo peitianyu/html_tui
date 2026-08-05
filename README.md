@@ -55,7 +55,8 @@ pages/
 ├── 17-edge.html              # 边界情况（长文本截断, 负 margin, margin auto, box-sizing, overflow, 嵌套 flex）
 ├── 18-media.html             # @media 查询（min/max-width, 组合查询, 视口联动）
 ├── 19-many.html              # 大量可聚焦元素（300 按钮, 焦点链动态容量 >256）
-└── 20-external-css.html      # 外部样式表（<link rel=stylesheet> 加载 + 层叠序）
+├── 20-external-css.html      # 外部样式表（<link rel=stylesheet> 加载 + 层叠序）
+└── 21-image.html             # 图片渲染（PPM/PGM 块字符图, alt 回退）
 ```
 
 ### 键盘操作
@@ -78,7 +79,7 @@ pages/
 
 ### 页面跳转
 
-- 按钮 `id` 为 `btn-page-NN` 时，自动跳转到 `pages/NN-*.html`（当前支持 01~20）
+- 按钮 `id` 为 `btn-page-NN` 时，自动跳转到 `pages/NN-*.html`（当前支持 01~21）
 - 按钮 `id` 为 `btn-back` 或 `btn-back-N` 时，返回菜单 `00-menu.html`
 - `<a href>` 链接可聚焦，点击触发 `on_element_click` 回调（demo 中 `.html` 链接自动跳页并记入历史），访问过的链接以 `:visited` 颜色标记
 - `b` 键返回上一页（历史栈：链接导航 push，`btn-back` 不 push）
@@ -115,7 +116,7 @@ bash tools/run_tests.sh pages/15-clickable.html   # 指定页面
 
 - `tools/headless_test.c`：无头渲染 → 屏幕文本 dump + 布局树 dump（几何/盒模型/计算样式），断言支持 `--expect` / `--expect-line` / `--expect-count` / `--viewport`（测 @media） / `--flush-ok`（flush diff）
 - `tools/interact_test.c`：事件注入驱动交互循环（Tab/Enter/鼠标点击/输入编辑/批量 Tab），断言回调日志、状态消息、元素文本、链接颜色（:visited）与背景色（hover）
-- 54 项断言覆盖 20 个测试页 + 交互场景；无头模式无需真实终端
+- 56 项断言覆盖 21 个测试页 + 交互场景；无头模式无需真实终端
 
 ---
 
@@ -373,7 +374,8 @@ mb_quit(mb);                     // 退出
 │   ├── 17-edge.html              # 边界情况
 │   ├── 18-media.html             # @media 查询
 │   ├── 19-many.html             # 大量可聚焦元素 (300 按钮)
-│   └── 20-external-css.html     # 外部样式表 (<link rel=stylesheet>)
+│   ├── 20-external-css.html     # 外部样式表 (<link rel=stylesheet>)
+│   └── 21-image.html            # 图片渲染 (PPM 块字符图)
 ├── src/
 │   ├── demo.c                    # 入口：组装模块 + 按钮回调配置
 │   └── core/

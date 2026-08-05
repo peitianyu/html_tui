@@ -63,6 +63,16 @@ typedef struct {
     bool valid;  /* false if not set */
 } ResolvedColor;
 
+/* ─── 图片数据 (PPM/PGM 解码结果, 按路径缓存共享; cell 尺寸存 LayoutNode) ── */
+typedef struct ImgData {
+    int pw, ph;          /* 像素宽高 */
+    unsigned char* rgb;  /* pw*ph*3 */
+} ImgData;
+
+#define IMG_CACHE_MAX 16
+static struct { char path[256]; ImgData* img; } g_img_cache[IMG_CACHE_MAX];
+static int g_img_cache_count = 0;
+
 /** A layout node: styled node with computed dimensions and positions */
 typedef struct LayoutNode {
     /* source */
@@ -88,6 +98,10 @@ typedef struct LayoutNode {
 
     /* text content extracted from DOM subtree */
     char* text_content;
+
+    /* 图片数据 (img 元素, 非 NULL = 渲染块图而非文本) */
+    ImgData* img;
+    int img_cw, img_ch;  /* 该 img 节点的 cell 尺寸 (缩放后, 缓存共享的 ImgData 不能存) */
 
     /* computed colors */
     ResolvedColor color;
@@ -195,6 +209,9 @@ typedef struct LayoutNode {
     size_t num_children;
 } LayoutNode;
 
+/* img 节点布局辅助 (定义在文件后部, 前向声明供 img 节点处理使用) */
+static void img_setup_layout(LayoutNode* ln, StyledNode* snode, const char* base_dir);
+
 /* ======================== Global Details State API ======================== */
 /* Used by interact.h to persist details open/close across layout rebuilds */
 void details_set_state(const char* id, bool open);
@@ -209,7 +226,7 @@ bool details_get_state(const char* id);
  * @param viewport_h   viewport height in character cells
  * @return root layout node, or NULL on failure
  */
-LayoutNode* build_layout_tree(StyledNode* styled_root, int viewport_w, int viewport_h);
+LayoutNode* build_layout_tree(StyledNode* styled_root, int viewport_w, int viewport_h, const char* base_dir);
 
 /** Free a layout tree */
 void free_layout_tree(LayoutNode* tree);
@@ -780,7 +797,8 @@ static void parse_border_shorthand(const char* str, LayoutNode* ln) {
 /* forwards */
 static void compute_child_layouts(LayoutNode* parent, int content_w);
 static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* parent,
-                                               int viewport_w, int viewport_h);
+                                               int viewport_w, int viewport_h,
+                                               const char* base_dir);
 
 /* ---------- style application ---------- */
 
@@ -1245,6 +1263,30 @@ static void layout_block_children(LayoutNode* parent, int content_w) {
         if (child->display == DISPLAY_NONE) continue;
 
         if (child->display == DISPLAY_INLINE) {
+            /* <img> 标签 (无论解码成败): 独占一行 — 成功固定尺寸, 失败文本回退也换行 */
+            if (child->styled && child->styled->node &&
+                child->styled->node->type == GUMBO_NODE_ELEMENT &&
+                child->styled->node->v.element.tag == GUMBO_TAG_IMG) {
+                child->x = child->margin_left + child->border_left + child->padding_left;
+                child->y = y_cursor + child->margin_top + child->border_top + child->padding_top;
+                if (child->img) {
+                    child->width = child->img_cw;
+                    child->height = child->img_ch;
+                    y_cursor += child->img_ch + child->margin_top + child->border_top +
+                                child->padding_top + child->margin_bottom + child->border_bottom +
+                                child->padding_bottom;
+                } else {
+                    if (child->height < 1) child->height = 1;
+                    y_cursor += child->height + child->margin_top + child->border_top +
+                                child->padding_top + child->margin_bottom + child->border_bottom +
+                                child->padding_bottom;
+                }
+                apply_position_offset(child);
+                compute_child_layouts(child, child->width);
+                prev_mb = child->margin_bottom;
+                inline_cursor = 0;
+                continue;
+            }
             /* <br>: force line break */
             if (child->styled && child->styled->node &&
                 child->styled->node->type == GUMBO_NODE_ELEMENT &&
@@ -2037,7 +2079,8 @@ static void compute_child_layouts(LayoutNode* parent, int content_w) {
 /* ---------- tree builder ---------- */
 
 static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* parent,
-                                               int viewport_w, int viewport_h) {
+                                               int viewport_w, int viewport_h,
+                                               const char* base_dir) {
     if (!snode || !snode->node) return NULL;
 
     LayoutNode* ln = (LayoutNode*)calloc(1, sizeof(LayoutNode));
@@ -2071,6 +2114,8 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
     if (tag_name && (strcmp(tag_name, "table") == 0 || strcmp(tag_name, "tr") == 0)) {
         ln->text_content = NULL;
     } else if (tag_name && strcmp(tag_name, "img") == 0) {
+        /* 图片: 解码 src → 块图 (失败时保留 [alt] 回退文本) */
+        img_setup_layout(ln, snode, base_dir);
         /* Try to read alt attribute */
         if (snode->node->type == GUMBO_NODE_ELEMENT) {
             GumboAttribute* alt_attr = gumbo_get_attribute(
@@ -2084,6 +2129,10 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
             }
         } else {
             ln->text_content = strdup("[img]");
+        }
+        if (ln->img) { /* 有图: 释放回退文本, 走块图渲染 */
+            free(ln->text_content);
+            ln->text_content = NULL;
         }
     } else if (tag_name && snode->num_children > 0) {
         /* Node has element children — don't extract text, let children render it */
@@ -2220,7 +2269,7 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
                 } else if (gc->type == GUMBO_NODE_ELEMENT && elem_i < snode->num_children) {
                     /* Element child → use styled tree child */
                     LayoutNode* child = build_layout_tree_recursive(
-                        snode->children[elem_i], ln, viewport_w, viewport_h);
+                        snode->children[elem_i], ln, viewport_w, viewport_h, base_dir);
                     elem_i++;
                     if (!child) continue;
                     /* <details> collapse: when closed, only keep the first <summary> child */
@@ -2241,7 +2290,7 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
             /* No Gumbo children (document root), use styled children directly */
             for (size_t i = 0; i < snode->num_children; i++) {
                 LayoutNode* child = build_layout_tree_recursive(
-                    snode->children[i], ln, viewport_w, viewport_h);
+                    snode->children[i], ln, viewport_w, viewport_h, base_dir);
                 if (child) ln->children[idx++] = child;
             }
         }
@@ -2623,15 +2672,138 @@ static void number_list_items(LayoutNode* node) {
 /* Forward declaration */
 static void compute_abs_coords(LayoutNode* node, int ax, int ay);
 
+/* ─── PPM/PGM 解码 (零依赖) ───────────────────────────────────── */
+/* 跳过空白与 # 注释 */
+static const char* img_skip_ws(const char* p) {
+    for (;;) {
+        while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
+        if (*p == '#') { while (*p && *p != '\n') p++; }
+        else break;
+    }
+    return p;
+}
+
+static int img_next_int(const char** pp) {
+    const char* p = img_skip_ws(*pp);
+    int v = 0;
+    while (*p >= '0' && *p <= '9') { v = v * 10 + (*p - '0'); p++; }
+    *pp = p;
+    return v;
+}
+
+static ImgData* img_decode(const char* path) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return NULL;
+    fseek(f, 0, SEEK_END); long len = ftell(f); rewind(f);
+    if (len < 16 || len > 64 * 1024 * 1024) { fclose(f); return NULL; }
+    unsigned char* buf = (unsigned char*)malloc((size_t)len);
+    if (!buf) { fclose(f); return NULL; }
+    size_t n = fread(buf, 1, (size_t)len, f);
+    fclose(f);
+
+    ImgData* img = NULL;
+    const char* p = (const char*)buf;
+    if (n >= 2 && p[0] == 'P' && (p[1] == '6' || p[1] == '3' || p[1] == '5' || p[1] == '2')) {
+        int magic = p[1];
+        p += 2;
+        int w = img_next_int(&p);
+        int h = img_next_int(&p);
+        img_next_int(&p); /* maxval (255 假设) */
+        size_t need = (magic == '6' || magic == '3') ? (size_t)w * h * 3 : (size_t)w * h;
+        if (w > 0 && h > 0 && w <= 4096 && h <= 4096 && need <= (size_t)n) {
+            img = (ImgData*)calloc(1, sizeof(ImgData));
+            img->pw = w; img->ph = h;
+            img->rgb = (unsigned char*)malloc((size_t)w * h * 3);
+            if (!img->rgb) { free(img); img = NULL; }
+            else if (magic == '6') {
+                p = img_skip_ws(p);
+                memcpy(img->rgb, p, (size_t)w * h * 3);
+            } else if (magic == '3') {
+                for (int i = 0; i < w * h * 3; i++) img->rgb[i] = (unsigned char)img_next_int(&p);
+            } else if (magic == '5') { /* P5 二进制灰度 */
+                p = img_skip_ws(p);
+                for (int i = 0; i < w * h; i++) {
+                    unsigned char v = p[i];
+                    img->rgb[i*3] = v; img->rgb[i*3+1] = v; img->rgb[i*3+2] = v;
+                }
+            } else { /* P2 ASCII 灰度 */
+                for (int i = 0; i < w * h; i++) {
+                    unsigned char v = (unsigned char)img_next_int(&p);
+                    img->rgb[i*3] = v; img->rgb[i*3+1] = v; img->rgb[i*3+2] = v;
+                }
+            }
+        }
+    }
+    free(buf);
+    return img;
+}
+
+/* 按路径取图 (带缓存, 页面切换/restyle 重建不重复解码) */
+static ImgData* img_load(const char* path) {
+    if (!path || !path[0]) return NULL;
+    for (int i = 0; i < g_img_cache_count; i++)
+        if (strcmp(g_img_cache[i].path, path) == 0) return g_img_cache[i].img;
+    ImgData* img = img_decode(path);
+    if (img && g_img_cache_count < IMG_CACHE_MAX) {
+        strncpy(g_img_cache[g_img_cache_count].path, path,
+                sizeof(g_img_cache[0].path) - 1);
+        g_img_cache[g_img_cache_count].img = img;
+        g_img_cache_count++;
+    }
+    return img;
+}
+
+/* img 节点: 解码 src → 计算 cell 尺寸 (保持纵横比, 上限 40x20, 不放大; width/height 属性可覆盖) */
+static void img_setup_layout(LayoutNode* ln, StyledNode* snode, const char* base_dir) {
+    if (snode->node->type != GUMBO_NODE_ELEMENT) return;
+    GumboElement* el = &snode->node->v.element;
+    GumboAttribute* src = gumbo_get_attribute(&el->attributes, "src");
+    if (!src || !src->value || !src->value[0]) return;
+    char path[1024];
+    if (base_dir && base_dir[0])
+        snprintf(path, sizeof(path), "%s/%s", base_dir, src->value);
+    else
+        snprintf(path, sizeof(path), "%s", src->value);
+    ImgData* img = img_load(path);
+    if (!img) return;
+    ln->img = img;
+    /* 缩放: 保持纵横比 (字符 1:2), 上限 40x20 cells, 不放大 */
+    double sx = 40.0 / (double)img->pw;
+    double sy = 40.0 / (double)img->ph;
+    double sc = (sx < sy ? sx : sy);
+    if (sc > 1.0) sc = 1.0;
+    int cw = (int)(img->pw * sc); if (cw < 1) cw = 1;
+    int ch = (int)((img->ph * sc) / 2.0 + 0.5); if (ch < 1) ch = 1;
+    /* width/height HTML 属性覆盖 (纯数字 = cell 数) */
+    GumboAttribute* wa = gumbo_get_attribute(&el->attributes, "width");
+    GumboAttribute* ha = gumbo_get_attribute(&el->attributes, "height");
+    if (wa && wa->value && atoi(wa->value) > 0) cw = atoi(wa->value);
+    if (ha && ha->value && atoi(ha->value) > 0) ch = atoi(ha->value);
+    if (cw > 120) cw = 120; if (ch > 60) ch = 60; /* 硬上限保护 */
+    ln->img_cw = cw; ln->img_ch = ch;
+    ln->width = cw; ln->height = ch;
+}
+
+/* img 节点: 固定 cell 尺寸 (替换元素 — 布局系统按文本测量 inline 节点, 无文本会得 0 宽) */
+static void fix_img_sizes(LayoutNode* n) {
+    if (!n) return;
+    if (n->img) {
+        n->width = n->img_cw;
+        n->height = n->img_ch;
+    }
+    for (size_t i = 0; i < n->num_children; i++)
+        fix_img_sizes(n->children[i]);
+}
+
 /* ---------- public API ---------- */
 
-LayoutNode* build_layout_tree(StyledNode* styled_root, int viewport_w, int viewport_h) {
+LayoutNode* build_layout_tree(StyledNode* styled_root, int viewport_w, int viewport_h, const char* base_dir) {
     if (!styled_root) return NULL;
 
     /* Update media query viewport width */
     g_media_viewport_w = viewport_w;
 
-    LayoutNode* root = build_layout_tree_recursive(styled_root, NULL, viewport_w, viewport_h);
+    LayoutNode* root = build_layout_tree_recursive(styled_root, NULL, viewport_w, viewport_h, base_dir);
     if (!root) return NULL;
 
     /* Post-process: number list items */
@@ -2644,6 +2816,9 @@ LayoutNode* build_layout_tree(StyledNode* styled_root, int viewport_w, int viewp
 
     /* Recursively compute layouts for all children */
     compute_child_layouts(root, root->width);
+
+    /* img 替换元素: 强制 cell 尺寸 (布局系统按文本测量会得 0 宽) */
+    fix_img_sizes(root);
 
     /* Root height is at least viewport height (scrollable overflow) */
     if (root->height < viewport_h) root->height = viewport_h;

@@ -159,6 +159,21 @@ int main(int argc, char** argv) {
     }
 
     /* 断言: 支持 --expect=SUBSTR / --expect-line=A|B|C / --expect-count=S=N */
+    /* flush diff 统计: --flush-stats 输出 首帧/静止帧/单cell变化帧 的字节数到 dump */
+    FILE* fs = fopen("/data/data/com.termux/files/usr/tmp/mb_flush_stats.txt", "w");
+    if (fs) {
+        char fbuf[131072];
+        /* 首帧 (prev 全空) */
+        size_t n1 = screen_flush_to_buffer(s, fbuf, sizeof(fbuf));
+        /* 静止帧: 再次 flush (无变化) */
+        size_t n2 = screen_flush_to_buffer(s, fbuf, sizeof(fbuf));
+        /* 单 cell 变化帧 */
+        screen_scr_set(s, 3, 2, 'X');
+        size_t n3 = screen_flush_to_buffer(s, fbuf, sizeof(fbuf));
+        fprintf(fs, "first=%zu idle=%zu onecell=%zu\n", n1, n2, n3);
+        fclose(fs);
+    }
+
     int fail = 0;
     for (int i = 2; i < argc; i++) {
         const char* arg = argv[i];
@@ -211,6 +226,20 @@ int main(int argc, char** argv) {
             }
             if (found) printf("OK   : line[%s]\n", arg + 14);
             else { printf("FAIL : line[%s]\n", arg + 14); fail = 1; }
+        } else if (strcmp(arg, "--flush-ok") == 0) {
+            /* flush diff 有效: 静止帧 0 字节, 单 cell 帧 < 首帧 */
+            FILE* fsf = fopen("/data/data/com.termux/files/usr/tmp/mb_flush_stats.txt", "r");
+            if (!fsf) { printf("FAIL : --flush-ok (no stats)\n"); fail = 1; continue; }
+            char line[128];
+            if (!fgets(line, sizeof(line), fsf)) { fclose(fsf); printf("FAIL : --flush-ok (no stats)\n"); fail = 1; continue; }
+            fclose(fsf);
+            size_t n1 = 0, n2 = 0, n3 = 0;
+            if (sscanf(line, "first=%zu idle=%zu onecell=%zu", &n1, &n2, &n3) != 3) {
+                printf("FAIL : --flush-ok (bad stats '%s')\n", line); fail = 1; continue;
+            }
+            bool ok = (n2 == 0) && (n3 > 0 && n3 < n1);
+            if (ok) printf("OK   : flush diff (first=%zuB idle=%zuB onecell=%zuB)\n", n1, n2, n3);
+            else { printf("FAIL : flush diff (first=%zuB idle=%zuB onecell=%zuB, want idle==0 && 0<onecell<first)\n", n1, n2, n3); fail = 1; }
         } else if (strncmp(arg, "--expect-count=", 15) == 0) {
             /* --expect-count=N:SUBSTR: 出现次数恰好为 N (两 dump 合计) */
             const char* rest = arg + 15;

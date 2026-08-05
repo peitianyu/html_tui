@@ -43,7 +43,8 @@ for p in "${PAGES[@]}"; do
     pages/00-menu.html)
         check "$HT" "$p" --layout \
             --expect='Mini Browser' --expect='Text & Colors' --expect='Box Model' \
-            --expect='abs=(0,0) content=80x' ;;
+            --expect='abs=(0,0) content=80x'
+        check "$HT" "$p" --flush-ok ;;
     pages/01-text-colors.html)
         check "$HT" "$p" --layout \
             --expect='Test 01' --expect='color=212,69,69' --expect='bold' --expect='ul=1' \

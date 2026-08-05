@@ -23,6 +23,7 @@ typedef struct {
 
 typedef struct {
     Cell* cells;
+    Cell* prev_cells;   /* 上一帧副本 (flush diff 用) */
     int rows;
     int cols;
     int scroll_x, scroll_y;
@@ -34,6 +35,8 @@ void screen_clear(Screen* s);
 void screen_render_node(Screen* s, LayoutNode* node);
 void screen_render_tree(Screen* s, LayoutNode* root);
 void screen_flush(Screen* s);
+/** 生成 ANSI diff 到 buffer (测试用); 返回生成长度; 完成后内部保存 prev 帧 */
+size_t screen_flush_to_buffer(Screen* s, char* buf, size_t cap);
 void screen_scroll_clamp(Screen* s, int content_w, int content_h);
 
 /** Draw a vertical scrollbar on the right edge of the screen. */
@@ -88,7 +91,8 @@ Screen* screen_create(int cols, int rows) {
     if (!s) return NULL;
     s->cols = cols; s->rows = rows;
     s->cells = (Cell*)calloc((size_t)(rows * cols), sizeof(Cell));
-    if (!s->cells) { free(s); return NULL; }
+    s->prev_cells = (Cell*)calloc((size_t)(rows * cols), sizeof(Cell));
+    if (!s->cells || !s->prev_cells) { free(s->cells); free(s->prev_cells); free(s); return NULL; }
     for (int i = 0; i < rows * cols; i++) {
         s->cells[i].ch = 0x0020;
         s->cells[i].fg_r = 255; s->cells[i].fg_g = 255; s->cells[i].fg_b = 255;
@@ -96,7 +100,7 @@ Screen* screen_create(int cols, int rows) {
     return s;
 }
 
-void screen_free(Screen* s) { if (!s) return; free(s->cells); free(s); }
+void screen_free(Screen* s) { if (!s) return; free(s->cells); free(s->prev_cells); free(s); }
 
 void screen_clear(Screen* s) {
     if (!s) return;
@@ -722,61 +726,88 @@ void screen_flush(Screen* s) {
     (void)s;
     return;
 #else
+    /* diff 输出到内存 → 写 stdout */
+#define FLUSH_STACK_BUF 65536
+    char flush_buf[FLUSH_STACK_BUF];
+    size_t n = screen_flush_to_buffer(s, flush_buf, sizeof(flush_buf));
+    if (n > 0) { fwrite(flush_buf, 1, n, stdout); fflush(stdout); }
+#undef FLUSH_STACK_BUF
+#endif /* RENDER_HEADLESS */
+}
 
-    /* Batch all output into a single writev-friendly buffer */
-    /* Max size: "\033[H" + rows * (cols * (max_ansi_seq + utf8_char + skip)) */
-#define FLUSH_BUF_SIZE 65536
-    static char flush_buf[FLUSH_BUF_SIZE];
-    int pos = 0;
+/* ─── diff 渲染: 只输出与上一帧不同的 cell ─────────────── */
+/* 单元: cell 是否相等 (diff 比较) */
+static bool cell_equal(const Cell* a, const Cell* b) {
+    if (a->ch != b->ch) return false;
+    if (a->fg_r != b->fg_r || a->fg_g != b->fg_g || a->fg_b != b->fg_b) return false;
+    if (a->bg_r != b->bg_r || a->bg_g != b->bg_g || a->bg_b != b->bg_b) return false;
+    if (a->bold != b->bold || a->underline != b->underline || a->italic != b->italic) return false;
+    if (a->strikeout != b->strikeout || a->overline != b->overline) return false;
+    return true;
+}
 
-#define FLUSH_PUTC(c) do { if (pos >= FLUSH_BUF_SIZE - 1) { fwrite(flush_buf, 1, pos, stdout); pos = 0; } flush_buf[pos++] = (c); } while(0)
-#define FLUSH_PUTS(s) do { const char* _s = (s); while (*_s) FLUSH_PUTC(*_s++); } while(0)
-#define FLUSH_PRINTF(...) do { \
-    int _r = snprintf(flush_buf + pos, FLUSH_BUF_SIZE - pos, __VA_ARGS__); \
-    if (_r > 0) { pos += _r; if (pos >= FLUSH_BUF_SIZE - 256) { fwrite(flush_buf, 1, pos, stdout); pos = 0; } } \
+size_t screen_flush_to_buffer(Screen* s, char* buf, size_t cap) {
+    if (!s || !buf || cap < 32) return 0;
+    size_t pos = 0;
+
+#define BUF_PUTC(c) do { if (pos >= cap - 1) { buf[pos] = '\0'; return pos; } buf[pos++] = (c); } while(0)
+#define BUF_PUTS(st) do { const char* _s = (st); while (*_s) BUF_PUTC(*_s++); } while(0)
+#define BUF_PRINTF(...) do { \
+    int _r = snprintf(buf + pos, cap - pos, __VA_ARGS__); \
+    if (_r > 0) { pos += (size_t)_r; if (pos >= cap - 256) { buf[pos] = '\0'; return pos; } } \
 } while(0)
 
-    /* Move cursor to home */
-    FLUSH_PUTS("\033[H");
-
     int pfr=-1,pfg=-1,pfb=-1,pbr=-1,pbg=-1,pbb=-1; bool pb=false,pu=false,pi=false,pst=false,pol=false;
-    for (int r=0; r<s->rows; r++) {
-        for (int c=0; c<s->cols; c++) {
-            Cell* cl = &s->cells[r*s->cols + c];
-            if (cl->ch == 0) {
-                FLUSH_PUTC(' ');
-                continue;
+
+    /* 逐行扫描变化 run: 光标定位到段首 → 输出段 */
+    bool any = false;
+    for (int r = 0; r < s->rows; r++) {
+        int c = 0;
+        while (c < s->cols) {
+            /* 找下一个变化 cell */
+            while (c < s->cols && cell_equal(&s->cells[r*s->cols+c], &s->prev_cells[r*s->cols+c])) c++;
+            if (c >= s->cols) break;
+            int start = c;
+            /* 收集变化 run (宽字符补位 cell 一并处理) */
+            while (c < s->cols && !cell_equal(&s->cells[r*s->cols+c], &s->prev_cells[r*s->cols+c])) c++;
+            int end = c;
+            /* 定位光标: \033[{row+1};{col+1}H */
+            BUF_PRINTF("\033[%d;%dH", r + 1, start + 1);
+            pfr=pfg=pfb=pbr=pbg=pbb=-1; pb=pu=pi=pst=pol=false; /* 每段重置样式状态 */
+            for (int cc = start; cc < end; cc++) {
+                Cell* cl = &s->cells[r*s->cols + cc];
+                if (cl->ch == 0) { BUF_PUTC(' '); continue; }
+                if (cl->fg_r!=pfr||cl->fg_g!=pfg||cl->fg_b!=pfb) {
+                    BUF_PRINTF("\033[38;2;%d;%d;%dm",cl->fg_r,cl->fg_g,cl->fg_b);
+                    pfr=cl->fg_r;pfg=cl->fg_g;pfb=cl->fg_b;
+                }
+                if (cl->bg_r!=pbr||cl->bg_g!=pbg||cl->bg_b!=pbb) {
+                    BUF_PRINTF("\033[48;2;%d;%d;%dm",cl->bg_r,cl->bg_g,cl->bg_b);
+                    pbr=cl->bg_r;pbg=cl->bg_g;pbb=cl->bg_b;
+                }
+                if (cl->bold!=pb) { BUF_PUTS(cl->bold?"\033[1m":"\033[22m"); pb=cl->bold; }
+                if (cl->underline!=pu) { BUF_PUTS(cl->underline?"\033[4m":"\033[24m"); pu=cl->underline; }
+                if (cl->italic!=pi) { BUF_PUTS(cl->italic?"\033[3m":"\033[23m"); pi=cl->italic; }
+                if (cl->strikeout!=pst) { BUF_PUTS(cl->strikeout?"\033[9m":"\033[29m"); pst=cl->strikeout; }
+                if (cl->overline!=pol) { BUF_PUTS(cl->overline?"\033[53m":"\033[55m"); pol=cl->overline; }
+                char ub[4];
+                int un = uc_enc(cl->ch, ub);
+                for (int i = 0; i < un; i++) BUF_PUTC(ub[i]);
+                if (uc_wid((int)cl->ch) > 1) cc++;
             }
-            if (cl->fg_r!=pfr||cl->fg_g!=pfg||cl->fg_b!=pfb) {
-                FLUSH_PRINTF("\033[38;2;%d;%d;%dm",cl->fg_r,cl->fg_g,cl->fg_b);
-                pfr=cl->fg_r;pfg=cl->fg_g;pfb=cl->fg_b;
-            }
-            if (cl->bg_r!=pbr||cl->bg_g!=pbg||cl->bg_b!=pbb) {
-                FLUSH_PRINTF("\033[48;2;%d;%d;%dm",cl->bg_r,cl->bg_g,cl->bg_b);
-                pbr=cl->bg_r;pbg=cl->bg_g;pbb=cl->bg_b;
-            }
-            if (cl->bold!=pb) { FLUSH_PUTS(cl->bold?"\033[1m":"\033[22m"); pb=cl->bold; }
-            if (cl->underline!=pu) { FLUSH_PUTS(cl->underline?"\033[4m":"\033[24m"); pu=cl->underline; }
-            if (cl->italic!=pi) { FLUSH_PUTS(cl->italic?"\033[3m":"\033[23m"); pi=cl->italic; }
-            if (cl->strikeout!=pst) { FLUSH_PUTS(cl->strikeout?"\033[9m":"\033[29m"); pst=cl->strikeout; }
-            if (cl->overline!=pol) { FLUSH_PUTS(cl->overline?"\033[53m":"\033[55m"); pol=cl->overline; }
-            char buf[4];
-            int n = uc_enc(cl->ch, buf);
-            for (int i = 0; i < n; i++) FLUSH_PUTC(buf[i]);
-            if (uc_wid((int)cl->ch) > 1) c++;
+            any = true;
         }
-        if (r < s->rows-1) { FLUSH_PUTC('\r'); FLUSH_PUTC('\n'); }
     }
-    FLUSH_PUTS("\033[0m");
 
-    if (pos > 0) fwrite(flush_buf, 1, pos, stdout);
-    fflush(stdout);
+    if (any) BUF_PUTS("\033[0m");
 
-#undef FLUSH_PUTC
-#undef FLUSH_PUTS
-#undef FLUSH_PRINTF
-#undef FLUSH_BUF_SIZE
-#endif /* RENDER_HEADLESS */
+    /* 保存当前帧为 prev */
+    memcpy(s->prev_cells, s->cells, (size_t)s->rows * s->cols * sizeof(Cell));
+
+#undef BUF_PUTC
+#undef BUF_PUTS
+#undef BUF_PRINTF
+    return pos;
 }
 
 /* Scroll helpers */

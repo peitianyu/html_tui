@@ -24,6 +24,19 @@ typedef bool (*MB_ButtonClickFn)(const char* btn_id, const char* btn_text,
                                  MiniBrowser* mb, void* userdata);
 
 /**
+ * 可点击元素回调 (data-action / cursor:pointer / <a href> 触发)。
+ *
+ * @param action     元素的 action 字符串 (data-action 值或 href；无则 NULL)
+ * @param element_id 元素 id (无则 NULL)
+ * @param tag        标签名 (如 "div" / "a")
+ * @param mb         MiniBrowser 句柄
+ * @param userdata   MB_Config.userdata
+ * @return true 表示需要重建布局树
+ */
+typedef bool (*MB_ElementClickFn)(const char* action, const char* element_id,
+                                  const char* tag, MiniBrowser* mb, void* userdata);
+
+/**
  * 全局按键回调 (在默认处理之前调用)。
  *
  * @param ch       输入的 Unicode 字符 (0 = 非字符键)
@@ -43,6 +56,7 @@ typedef bool (*MB_KeyFn)(uint32_t ch, int key,
 
 typedef struct {
     MB_ButtonClickFn on_button_click;   /* 按钮点击 (NULL=默认) */
+    MB_ElementClickFn on_element_click; /* 可点击元素 (NULL=默认) */
     MB_KeyFn         on_key;            /* 全局按键 (NULL=默认) */
     void*            userdata;          /* 透传给回调 */
     bool             show_scrollbars;   /* 显示滚动条 (默认 true) */
@@ -50,7 +64,8 @@ typedef struct {
 } MB_Config;
 
 #define MB_CONFIG_DEFAULT \
-    { .on_button_click = NULL, .on_key = NULL, \
+    { .on_button_click = NULL, .on_element_click = NULL, \
+      .on_key = NULL, \
       .userdata = NULL, .show_scrollbars = true, .show_statusbar = true }
 
 /* ═══════════════════════════════════════════════════════════════════ */
@@ -106,6 +121,9 @@ void mb_set_text(MiniBrowser* mb, const char* element_id, const char* text);
 
 /** 按 HTML id 获取元素文本 */
 const char* mb_get_text(MiniBrowser* mb, const char* element_id);
+
+/** 标记链接为已访问 (影响 :visited 匹配) */
+void mb_mark_visited(MiniBrowser* mb, const char* url);
 
 /**
  * 显示/隐藏元素。
@@ -165,6 +183,10 @@ struct MiniBrowser {
 
     char current_path[512];
     bool term_inited;
+
+    /* visited 链接集合 (href 字符串, 环形, 上限 64) */
+    char visited[64][256];
+    int  visited_count;
 
     /* 当前页面的解析结果 (用于页面切换时清理) */
     char*      raw_html;
@@ -338,6 +360,29 @@ static bool mb_default_on_key(struct tb_event* ev, InteractCallbacks* cb) {
     return false;
 }
 
+/* 可点击元素默认回调: <a> 自动记 visited + 状态栏显示 action */
+static bool mb_default_on_element_click(const char* action, const char* eid,
+                                        const char* tag, InteractCallbacks* cb)
+{
+    MiniBrowser* mb = (MiniBrowser*)cb->user_data;
+    if (!mb) return false;
+    (void)eid;
+
+    /* 用户回调优先 */
+    if (mb->config.on_element_click) {
+        bool ret = mb->config.on_element_click(action, eid, tag, mb,
+                                               mb->config.userdata);
+        if (ret) return true;
+    }
+
+    /* 默认: <a> 链接自动记 visited; 状态栏显示 action */
+    if (tag && strcmp(tag, "a") == 0 && action)
+        mb_mark_visited(mb, action);
+    snprintf(cb->status_msg, sizeof(cb->status_msg), "⏎ %s",
+             action ? action : "(none)");
+    return false;
+}
+
 /* ═══════════════════════════════════════════════════════════════════ */
 /*  内部: 加载 / 卸载页面                                              */
 /* ═══════════════════════════════════════════════════════════════════ */
@@ -389,6 +434,7 @@ static bool mb_load_page(MiniBrowser* mb) {
     /* 设置 InteractCallbacks */
     memset(&mb->cb, 0, sizeof(mb->cb));
     mb->cb.on_button_click = mb_default_on_click;
+    mb->cb.on_element_click = mb_default_on_element_click;
     mb->cb.on_focus_change = mb_default_on_focus;
     mb->cb.on_key          = mb_default_on_key;
     mb->cb.user_data       = mb;
@@ -485,6 +531,21 @@ void mini_browser_run(const char* html_path) {
 void mb_set_status(MiniBrowser* mb, const char* msg) {
     if (mb && msg)
         snprintf(mb->cb.status_msg, sizeof(mb->cb.status_msg), "%s", msg);
+}
+
+void mb_mark_visited(MiniBrowser* mb, const char* url) {
+    if (!mb || !url || !url[0]) return;
+    for (int i = 0; i < mb->visited_count; i++)
+        if (strcmp(mb->visited[i], url) == 0) return;
+    if (mb->visited_count < 64) {
+        strncpy(mb->visited[mb->visited_count], url, 255);
+        mb->visited[mb->visited_count][255] = '\0';
+        mb->visited_count++;
+    } else {
+        /* 环形覆盖最旧 */
+        for (int i = 1; i < 64; i++) strcpy(mb->visited[i-1], mb->visited[i]);
+        strncpy(mb->visited[63], url, 255); mb->visited[63][255] = '\0';
+    }
 }
 
 void mb_set_text(MiniBrowser* mb, const char* element_id, const char* text) {

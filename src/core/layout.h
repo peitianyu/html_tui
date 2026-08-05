@@ -171,6 +171,15 @@ typedef struct LayoutNode {
     /* z-index (0 = auto/default, only applies when position_type != 0) */
     int z_index;
 
+    /* clickable: 1=可点击元素 (data-action / cursor:pointer / <a href>) */
+    bool clickable;
+    /* 可点击元素的 action 字符串 (data-action 值或 href；无则 NULL) */
+    char* click_action;
+    /* disabled 表单控件 (灰显 + 排除出焦点链) */
+    bool disabled;
+    /* cursor: pointer 声明 (可点击暗示) */
+    bool cursor_pointer;
+
     /* scroll offset within element's content (e.g. textarea) */
     int content_scroll_y;
     int content_scroll_x;
@@ -1046,6 +1055,46 @@ static void apply_styles(LayoutNode* ln) {
     const char* pbottom = get_style(sn, "bottom"); if (pbottom) ln->position_bottom = (int)strtol(pbottom, NULL, 10);
     const char* pz = get_style(sn, "z-index");
     if (pz) { int zv = atoi(pz); if (zv > 0) ln->z_index = zv; }
+
+    /* cursor: pointer 声明 (可点击暗示) */
+    ln->cursor_pointer = false;
+    const char* cur = get_style(sn, "cursor");
+    if (cur && strcmp(cur, "pointer") == 0) ln->cursor_pointer = true;
+
+    /* clickable 标记: data-action 属性 > cursor:pointer > <a href>
+     * action 回退链: data-action > href > id > 标签名 */
+    ln->clickable = false;
+    ln->disabled = false;
+    if (ln->styled && ln->styled->node &&
+        ln->styled->node->type == GUMBO_NODE_ELEMENT) {
+        GumboElement* el = &ln->styled->node->v.element;
+        GumboAttribute* da = gumbo_get_attribute(&el->attributes, "data-action");
+        if (el->tag == GUMBO_TAG_A) {
+            GumboAttribute* h = gumbo_get_attribute(&el->attributes, "href");
+            if (h && h->value) {
+                ln->clickable = true;
+                ln->click_action = strdup(da && da->value ? da->value : h->value);
+            }
+        } else if (da && da->value) {
+            ln->clickable = true;
+            ln->click_action = strdup(da->value);
+        } else if (ln->cursor_pointer) {
+            ln->clickable = true;
+            GumboAttribute* id = gumbo_get_attribute(&el->attributes, "id");
+            if (id && id->value) ln->click_action = strdup(id->value);
+            else {
+                const char* tn = gumbo_normalized_tagname(el->tag);
+                ln->click_action = strdup(tn ? tn : "element");
+            }
+        }
+        /* disabled 属性: 仅表单控件 */
+        if (el->tag == GUMBO_TAG_INPUT || el->tag == GUMBO_TAG_BUTTON ||
+            el->tag == GUMBO_TAG_SELECT || el->tag == GUMBO_TAG_TEXTAREA) {
+            if (gumbo_get_attribute(&el->attributes, "disabled"))
+                ln->disabled = true;
+        }
+    }
+
     /* flex child properties */
     ln->flex_grow = 0;
     const char* fg = get_style(sn, "flex-grow");
@@ -2541,6 +2590,7 @@ void free_layout_tree(LayoutNode* tree) {
     }
     free(tree->children);
     free(tree->text_content);
+    if (tree->click_action) { free(tree->click_action); tree->click_action = NULL; }
     free(tree);
 }
 

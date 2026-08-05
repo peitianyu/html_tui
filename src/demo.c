@@ -109,11 +109,30 @@ static bool demo_on_click(const char* btn_id, const char* btn_text,
     return false;
 }
 
+/* 可点击元素回调: <a> 链接跳页, data-action 显示消息 */
+static bool demo_on_element_click(const char* action, const char* element_id,
+                                  const char* tag, MiniBrowser* mb, void* userdata)
+{
+    (void)element_id; (void)userdata;
+    if (tag && strcmp(tag, "a") == 0 && action) {
+        if (strstr(action, ".html")) {
+            mb_switch_page(mb, action);
+            return true;
+        }
+    }
+    if (action)
+        mb_set_status(mb, action);
+    else
+        mb_set_status(mb, "(click)");
+    return false;
+}
+
 int main(int argc, char** argv) {
     const char* filepath = argc > 1 ? argv[1] : "pages/00-menu.html";
 
     MB_Config config = MB_CONFIG_DEFAULT;
     config.on_button_click = demo_on_click;
+    config.on_element_click = demo_on_element_click;
     config.show_scrollbars = true;
     config.show_statusbar = false;
 

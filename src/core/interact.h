@@ -30,6 +30,17 @@ typedef bool (*InteractButtonClickFn)(const char* btn_text, int focus_idx,
                                        InteractCallbacks* cb);
 
 /**
+ * 可点击元素回调 (data-action / cursor:pointer / <a href> 触发)。
+ * @param action  元素的 action 字符串 (data-action 值或 href；无则 NULL)
+ * @param element_id 元素 id (无则 NULL)
+ * @param tag     标签名 (如 "div" / "a")
+ * @param cb      the callbacks struct
+ * @return true 表示需要重建布局
+ */
+typedef bool (*InteractElementClickFn)(const char* action, const char* element_id,
+                                       const char* tag, InteractCallbacks* cb);
+
+/**
  * Focus change callback (optional).
  * Called when Tab or mouse changes focus. Set status_msg as desired.
  */
@@ -54,6 +65,9 @@ struct InteractCallbacks {
 
     /* Button click handler. Required. */
     InteractButtonClickFn on_button_click;
+
+    /* 可点击元素回调 (data-action / cursor:pointer / <a href> 触发) */
+    InteractElementClickFn on_element_click;
 
     /* Focus change handler. Optional (NULL = auto status). */
     InteractFocusChangeFn on_focus_change;
@@ -345,8 +359,10 @@ static int collect_focus_list(LayoutNode* root, LayoutNode** focus_list, int max
             GumboTag t = n->styled->node->v.element.tag;
             if (t == GUMBO_TAG_INPUT || t == GUMBO_TAG_BUTTON ||
                 t == GUMBO_TAG_SUMMARY || t == GUMBO_TAG_TEXTAREA ||
-                t == GUMBO_TAG_SELECT) {
-                focus_list[count++] = n;
+                t == GUMBO_TAG_SELECT ||
+                n->clickable) {
+                /* disabled 控件不进焦点链 */
+                if (!n->disabled) focus_list[count++] = n;
             }
         }
         for (size_t ci = 0; ci < n->num_children && sp < 256; ci++)
@@ -879,6 +895,28 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
                     prev_hover = g_interact_hover;
                     g_interact_hover = hover_node;
                     restyle = true;
+                    /* 可点击元素悬停提示: 在 focus_list 中找 hover 的最近可点击祖先 */
+                    if (cb && cb->on_element_click) {
+                        for (GumboNode* p = hover_node; p; p = p->parent) {
+                            bool found = false;
+                            for (int fi = 0; fi < focus_count; fi++) {
+                                LayoutNode* n = focus_list[fi];
+                                if (n->clickable && n->styled &&
+                                    n->styled->node == p) {
+                                    GumboTag pt = p->v.element.tag;
+                                    if (pt != GUMBO_TAG_INPUT && pt != GUMBO_TAG_TEXTAREA &&
+                                        pt != GUMBO_TAG_SELECT && pt != GUMBO_TAG_SUMMARY &&
+                                        pt != GUMBO_TAG_BUTTON && n->click_action) {
+                                        snprintf(cb->status_msg, sizeof(cb->status_msg),
+                                                 "⏎ %s", n->click_action);
+                                    }
+                                    found = true;
+                                    break;
+                                }
+                            }
+                            if (found) break;
+                        }
+                    }
                 }
 
                 /* Left click → focus + active (not pure motion) */
@@ -1321,6 +1359,43 @@ end_mouse_left:
                         }
                     }
                 }
+
+                /* Left click on 可点击元素 (div/a/cursor:pointer, data-action) */
+                if (ev.key == TB_KEY_MOUSE_LEFT && !(ev.mod & TB_MOD_MOTION) &&
+                    cb && cb->on_element_click) {
+                    for (int fi = 0; fi < focus_count; fi++) {
+                        LayoutNode* n = focus_list[fi];
+                        if (!n->clickable) continue;
+                        GumboNode* gn = n->styled ? n->styled->node : NULL;
+                        GumboTag gt = (gn && gn->type == GUMBO_NODE_ELEMENT)
+                                          ? gn->v.element.tag : GUMBO_TAG_UNKNOWN;
+                        /* 按钮/输入类/select/summary 已有专门路径 */
+                        if (gt == GUMBO_TAG_BUTTON || gt == GUMBO_TAG_INPUT ||
+                            gt == GUMBO_TAG_TEXTAREA || gt == GUMBO_TAG_SELECT ||
+                            gt == GUMBO_TAG_SUMMARY) continue;
+                        int nx, ny, nw, nh;
+                        node_abs_box(n, scroll_x, scroll_y, &nx, &ny, &nw, &nh);
+                        if (ev.x >= nx && ev.x < nx + nw && ev.y >= ny && ev.y < ny + nh) {
+                            const char* action = n->click_action;
+                            const char* eid = NULL;
+                            if (gn && gn->type == GUMBO_NODE_ELEMENT) {
+                                GumboAttribute* ida = gumbo_get_attribute(
+                                    &gn->v.element.attributes, "id");
+                                if (ida) eid = ida->value;
+                            }
+                            const char* tag = NULL;
+                            if (gn && gn->type == GUMBO_NODE_ELEMENT) {
+                                GumboTag t2 = gn->v.element.tag;
+                                if (t2 == GUMBO_TAG_A) tag = "a";
+                                else tag = gumbo_normalized_tagname(t2);
+                            }
+                            if (cb->on_element_click(action, eid, tag, cb)) {
+                                restyle = true;
+                            }
+                            break;
+                        }
+                    }
+                }
             }
         }
 
@@ -1652,6 +1727,38 @@ input_update_text:
                     restyle = true;
                 }
                 continue;
+            }
+
+            /* ── 可点击元素 (div/a/cursor:pointer, data-action): Enter/Space → on_element_click ── */
+            if (focus_idx >= 0 && focus_idx < focus_count &&
+                (ev.key == TB_KEY_ENTER || ev.key == TB_KEY_SPACE) &&
+                focus_list[focus_idx]->clickable) {
+                LayoutNode* fn = focus_list[focus_idx];
+                GumboNode* gn = fn->styled ? fn->styled->node : NULL;
+                GumboTag gt = (gn && gn->type == GUMBO_NODE_ELEMENT)
+                                  ? gn->v.element.tag : GUMBO_TAG_UNKNOWN;
+                /* 输入类/按钮/summary/select 已有专门处理, 不重复分发 */
+                if (gt != GUMBO_TAG_INPUT && gt != GUMBO_TAG_TEXTAREA &&
+                    gt != GUMBO_TAG_SELECT && gt != GUMBO_TAG_SUMMARY &&
+                    gt != GUMBO_TAG_BUTTON && cb && cb->on_element_click) {
+                    const char* action = fn->click_action;
+                    const char* eid = NULL;
+                    if (gn && gn->type == GUMBO_NODE_ELEMENT) {
+                        GumboAttribute* ida = gumbo_get_attribute(
+                            &gn->v.element.attributes, "id");
+                        if (ida) eid = ida->value;
+                    }
+                    const char* tag = NULL;
+                    if (gn && gn->type == GUMBO_NODE_ELEMENT) {
+                        GumboTag t2 = gn->v.element.tag;
+                        if (t2 == GUMBO_TAG_A) tag = "a";
+                        else tag = gumbo_normalized_tagname(t2);
+                    }
+                    if (cb->on_element_click(action, eid, tag, cb)) {
+                        restyle = true;
+                    }
+                    continue;
+                }
             }
 
             /* ── <summary> click: toggle parent <details> ── */

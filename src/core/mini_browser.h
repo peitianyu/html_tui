@@ -193,10 +193,6 @@ struct MiniBrowser {
     char current_path[512];
     bool term_inited;
 
-    /* visited 链接集合 (href 字符串, 环形, 上限 64) */
-    char visited[64][256];
-    int  visited_count;
-
     /* 当前页面的解析结果 (用于页面切换时清理) */
     char*      raw_html;
     char*      css_buf;
@@ -554,18 +550,9 @@ void mb_set_status(MiniBrowser* mb, const char* msg) {
 }
 
 void mb_mark_visited(MiniBrowser* mb, const char* url) {
-    if (!mb || !url || !url[0]) return;
-    for (int i = 0; i < mb->visited_count; i++)
-        if (strcmp(mb->visited[i], url) == 0) return;
-    if (mb->visited_count < 64) {
-        strncpy(mb->visited[mb->visited_count], url, 255);
-        mb->visited[mb->visited_count][255] = '\0';
-        mb->visited_count++;
-    } else {
-        /* 环形覆盖最旧 */
-        for (int i = 1; i < 64; i++) strcpy(mb->visited[i-1], mb->visited[i]);
-        strncpy(mb->visited[63], url, 255); mb->visited[63][255] = '\0';
-    }
+    (void)mb;
+    if (!url || !url[0]) return;
+    visited_mark(url);
 }
 
 void mb_set_text(MiniBrowser* mb, const char* element_id, const char* text) {

@@ -178,6 +178,8 @@ typedef struct LayoutNode {
     char* click_action;
     /* disabled 表单控件 (灰显 + 排除出焦点链) */
     bool disabled;
+    /* placeholder 显示态 (空输入框显示 placeholder 文本) */
+    bool placeholder_shown;
     /* cursor: pointer 声明 (可点击暗示) */
     bool cursor_pointer;
 
@@ -734,6 +736,47 @@ static char* extract_text(GumboNode* node) {
 
 /* ---------- UTF-8 helpers (using uc.h) ---------- */
 
+/* 解析 border 简写: "1px solid #888" / "1 solid" / "2" / "0" / "none"
+ * 同时提取 width / style / color, 与长属性共存 (长属性优先覆盖) */
+static void parse_border_shorthand(const char* str, LayoutNode* ln) {
+    if (!str || !*str) return;
+    int w[4] = {0, 0, 0, 0};
+    bool have_w = false;
+    char tmp[128];
+    snprintf(tmp, sizeof(tmp), "%s", str);
+    char* save = NULL;
+    for (char* tk = strtok_r(tmp, " \t", &save); tk; tk = strtok_r(NULL, " \t", &save)) {
+        if (strcmp(tk, "none") == 0 || strcmp(tk, "0") == 0) {
+            have_w = true; /* width 0 */
+        } else if (strcmp(tk, "solid") == 0)      { ln->border_style = 1; }
+        else if (strcmp(tk, "dashed") == 0)      { ln->border_style = 2; }
+        else if (strcmp(tk, "dotted") == 0)      { ln->border_style = 3; }
+        else if (strcmp(tk, "double") == 0)      { ln->border_style = 4; }
+        else if (strcmp(tk, "heavy") == 0 || strcmp(tk, "bold") == 0) { ln->border_style = 5; }
+        else if (strcmp(tk, "rounded") == 0)     { ln->border_style = 6; }
+        else if (strcmp(tk, "groove") == 0 || strcmp(tk, "ridge") == 0 ||
+                 strcmp(tk, "inset") == 0 || strcmp(tk, "outset") == 0) { ln->border_style = 1; }
+        else {
+            ResolvedColor c = parse_color(tk);
+            if (c.valid || strcmp(tk, "transparent") == 0 ||
+                strcmp(tk, "currentColor") == 0) {
+                if (c.valid) ln->border_color = c;
+            } else {
+                /* width token (strip px) */
+                int v = atoi(tk);
+                if (v > 0 || strchr(tk, '0')) {
+                    for (int i = 0; i < 4; i++) w[i] = v;
+                    have_w = true;
+                }
+            }
+        }
+    }
+    if (have_w) {
+        ln->border_top = w[0]; ln->border_right = w[1];
+        ln->border_bottom = w[2]; ln->border_left = w[3];
+    }
+}
+
 /* forwards */
 static void compute_child_layouts(LayoutNode* parent, int content_w);
 static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* parent,
@@ -847,8 +890,7 @@ static void apply_styles(LayoutNode* ln) {
 
     /* border */
     const char* bord = get_style(sn, "border");
-    if (bord) parse_box_shorthand(bord, &ln->border_top, &ln->border_right,
-                                   &ln->border_bottom, &ln->border_left);
+    if (bord) parse_border_shorthand(bord, ln);
 
     const char* bw = get_style(sn, "border-width");
     if (bw) parse_box_shorthand(bw, &ln->border_top, &ln->border_right,
@@ -865,6 +907,16 @@ static void apply_styles(LayoutNode* ln) {
         else if (strcmp(bs, "rounded") == 0) ln->border_style = 6;
         else if (strcmp(bs, "groove") == 0 || strcmp(bs, "ridge") == 0 ||
                  strcmp(bs, "inset") == 0 || strcmp(bs, "outset") == 0) ln->border_style = 1;
+    }
+
+    /* border-radius: 非零值且有边框 → rounded 框线 (╭╮╰╯) */
+    {
+        const char* br = get_style(sn, "border-radius");
+        if (br && *br) {
+            ParsedDim pd = parse_dimension(br);
+            if (pd.valid && pd.value > 0 && ln->border_style == 1)
+                ln->border_style = 6; /* rounded */
+        }
     }
 
     /* border color */
@@ -2251,9 +2303,20 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
         if (!ln->color.valid ||
             (ln->color.r == 255 && ln->color.g == 255 && ln->color.b == 255)) {
             const Theme* th = theme_get();
-            ln->color.r = th->link_color[0];
-            ln->color.g = th->link_color[1];
-            ln->color.b = th->link_color[2];
+            /* :visited 链接 → 主题 visited 色 */
+            bool visited = false;
+            GumboAttribute* h = gumbo_get_attribute(
+                &snode->node->v.element.attributes, "href");
+            if (h && h->value) visited = visited_contains(h->value);
+            if (visited) {
+                ln->color.r = th->link_visited[0];
+                ln->color.g = th->link_visited[1];
+                ln->color.b = th->link_visited[2];
+            } else {
+                ln->color.r = th->link_color[0];
+                ln->color.g = th->link_color[1];
+                ln->color.b = th->link_color[2];
+            }
             ln->color.valid = true;
         }
     }
@@ -2373,6 +2436,7 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
                 GumboAttribute* ph = gumbo_get_attribute(&snode->node->v.element.attributes, "placeholder");
                 if (ph && ph->value && ph->value[0]) {
                     snprintf(buf, sizeof(buf), "%s", ph->value);
+                    ln->placeholder_shown = true;
                     ln->color.r = 120; ln->color.g = 120; ln->color.b = 120;
                 } else {
                     strcpy(buf, " ");

@@ -70,6 +70,10 @@ void free_style_tree(StyledNode* tree);
 /** Get a computed style from a styled node (convenience wrapper) */
 const char* get_style(StyledNode* node, const char* key);
 
+/* ── visited 集合 (供 :visited 匹配; mb_mark_visited 写入) ── */
+void visited_mark(const char* url);
+bool visited_contains(const char* url);
+
 /* ======================== Selector Matching API ======================== */
 
 /** Check whether a CSS selector matches a DOM element node */
@@ -91,6 +95,33 @@ StyledNode* find_styled_node(StyledNode* st, GumboNode* gn);
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+
+/* ---------- visited 集合 (环形, 上限 64) ---------- */
+#define VISITED_MAX 64
+static char g_visited[VISITED_MAX][256];
+static int  g_visited_count = 0;
+
+void visited_mark(const char* url) {
+    if (!url || !url[0]) return;
+    for (int i = 0; i < g_visited_count; i++)
+        if (strcmp(g_visited[i], url) == 0) return;
+    if (g_visited_count < VISITED_MAX) {
+        strncpy(g_visited[g_visited_count], url, 255);
+        g_visited[g_visited_count][255] = '\0';
+        g_visited_count++;
+    } else {
+        for (int i = 1; i < VISITED_MAX; i++) strcpy(g_visited[i-1], g_visited[i]);
+        strncpy(g_visited[VISITED_MAX-1], url, 255);
+        g_visited[VISITED_MAX-1][255] = '\0';
+    }
+}
+
+bool visited_contains(const char* url) {
+    if (!url) return false;
+    for (int i = 0; i < g_visited_count; i++)
+        if (strcmp(g_visited[i], url) == 0) return true;
+    return false;
+}
 
 /* ---------- StyleMap implementation ---------- */
 
@@ -428,9 +459,29 @@ nth_parse_b:
                     if (node->v.element.tag != GUMBO_TAG_A) return false;
                     if (!gumbo_get_attribute(&node->v.element.attributes, "href")) return false;
                     break;
+                case KatanaPseudoVisited: {
+                    /* Match <a> with href in visited 集合 */
+                    if (node->type != GUMBO_NODE_ELEMENT) return false;
+                    if (node->v.element.tag != GUMBO_TAG_A) return false;
+                    GumboAttribute* h = gumbo_get_attribute(&node->v.element.attributes, "href");
+                    if (!h || !h->value) return false;
+                    if (!visited_contains(h->value)) return false;
+                    break;
+                }
                 case KatanaPseudoHover:
                     if (node != g_interact_hover) return false;
                     break;
+                case KatanaPseudoPlaceholderShown: {
+                    /* <input>/<textarea> 且值为空 */
+                    if (node->type != GUMBO_NODE_ELEMENT) return false;
+                    GumboTag pt = node->v.element.tag;
+                    if (pt != GUMBO_TAG_INPUT && pt != GUMBO_TAG_TEXTAREA) return false;
+                    GumboAttribute* pv = gumbo_get_attribute(&node->v.element.attributes, "value");
+                    if (!pv || !pv->value || !pv->value[0]) return true;
+                    if (pt == GUMBO_TAG_TEXTAREA &&
+                        node->v.element.children.length == 0) return true;
+                    return false;
+                }
                 case KatanaPseudoFocus:
                     if (node != g_interact_focus) return false;
                     break;

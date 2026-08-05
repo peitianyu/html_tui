@@ -339,6 +339,16 @@ void screen_render_node(Screen* s, LayoutNode* n) {
         }
     }
     if (!vis_hidden && n->text_content && n->color.valid) {
+        /* disabled → 灰显; placeholder → 斜体 (临时替换, 渲染后恢复) */
+        ResolvedColor saved_col = n->color;
+        bool saved_italic = n->font_italic;
+        if (n->disabled) {
+            const Theme* th = theme_get();
+            n->color.r = th->disabled_fg[0];
+            n->color.g = th->disabled_fg[1];
+            n->color.b = th->disabled_fg[2];
+        }
+        if (n->placeholder_shown) n->font_italic = true;
         int lnx = scr_x + n->border_left + n->padding_left;
         int cy = scr_y + n->border_top + n->padding_top, mw = n->width; if (mw<1) mw=1;
         int lh = n->line_height > 0 ? n->line_height : 1;
@@ -371,6 +381,8 @@ void screen_render_node(Screen* s, LayoutNode* n) {
         } else {
             render_word_wrapped(s, n, p, lnx, &cy, lh, cx);
         }
+        n->color = saved_col;
+        n->font_italic = saved_italic;
     }
 }
 

@@ -97,6 +97,7 @@ typedef enum {
     KatanaPseudoInvalid,
     KatanaPseudoIndeterminate,
     KatanaPseudoTarget,
+    KatanaPseudoPlaceholderShown,
     KatanaPseudoBefore,
     KatanaPseudoAfter,
     KatanaPseudoBackdrop,
@@ -1738,6 +1739,7 @@ void katana_selector_extract_pseudo_type(KatanaSelector* selector)
         case KatanaPseudoInvalid:
         case KatanaPseudoIndeterminate:
         case KatanaPseudoTarget:
+        case KatanaPseudoPlaceholderShown:
         case KatanaPseudoLang:
         case KatanaPseudoNot:
         case KatanaPseudoRoot:
@@ -2162,6 +2164,7 @@ const static KatanaNameToPseudoStruct kPseudoTypeWithoutArgumentsMap[] = {
     {"optional",                      KatanaPseudoOptional},
     {"out-of-range",                  KatanaPseudoOutOfRange},
     {"past",                          KatanaPseudoPastCue},
+    {"placeholder-shown",             KatanaPseudoPlaceholderShown},
     {"read-only",                     KatanaPseudoReadOnly},
     {"read-write",                    KatanaPseudoReadWrite},
     {"required",                      KatanaPseudoRequired},

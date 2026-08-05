@@ -53,7 +53,8 @@ pages/
 ├── 15-clickable.html         # 可点击元素（data-action / cursor:pointer / <a> 链接 / disabled / :visited）
 ├── 16-theme.html             # 主题与样式增强（border-radius 降级, :placeholder-shown, 链接色）
 ├── 17-edge.html              # 边界情况（长文本截断, 负 margin, margin auto, box-sizing, overflow, 嵌套 flex）
-└── 18-media.html             # @media 查询（min/max-width, 组合查询, 视口联动）
+├── 18-media.html             # @media 查询（min/max-width, 组合查询, 视口联动）
+└── 19-many.html              # 大量可聚焦元素（300 按钮, 焦点链动态容量 >256）
 ```
 
 ### 键盘操作
@@ -367,7 +368,8 @@ mb_quit(mb);                     // 退出
 │   ├── 15-clickable.html         # 可点击元素
 │   ├── 16-theme.html             # 主题/样式增强
 │   ├── 17-edge.html              # 边界情况
-│   └── 18-media.html             # @media 查询
+│   ├── 18-media.html             # @media 查询
+│   └── 19-many.html             # 大量可聚焦元素 (300 按钮)
 ├── src/
 │   ├── demo.c                    # 入口：组装模块 + 按钮回调配置
 │   └── core/

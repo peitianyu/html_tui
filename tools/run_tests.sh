@@ -81,7 +81,12 @@ for p in "${PAGES[@]}"; do
             --expect='<option>' --expect='pad=0,1,0,1' ;;
     pages/12-css-effects.html)
         check "$HT" "$p" --layout \
-            --expect='border=1,1,1,1' --expect='z=' --expect='pad=2,2,2,2' ;;
+            --expect='border=1,1,1,1' --expect='z=' --expect='pad=2,2,2,2'
+        check "$HT" "$p" --layout --viewport=40x60 \
+            --expect-line='narrow-only|color=241,196,15|bold' \
+            --expect-line='wide-only|content=0x0'
+        check "$HT" "$p" --layout --viewport=120x60 \
+            --expect-line='narrow-only|content=0x0' ;;
     pages/13-input-types.html)
         check "$HT" "$p" --layout \
             --expect='type="checkbox"' --expect='type="radio"' --expect='type="range"' ;;

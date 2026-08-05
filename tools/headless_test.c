@@ -1,11 +1,15 @@
-/* tools/headless_test.c — 无头渲染测试工具 v2
+/* tools/headless_test.c — 无头渲染测试工具 v3
  * 加载 HTML → 样式树 → 布局 → 渲染, 输出两种 dump:
  *   1. 屏幕文本 dump  (screen_dump_text, ASCII 化)
  *   2. 布局树 dump    (每元素: tag/id/class + 绝对坐标 + 盒模型 + 计算样式)
- * 断言: 每个 --expect <子串> 在任一 dump 中命中即 OK。
+ * 断言语法:
+ *   --expect=SUBSTR        任一 dump 中包含 (跨行)
+ *   --expect-line=A|B|C    同一行同时包含 A、B、C (精确行级)
+ *   --expect-count=S=N     SUBSTR 出现次数恰好为 N (含跨行)
+ *   --viewport=WxH         自定义视口 (默认 80x60, 测 @media)
  *
  * 编译: gcc -DRENDER_HEADLESS -I src -o /tmp/headless_test tools/headless_test.c -lm
- * 用法: headless_test <page.html> [--layout] [--expect SUBSTR ...]
+ * 用法: headless_test <page.html> [--layout] [--viewport=WxH] [断言...]
  *   输出: $PREFIX/tmp/mb_headless_dump.txt (文本), mb_headless_layout.txt (布局)
  *   返回: 0=全部断言命中, 1=有未命中
  */
@@ -100,10 +104,17 @@ static void dump_layout(LayoutNode* n, FILE* out, int depth) {
 }
 
 int main(int argc, char** argv) {
-    if (argc < 2) { fprintf(stderr, "usage: %s <page.html> [--layout] [--expect SUBSTR ...]\n", argv[0]); return 2; }
+    if (argc < 2) { fprintf(stderr, "usage: %s <page.html> [--layout] [--viewport=WxH] [断言...]\n", argv[0]); return 2; }
     bool want_layout = false;
-    for (int i = 2; i < argc; i++)
+    int vw = 80, vh = 60;
+    for (int i = 2; i < argc; i++) {
         if (strcmp(argv[i], "--layout") == 0) want_layout = true;
+        else if (strncmp(argv[i], "--viewport=", 11) == 0) {
+            vw = atoi(argv[i] + 11);
+            const char* c = strchr(argv[i] + 11, 'x');
+            vh = c ? atoi(c + 1) : vh;
+        }
+    }
 
     FILE* f = fopen(argv[1], "rb");
     if (!f) { fprintf(stderr, "cannot open %s\n", argv[1]); return 2; }
@@ -119,9 +130,9 @@ int main(int argc, char** argv) {
 
     GumboOutput* dom = gumbo_parse(html);
     KatanaOutput* ko = katana_parse(css, strlen(css), KatanaParserModeStylesheet);
-    StyledNode* st = build_style_tree(dom->root, ko->stylesheet);
-    LayoutNode* lt = build_layout_tree(st, 80, 60);
-    Screen* s = screen_create(80, 60);
+    StyledNode* st = build_style_tree(dom->root, ko->stylesheet, vw);
+    LayoutNode* lt = build_layout_tree(st, vw, vh);
+    Screen* s = screen_create(vw, vh);
     screen_render_tree(s, lt);
 
     const char* dump_path = "/data/data/com.termux/files/usr/tmp/mb_headless_dump.txt";
@@ -147,17 +158,78 @@ int main(int argc, char** argv) {
         lay_dump[ln] = '\0';
     }
 
-    /* 断言: 任一 dump 命中即 OK (支持 --expect=SUBSTR 或 --expect SUBSTR) */
+    /* 断言: 支持 --expect=SUBSTR / --expect-line=A|B|C / --expect-count=S=N */
     int fail = 0;
     for (int i = 2; i < argc; i++) {
-        const char* exp = NULL;
-        if (strncmp(argv[i], "--expect=", 9) == 0) exp = argv[i] + 9;
-        else if (strcmp(argv[i], "--expect") == 0 && i + 1 < argc) exp = argv[++i];
-        if (!exp) continue;
-        bool hit = (strstr(text_dump, exp) != NULL) ||
-                   (want_layout && strstr(lay_dump, exp) != NULL);
-        if (hit) printf("OK   : %s\n", exp);
-        else { printf("FAIL : %s\n", exp); fail = 1; }
+        const char* arg = argv[i];
+        if (strncmp(arg, "--expect=", 9) == 0) {
+            const char* exp = arg + 9;
+            bool hit = (strstr(text_dump, exp) != NULL) ||
+                       (want_layout && strstr(lay_dump, exp) != NULL);
+            if (hit) printf("OK   : %s\n", exp);
+            else { printf("FAIL : %s\n", exp); fail = 1; }
+        } else if (strncmp(arg, "--expect-line=", 14) == 0) {
+            /* 同一行必须同时包含所有 | 分隔子串 (不破坏输入缓冲) */
+            char buf[1024]; snprintf(buf, sizeof(buf), "%s", arg + 14);
+            char* save = NULL;
+            char* toks[8]; int nt = 0;
+            for (char* tk = strtok_r(buf, "|", &save); tk && nt < 8; tk = strtok_r(NULL, "|", &save))
+                toks[nt++] = tk;
+            /* 按行扫描 helper (内联): 返回是否某行含全部子串 */
+            bool found = false;
+            const char* row = text_dump;
+            while (*row && !found) {
+                const char* nl = strchr(row, '\n');
+                size_t rlen = nl ? (size_t)(nl - row) : strlen(row);
+                if (rlen < sizeof(buf)) {
+                    char line[1024];
+                    memcpy(line, row, rlen); line[rlen] = '\0';
+                    bool all = true;
+                    for (int t = 0; t < nt; t++)
+                        if (!strstr(line, toks[t])) { all = false; break; }
+                    if (all) found = true;
+                }
+                if (!nl) break;
+                row = nl + 1;
+            }
+            if (want_layout && !found) {
+                row = lay_dump;
+                while (*row && !found) {
+                    const char* nl = strchr(row, '\n');
+                    size_t rlen = nl ? (size_t)(nl - row) : strlen(row);
+                    if (rlen < sizeof(buf)) {
+                        char line[1024];
+                        memcpy(line, row, rlen); line[rlen] = '\0';
+                        bool all = true;
+                        for (int t = 0; t < nt; t++)
+                            if (!strstr(line, toks[t])) { all = false; break; }
+                        if (all) found = true;
+                    }
+                    if (!nl) break;
+                    row = nl + 1;
+                }
+            }
+            if (found) printf("OK   : line[%s]\n", arg + 14);
+            else { printf("FAIL : line[%s]\n", arg + 14); fail = 1; }
+        } else if (strncmp(arg, "--expect-count=", 15) == 0) {
+            /* --expect-count=N:SUBSTR: 出现次数恰好为 N (两 dump 合计) */
+            const char* rest = arg + 15;
+            char num[16]; int ni = 0;
+            while (rest[ni] && rest[ni] != ':' && ni < 15) { num[ni] = rest[ni]; ni++; }
+            num[ni] = '\0';
+            if (rest[ni] != ':') { printf("FAIL : bad --expect-count (need N:SUBSTR)\n"); fail = 1; continue; }
+            const char* sub = rest + ni + 1;
+            int want = atoi(num);
+            int cnt = 0;
+            const char* p = text_dump;
+            while ((p = strstr(p, sub))) { cnt++; p += strlen(sub); }
+            if (want_layout) {
+                p = lay_dump;
+                while ((p = strstr(p, sub))) { cnt++; p += strlen(sub); }
+            }
+            if (cnt == want) printf("OK   : count[%s]=%d\n", sub, cnt);
+            else { printf("FAIL : count[%s] got %d want %d\n", sub, cnt, want); fail = 1; }
+        }
     }
 
     free_layout_tree(lt);

@@ -62,7 +62,10 @@ static GumboNode* g_interact_active = NULL;
  * Build the full style tree from a parsed DOM tree and a CSS stylesheet.
  * Returns the root StyledNode (the <html> element).
  */
-StyledNode* build_style_tree(GumboNode* dom, KatanaStylesheet* stylesheet);
+StyledNode* build_style_tree(GumboNode* dom, KatanaStylesheet* stylesheet, int viewport_w);
+
+/** 设置 @media 查询求值的视口宽度 (默认 80) */
+void style_tree_set_viewport(int viewport_w);
 
 /** Free an entire style tree */
 void free_style_tree(StyledNode* tree);
@@ -665,10 +668,14 @@ static bool selector_tag_quick_reject(KatanaSelector* sel, GumboNode* node) {
 
 /** Collect all matching style rules for a node */
 static bool media_query_matches(KatanaMediaQuery* mq, int viewport_w) {
-    if (!mq || !mq->type) return false;
+    if (!mq) return false;
     /* Simple check: handle "screen", "all", and "(min-width: Npx)" */
-    bool type_ok = (strcasecmp(mq->type, "all") == 0 || strcasecmp(mq->type, "screen") == 0);
-    if (mq->restrictor == KatanaMediaQueryRestrictorNot) type_ok = !type_ok;
+    bool type_ok = true;
+    /* 无类型前缀 (katana 用 "-" 或 NULL 表示) → 适用于所有媒体 */
+    if (mq->type && mq->type[0] && strcmp(mq->type, "-") != 0) {
+        type_ok = (strcasecmp(mq->type, "all") == 0 || strcasecmp(mq->type, "screen") == 0);
+        if (mq->restrictor == KatanaMediaQueryRestrictorNot) type_ok = !type_ok;
+    }
     if (!type_ok) return false;
     /* Check expressions */
     if (mq->expressions) {
@@ -697,6 +704,7 @@ static bool media_query_matches(KatanaMediaQuery* mq, int viewport_w) {
 }
 
 static int g_media_viewport_w = 80; /* default viewport width, set during style tree build */
+void style_tree_set_viewport(int viewport_w) { if (viewport_w > 0) g_media_viewport_w = viewport_w; }
 
 static void collect_matching_rules(GumboNode* node, KatanaStylesheet* ss,
                                    MatchedRule** out, size_t* out_len) {
@@ -738,7 +746,6 @@ static void collect_matching_rules(GumboNode* node, KatanaStylesheet* ss,
                     }
                 }
             }
-            if (!mq_matches) continue;
             /* Extract rules from inside @media */
             if (mr->rules) {
                 for (unsigned int ri = 0; ri < mr->rules->length; ri++) {
@@ -982,8 +989,9 @@ static StyledNode* build_style_tree_recursive(GumboNode* dom, KatanaStylesheet* 
 
 /* ---------- Public API ---------- */
 
-StyledNode* build_style_tree(GumboNode* dom, KatanaStylesheet* stylesheet) {
+StyledNode* build_style_tree(GumboNode* dom, KatanaStylesheet* stylesheet, int viewport_w) {
     if (!dom) return NULL;
+    if (viewport_w > 0) g_media_viewport_w = viewport_w;
     return build_style_tree_recursive(dom, stylesheet, NULL);
 }
 

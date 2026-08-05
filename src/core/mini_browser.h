@@ -423,10 +423,7 @@ static bool mb_load_page(MiniBrowser* mb) {
     else
         mb->css_output = katana_parse("", 0, KatanaParserModeStylesheet);
 
-    mb->styled_root = build_style_tree(mb->dom->root,
-                                        mb->css_output->stylesheet);
-
-    /* 初始化终端 (仅首次) */
+    /* 初始化终端 (仅首次) — 需在样式树构建前拿视口 (供 @media) */
     if (!mb->term_inited) {
         if (render_init()) {
             fprintf(stderr, "render_init failed\n");
@@ -434,10 +431,13 @@ static bool mb_load_page(MiniBrowser* mb) {
         }
         mb->term_inited = true;
     }
-
-    /* 构建布局 */
     int vw, vh;
     render_size(&vw, &vh);
+
+    mb->styled_root = build_style_tree(mb->dom->root,
+                                        mb->css_output->stylesheet, vw);
+
+    /* 构建布局 */
     mb->layout_root = build_layout_tree(mb->styled_root, vw, vh);
 
     /* 设置 InteractCallbacks */

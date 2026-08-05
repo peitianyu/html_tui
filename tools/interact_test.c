@@ -53,9 +53,9 @@ static bool test_on_element_click(const char* action, const char* element_id,
     (void)userdata;
     tlogf("el[action=%s id=%s tag=%s] ", action ? action : "-",
          element_id ? element_id : "-", tag ? tag : "-");
-    /* <a> 链接演示跳页 */
+    /* <a> 链接演示跳页 (push 历史, 供 b 返回测试) */
     if (tag && strcmp(tag, "a") == 0 && action && strstr(action, ".html"))
-        mb_switch_page(mb, action);
+        mb_navigate(mb, action);
     return false;
 }
 
@@ -115,6 +115,7 @@ static void push_event(const char* tok) {
     else if (strcmp(tok, "btab") == 0)    headless_push_key(0, TB_KEY_BACK_TAB);
     else if (strcmp(tok, "enter") == 0)   headless_push_key(0, TB_KEY_ENTER);
     else if (strcmp(tok, "esc") == 0)     headless_push_key(0, TB_KEY_ESC);
+    else if (strcmp(tok, "b") == 0)        headless_push_key('b', 0);
     else if (strcmp(tok, "release") == 0) headless_push_mouse(TB_KEY_MOUSE_RELEASE, 0, 0, 0);
     else if (strncmp(tok, "tabx:", 5) == 0) {
         int n = atoi(tok + 5);

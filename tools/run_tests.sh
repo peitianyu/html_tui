@@ -186,6 +186,12 @@ check "$IT" pages/04-buttons.html --events 'motion:16,10' \
     --expect-bg='btn-primary|232,101,101'
 check "$IT" pages/04-buttons.html --events 'motion:16,10 motion:50,50' \
     --expect-bg='btn-primary|212,69,69'
+check "$IT" pages/15-clickable.html --events 'tab tab tab tab enter b' \
+    --expect='15-clickable'
+check "$IT" pages/15-clickable.html --events 'b' \
+    --expect='first page'
+check "$IT" pages/03-inputs.html --events 'tab b b' \
+    --expect-text='inp-first|Johnbb'
 check "$IT" pages/19-many.html --events 'tabx:300 enter' \
     --expect='btn[id=btn-299 text=B299]'
 check "$IT" pages/19-many.html --events 'tabx:301' \

@@ -72,6 +72,8 @@ typedef struct {
 /*  核心 API                                                         */
 /* ═══════════════════════════════════════════════════════════════════ */
 
+#define MB_HIST_MAX 32  /* 历史栈深度 */
+
 /**
  * [一键模式] 加载 HTML 并启动 TUI 交互循环。
  *
@@ -139,6 +141,8 @@ void mb_set_visible(MiniBrowser* mb, const char* element_id, bool visible);
 
 /** 切换页面 (当前循环结束后加载) */
 void mb_switch_page(MiniBrowser* mb, const char* page_path);
+void mb_navigate(MiniBrowser* mb, const char* page_path);
+void mb_go_back(MiniBrowser* mb);
 
 /** 退出交互循环 */
 void mb_quit(MiniBrowser* mb);
@@ -204,6 +208,10 @@ struct MiniBrowser {
 
     /* InteractCallbacks — 内部持有, 用于 mb_set_* */
     InteractCallbacks cb;
+
+    /* 历史栈: history[0]=首屏, hist_idx 指向当前页; 导航 push, 返回 pop */
+    char history[MB_HIST_MAX][256];
+    int  hist_idx;
 };
 
 /* ═══════════════════════════════════════════════════════════════════ */
@@ -441,6 +449,15 @@ static bool mb_default_on_key(struct tb_event* ev, InteractCallbacks* cb) {
         cb->quit_flag = true;
         return true;
     }
+
+    /* b / B = 返回上一页 (历史栈); 输入框编辑中不拦截 (让 b 进入输入) */
+    if ((ev->ch == 'b' || ev->ch == 'B') && mb && !cb->edit_active) {
+        if (mb->hist_idx > 0)
+            mb_go_back(mb);
+        else
+            mb_set_status(mb, "↩ Already at first page");
+        return true;
+    }
     return false;
 }
 
@@ -561,6 +578,11 @@ MiniBrowser* mini_browser_open(const char* html_path, MB_Config* config) {
     strncpy(mb->current_path, html_path, sizeof(mb->current_path) - 1);
     mb->current_path[sizeof(mb->current_path) - 1] = '\0';
 
+    /* 历史栈: 首屏为 history[0] */
+    mb->hist_idx = 0;
+    strncpy(mb->history[0], mb->current_path, sizeof(mb->history[0]) - 1);
+    mb->history[0][sizeof(mb->history[0]) - 1] = '\0';
+
     if (config) {
         mb->config = *config;
     } else {
@@ -661,6 +683,25 @@ void mb_switch_page(MiniBrowser* mb, const char* page_path) {
                  "%s", page_path);
         mb->cb.quit_flag = true;
     }
+}
+
+/* 导航到新页: 先把当前页 push 进历史 (超过深度停止), 再切换 */
+void mb_navigate(MiniBrowser* mb, const char* page_path) {
+    if (!mb || !page_path || !page_path[0]) return;
+    if (mb->hist_idx + 1 < MB_HIST_MAX) {
+        mb->hist_idx++;
+        strncpy(mb->history[mb->hist_idx], mb->current_path,
+                sizeof(mb->history[0]) - 1);
+        mb->history[mb->hist_idx][sizeof(mb->history[0]) - 1] = '\0';
+    }
+    mb_switch_page(mb, page_path);
+}
+
+/* 返回上一页: 无历史时仅提示, 不动 */
+void mb_go_back(MiniBrowser* mb) {
+    if (!mb || mb->hist_idx <= 0) return;
+    mb->hist_idx--;
+    mb_switch_page(mb, mb->history[mb->hist_idx]);
 }
 
 void mb_quit(MiniBrowser* mb) {

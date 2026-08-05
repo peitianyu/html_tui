@@ -86,6 +86,9 @@ struct InteractCallbacks {
     /** Set to true from on_button_click or on_key to exit the interactive loop. */
     bool quit_flag;
 
+    /** 当前焦点是否在 INPUT/TEXTAREA 编辑中 (interact_run 每帧维护; on_key 可据此区分编辑键) */
+    bool edit_active;
+
     /**
      * Set to a file path to switch to a new page.
      * The main loop will read this file, parse HTML/CSS, and rebuild everything.
@@ -975,6 +978,16 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
 
         /* ── Sync runtime info to callbacks ── */
         if (cb) cb->layout_root = current_root;
+        /* 编辑态: 焦点在 INPUT/TEXTAREA 时为 true (供 on_key 区分编辑键) */
+        if (cb) {
+            bool ea = (focus_idx >= 0 && focus_idx < focus_count &&
+                       focus_list[focus_idx]->styled &&
+                       focus_list[focus_idx]->styled->node &&
+                       focus_list[focus_idx]->styled->node->type == GUMBO_NODE_ELEMENT &&
+                       (focus_list[focus_idx]->styled->node->v.element.tag == GUMBO_TAG_INPUT ||
+                        focus_list[focus_idx]->styled->node->v.element.tag == GUMBO_TAG_TEXTAREA));
+            cb->edit_active = ea;
+        }
 
         /* ── Render frame ── */
         render_frame(s, current_root, scroll_x, scroll_y,

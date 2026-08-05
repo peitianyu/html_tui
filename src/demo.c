@@ -116,7 +116,7 @@ static bool demo_on_element_click(const char* action, const char* element_id,
     (void)element_id; (void)userdata;
     if (tag && strcmp(tag, "a") == 0 && action) {
         if (strstr(action, ".html")) {
-            mb_switch_page(mb, action);
+            mb_navigate(mb, action);
             return true;
         }
     }

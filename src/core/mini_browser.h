@@ -226,10 +226,53 @@ static char* mb_read_file(const char* path, size_t* out_len) {
     return buf;
 }
 
+/* 从 <tag ...> 内提取属性值 (attr 大小写不敏感, 值支持单/双引号, 找不到返回 NULL) */
+static char* mb_attr_get(const char* tag, size_t tag_len, const char* attr) {
+    size_t alen = strlen(attr);
+    for (size_t i = 0; i + alen < tag_len; i++) {
+        char prev = (i == 0) ? '<' : tag[i - 1];
+        if (prev != ' ' && prev != '\t' && prev != '\n' && prev != '\r' &&
+            prev != '<' && prev != '>') continue;
+        if (strncasecmp(tag + i, attr, alen) != 0) continue;
+        char next = tag[i + alen];
+        if (next != ' ' && next != '\t' && next != '=' && next != '>') continue;
+        size_t j = i + alen;
+        while (j < tag_len && (tag[j] == ' ' || tag[j] == '\t')) j++;
+        if (j >= tag_len || tag[j] != '=') continue;
+        j++;
+        while (j < tag_len && (tag[j] == ' ' || tag[j] == '\t')) j++;
+        if (j >= tag_len) continue;
+        char q = (tag[j] == '\'' || tag[j] == '"') ? tag[j] : 0;
+        if (q) j++;
+        size_t start = j;
+        while (j < tag_len && (q ? tag[j] != q : (tag[j] != ' ' && tag[j] != '>' && tag[j] != '\t'))) j++;
+        size_t vlen = j - start;
+        if (vlen == 0) continue;
+        char* val = (char*)malloc(vlen + 1);
+        memcpy(val, tag + start, vlen);
+        val[vlen] = '\0';
+        return val;
+    }
+    return NULL;
+}
+
+/* 路径的目录部分 (不含尾部斜杠; 无斜杠 → 空串) */
+static void mb_dirname(const char* path, char* out, size_t cap) {
+    const char* slash = path ? strrchr(path, '/') : NULL;
+    if (slash && slash != path) {
+        size_t n = (size_t)(slash - path);
+        if (n >= cap) n = cap - 1;
+        memcpy(out, path, n);
+        out[n] = '\0';
+    } else {
+        out[0] = '\0';
+    }
+}
+
 typedef enum { MB_EXTRACT_TEXT, MB_EXTRACT_STYLE } MB_ExtractState;
 
 static void mb_extract_css(const char* raw, char* css, size_t cs,
-                           char* html, size_t hs) {
+                           char* html, size_t hs, const char* base_dir) {
     css[0] = '\0'; html[0] = '\0';
     size_t cp = 0, hp = 0;
     MB_ExtractState st = MB_EXTRACT_TEXT;
@@ -237,6 +280,38 @@ static void mb_extract_css(const char* raw, char* css, size_t cs,
     while (*p) {
         if (st == MB_EXTRACT_TEXT) {
             if (p[0] == '<') {
+                /* <link rel="stylesheet" href="X"> — 外部 CSS (整标签从 html 移除) */
+                if ((p[1] == 'l'||p[1]=='L') && (p[2] == 'i'||p[2]=='I') &&
+                    (p[3] == 'n'||p[3]=='N') && (p[4] == 'k'||p[4]=='K') &&
+                    (p[5] == '>' || p[5] == ' ' || p[5] == '\t' ||
+                     p[5] == '\n' || p[5] == '\r')) {
+                    const char* gt = strchr(p + 5, '>');
+                    if (gt) {
+                        size_t tag_len = (size_t)(gt - p) + 1;
+                        char* rel = mb_attr_get(p, tag_len, "rel");
+                        char* href = mb_attr_get(p, tag_len, "href");
+                        if (rel && strcasestr(rel, "stylesheet") && href && href[0]) {
+                            char path[1024];
+                            if (base_dir && base_dir[0])
+                                snprintf(path, sizeof(path), "%s/%s", base_dir, href);
+                            else
+                                snprintf(path, sizeof(path), "%s", href);
+                            char* ext = mb_read_file(path, NULL);
+                            if (ext) {
+                                size_t elen = strlen(ext);
+                                if (cp + elen + 2 < cs) {
+                                    memcpy(css + cp, ext, elen);
+                                    cp += elen;
+                                    css[cp++] = '\n';
+                                }
+                                free(ext);
+                            }
+                        }
+                        free(rel); free(href);
+                        p = gt + 1;  /* 跳过整个标签 */
+                        continue;
+                    }
+                }
                 if ((p[1] == '/' || p[1] == '/') &&
                     (p[2] == 's'||p[2]=='S') && (p[3] == 't'||p[3]=='T') &&
                     (p[4] == 'y'||p[4]=='Y') && (p[5] == 'l'||p[5]=='L') &&
@@ -407,8 +482,10 @@ static bool mb_load_page(MiniBrowser* mb) {
 
     mb->css_buf    = (char*)calloc(buf_size, 1);
     mb->clean_html = (char*)calloc(buf_size, 1);
+    char base_dir[512];
+    mb_dirname(mb->current_path, base_dir, sizeof(base_dir));
     mb_extract_css(mb->raw_html, mb->css_buf, buf_size,
-                   mb->clean_html, buf_size);
+                   mb->clean_html, buf_size, base_dir);
 
     if (strlen(mb->clean_html) == 0)
         strncpy(mb->clean_html,

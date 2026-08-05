@@ -29,14 +29,81 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* 简化版 <style> 提取（与 mini_browser.h 中 mb_extract_css 同逻辑） */
-static void extract_css(const char* raw, char* css, size_t cs, char* html, size_t hs) {
+/* 从 <tag ...> 内提取属性值 (与 mini_browser.h mb_attr_get 同逻辑) */
+static char* attr_get(const char* tag, size_t tag_len, const char* attr) {
+    size_t alen = strlen(attr);
+    for (size_t i = 0; i + alen < tag_len; i++) {
+        char prev = (i == 0) ? '<' : tag[i - 1];
+        if (prev != ' ' && prev != '\t' && prev != '\n' && prev != '\r' &&
+            prev != '<' && prev != '>') continue;
+        if (strncasecmp(tag + i, attr, alen) != 0) continue;
+        char next = tag[i + alen];
+        if (next != ' ' && next != '\t' && next != '=' && next != '>') continue;
+        size_t j = i + alen;
+        while (j < tag_len && (tag[j] == ' ' || tag[j] == '\t')) j++;
+        if (j >= tag_len || tag[j] != '=') continue;
+        j++;
+        while (j < tag_len && (tag[j] == ' ' || tag[j] == '\t')) j++;
+        if (j >= tag_len) continue;
+        char q = (tag[j] == '\'' || tag[j] == '"') ? tag[j] : 0;
+        if (q) j++;
+        size_t start = j;
+        while (j < tag_len && (q ? tag[j] != q : (tag[j] != ' ' && tag[j] != '>' && tag[j] != '\t'))) j++;
+        size_t vlen = j - start;
+        if (vlen == 0) continue;
+        char* val = (char*)malloc(vlen + 1);
+        memcpy(val, tag + start, vlen);
+        val[vlen] = '\0';
+        return val;
+    }
+    return NULL;
+}
+
+/* 简化版 <style>/<link> 提取（与 mini_browser.h 中 mb_extract_css 同逻辑） */
+static void extract_css(const char* raw, char* css, size_t cs, char* html, size_t hs,
+                        const char* base_dir) {
     css[0] = '\0'; html[0] = '\0';
     size_t cp = 0, hp = 0;
     int in_style = 0;
     const char* p = raw;
     while (*p && hp < hs - 1) {
         if (!in_style) {
+            if (p[0]=='<' && (p[1]=='l'||p[1]=='L') && (p[2]=='i'||p[2]=='I') &&
+                (p[3]=='n'||p[3]=='N') && (p[4]=='k'||p[4]=='K') &&
+                (p[5]=='>'||p[5]==' '||p[5]=='\t'||p[5]=='\n'||p[5]=='\r')) {
+                const char* gt = strchr(p + 5, '>');
+                if (gt) {
+                    size_t tag_len = (size_t)(gt - p) + 1;
+                    char* rel = attr_get(p, tag_len, "rel");
+                    char* href = attr_get(p, tag_len, "href");
+                    if (rel && strcasestr(rel, "stylesheet") && href && href[0]) {
+                        char path[1024];
+                        if (base_dir && base_dir[0])
+                            snprintf(path, sizeof(path), "%s/%s", base_dir, href);
+                        else
+                            snprintf(path, sizeof(path), "%s", href);
+                        FILE* lf = fopen(path, "rb");
+                        if (lf) {
+                            fseek(lf, 0, SEEK_END); long llen = ftell(lf); rewind(lf);
+                            if (llen > 0) {
+                                char* lbuf = (char*)malloc((size_t)llen + 1);
+                                size_t lr = fread(lbuf, 1, (size_t)llen, lf);
+                                lbuf[lr] = '\0';
+                                if (cp + lr + 2 < cs) {
+                                    memcpy(css + cp, lbuf, lr);
+                                    cp += lr;
+                                    css[cp++] = '\n';
+                                }
+                                free(lbuf);
+                            }
+                            fclose(lf);
+                        }
+                    }
+                    free(rel); free(href);
+                    p = gt + 1;  /* 跳过整个标签 */
+                    continue;
+                }
+            }
             if (p[0]=='<' && (p[1]=='s'||p[1]=='S') && (p[2]=='t'||p[2]=='T') &&
                 (p[3]=='y'||p[3]=='Y') && (p[4]=='l'||p[4]=='L') && (p[5]=='e'||p[5]=='E') &&
                 (p[6]=='>'||p[6]==' '||p[6]=='\t'||p[6]=='\n'||p[6]=='\r')) {
@@ -126,7 +193,17 @@ int main(int argc, char** argv) {
     size_t buf = n + 4096; if (buf < 8192) buf = 8192;
     char* css = (char*)calloc(buf, 1);
     char* html = (char*)calloc(buf, 1);
-    extract_css(raw, css, buf, html, buf);
+    char base_dir[512];
+    {
+        const char* slash = strrchr(argv[1], '/');
+        if (slash && slash != argv[1]) {
+            size_t bn = (size_t)(slash - argv[1]);
+            if (bn >= sizeof(base_dir)) bn = sizeof(base_dir) - 1;
+            memcpy(base_dir, argv[1], bn);
+            base_dir[bn] = '\0';
+        } else base_dir[0] = '\0';
+    }
+    extract_css(raw, css, buf, html, buf, base_dir);
 
     GumboOutput* dom = gumbo_parse(html);
     KatanaOutput* ko = katana_parse(css, strlen(css), KatanaParserModeStylesheet);

@@ -37,7 +37,7 @@ else
            pages/08-tables.html pages/09-lists-pseudo.html pages/10-details-textarea.html pages/11-select.html \
            pages/12-css-effects.html pages/13-input-types.html pages/14-text-styles.html pages/15-clickable.html \
            pages/16-theme.html pages/17-edge.html pages/18-media.html \
-           pages/19-many.html)
+           pages/19-many.html pages/20-external-css.html)
 fi
 for p in "${PAGES[@]}"; do
     case "$p" in
@@ -131,6 +131,12 @@ for p in "${PAGES[@]}"; do
         check "$HT" "$p" --layout --viewport=80x150 \
             --expect='B0' --expect='B299' --expect='btn-back' \
             --expect-count=300:class=\"btn\"
+        check "$HT" "$p" --flush-ok ;;
+    pages/20-external-css.html)
+        check "$HT" "$p" --layout \
+            --expect='ext-box' --expect='bg=18,52,86' \
+            --expect='border=1,1,1,1' \
+            --expect-line='inline-late|bg=0,255,0'
         check "$HT" "$p" --flush-ok ;;
     esac
 done

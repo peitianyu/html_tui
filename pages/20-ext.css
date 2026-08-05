@@ -1,0 +1,10 @@
+/* pages/20-ext.css — 被 20-external-css.html 通过 <link rel=stylesheet> 引用 */
+.ext-box {
+  background-color: #123456;
+  color: #ffffff;
+  border: 1px solid #ff8800;
+}
+/* 将被页面内联 style 覆盖 (层叠序: link 在前, 内联在后) */
+.inline-late {
+  background-color: #aa0000;
+}

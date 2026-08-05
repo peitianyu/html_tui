@@ -126,6 +126,12 @@ const char* mb_get_text(MiniBrowser* mb, const char* element_id);
 void mb_mark_visited(MiniBrowser* mb, const char* url);
 
 /**
+ * 加载主题并应用。
+ * @param path 主题文件路径; NULL=按默认来源解析 (--theme > theme.ini > 用户配置)
+ */
+void mb_apply_theme(MiniBrowser* mb, const char* path);
+
+/**
  * 显示/隐藏元素。
  * 注意: 需要回调返回 true 来触发布局重建, 否则无效果。
  */
@@ -150,6 +156,9 @@ void mb_show_statusbar(MiniBrowser* mb, bool show);
 #ifdef MINI_BROWSER_IMPLEMENTATION
 
 /* ── 内部头文件 (单头文件库模式, 仅在此处展开实现) ── */
+
+#define THEME_IMPLEMENTATION
+#include "theme.h"
 
 #define UC_IMPLEMENTATION
 #include "uc.h"
@@ -527,6 +536,17 @@ void mini_browser_run(const char* html_path) {
 /* ═══════════════════════════════════════════════════════════════════ */
 /*  运行时 API 实现                                                    */
 /* ═══════════════════════════════════════════════════════════════════ */
+
+void mb_apply_theme(MiniBrowser* mb, const char* path) {
+    (void)mb;
+    Theme def; theme_default(&def); theme_apply(&def);
+    if (path && path[0]) {
+        if (theme_load(&g_theme, path) != 0)
+            fprintf(stderr, "theme: cannot load '%s'\n", path);
+    } else {
+        theme_reload_from_source();
+    }
+}
 
 void mb_set_status(MiniBrowser* mb, const char* msg) {
     if (mb && msg)

@@ -233,10 +233,12 @@ static void render_preserved_ws(Screen* s, LayoutNode* n, const char* p,
                 if (sb_top + ri >= 0) {
                     if (ri >= thumb_pos && ri < thumb_pos + thumb_h) {
                         scr_set(s, sb_right, sb_top + ri, 0x2592);
-                        scr_fg(s, sb_right, sb_top + ri, 120,180,255);
+                        scr_fg(s, sb_right, sb_top + ri,
+                               g_theme.textarea_sb[0], g_theme.textarea_sb[1], g_theme.textarea_sb[2]);
                     } else {
                         scr_set(s, sb_right, sb_top + ri, 0x2502);
-                        scr_fg(s, sb_right, sb_top + ri, 60,90,130);
+                        scr_fg(s, sb_right, sb_top + ri,
+                               g_theme.textarea_sb[0]/2, g_theme.textarea_sb[1]/2, g_theme.textarea_sb[2]/2);
                     }
                 }
             }
@@ -785,11 +787,11 @@ void screen_draw_vscrollbar(Screen* s, int content_h, int scroll_y) {
     for (int r = 0; r < track_h; r++) {
         if (r >= thumb_pos && r < thumb_pos + thumb_h) {
             scr_set(s, col, r, 0x2592); /* ▒ thumb */
-            scr_fg(s, col, r, 120, 180, 255);
-            scr_bg(s, col, r, 30, 30, 50);
+            scr_fg(s, col, r, g_theme.scrollbar_thumb[0], g_theme.scrollbar_thumb[1], g_theme.scrollbar_thumb[2]);
+            scr_bg(s, col, r, g_theme.scrollbar_track[0], g_theme.scrollbar_track[1], g_theme.scrollbar_track[2]);
         } else {
             scr_set(s, col, r, 0x2502); /* │ track */
-            scr_fg(s, col, r, 50, 80, 120);
+            scr_fg(s, col, r, g_theme.scrollbar_track[0], g_theme.scrollbar_track[1], g_theme.scrollbar_track[2]);
             scr_bg(s, col, r, 0, 0, 0);
         }
     }
@@ -811,11 +813,11 @@ void screen_draw_hscrollbar(Screen* s, int content_w, int scroll_x) {
     for (int c = 0; c < track_w; c++) {
         if (c >= thumb_pos && c < thumb_pos + thumb_w) {
             scr_set(s, c, sb_row, 0x2592); /* ▒ thumb */
-            scr_fg(s, c, sb_row, 120, 180, 255);
-            scr_bg(s, c, sb_row, 30, 30, 50);
+            scr_fg(s, c, sb_row, g_theme.scrollbar_thumb[0], g_theme.scrollbar_thumb[1], g_theme.scrollbar_thumb[2]);
+            scr_bg(s, c, sb_row, g_theme.scrollbar_track[0], g_theme.scrollbar_track[1], g_theme.scrollbar_track[2]);
         } else {
             scr_set(s, c, sb_row, 0x2500); /* ─ track */
-            scr_fg(s, c, sb_row, 50, 80, 120);
+            scr_fg(s, c, sb_row, g_theme.scrollbar_track[0], g_theme.scrollbar_track[1], g_theme.scrollbar_track[2]);
             scr_bg(s, c, sb_row, 0, 0, 0);
         }
     }

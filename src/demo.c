@@ -129,6 +129,10 @@ static bool demo_on_element_click(const char* action, const char* element_id,
 
 int main(int argc, char** argv) {
     const char* filepath = argc > 1 ? argv[1] : "pages/00-menu.html";
+    /* 解析 --theme 参数 */
+    const char* theme_path = NULL;
+    for (int i = 1; i < argc - 1; i++)
+        if (strcmp(argv[i], "--theme") == 0) theme_path = argv[i + 1];
 
     MB_Config config = MB_CONFIG_DEFAULT;
     config.on_button_click = demo_on_click;
@@ -138,6 +142,7 @@ int main(int argc, char** argv) {
 
     MiniBrowser* mb = mini_browser_open(filepath, &config);
     if (!mb) return 1;
+    mb_apply_theme(mb, theme_path);
 
     mini_browser_run_loop(mb);
     mini_browser_close(mb);

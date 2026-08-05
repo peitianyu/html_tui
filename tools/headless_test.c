@@ -4,6 +4,8 @@
  * 用法: headless_test <page.html> [expect-substring ...]
  *   输出 dump 到 $PREFIX/tmp/mb_headless_dump.txt，返回 0=全部断言命中, 1=有断言未命中
  */
+#define THEME_IMPLEMENTATION
+#include "core/theme.h"
 #define UC_IMPLEMENTATION
 #include "core/uc.h"
 #define STYLETREE_IMPLEMENTATION

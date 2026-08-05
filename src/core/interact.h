@@ -467,7 +467,8 @@ static void draw_focus_indicator(Screen* s, LayoutNode* f, int scroll_x, int scr
     int bx, by, bw, bh;
     node_abs_box(f, scroll_x, scroll_y, &bx, &by, &bw, &bh);
     if (bw <= 0 || bh < 1 || by < 0 || by >= s->rows) return;
-    int bg_r = 80, bg_g = 80, bg_b = 120;
+    const Theme* th = theme_get();
+    int bg_r = th->focus_border[0], bg_g = th->focus_border[1], bg_b = th->focus_border[2];
     for (int ri = 0; ri < bh && by + ri < s->rows; ri++) {
         for (int ci = 0; ci < bw && bx + ci < s->cols; ci++) {
             if (by+ri >= 0 && bx+ci >= 0)
@@ -525,9 +526,10 @@ static void draw_status_bar(Screen* s, InteractCallbacks* cb, int scroll_x, int 
                              LayoutNode* current_root) {
     if (!cb || !cb->show_statusbar || !cb->status_msg[0]) return;
     int sb_row = s->rows - 1;
+    const Theme* th = theme_get();
     for (int ci = 0; ci < s->cols; ci++) {
         screen_scr_set(s, ci, sb_row, ' ');
-        screen_scr_bg(s, ci, sb_row, 30, 30, 50);
+        screen_scr_bg(s, ci, sb_row, th->statusbar_bg[0], th->statusbar_bg[1], th->statusbar_bg[2]);
     }
     const char* sp = cb->status_msg;
     int ci = 0;
@@ -537,18 +539,18 @@ static void draw_status_bar(Screen* s, InteractCallbacks* cb, int scroll_x, int 
         int w = uc_wid((int)cp);
         if (ci + w <= s->cols) {
             screen_scr_set(s, ci, sb_row, cp);
-            screen_scr_fg(s, ci, sb_row, 200, 200, 100);
+            screen_scr_fg(s, ci, sb_row, th->statusbar_fg[0], th->statusbar_fg[1], th->statusbar_fg[2]);
             if (w == 2 && ci + 1 < s->cols) screen_scr_set(s, ci + 1, sb_row, 0);
         }
         ci += w;
     }
     if (scroll_y > 0) {
         int ri = s->cols - 3;
-        if (ri > ci && ri < s->cols) { screen_scr_set(s, ri, sb_row, 0x25B2); screen_scr_fg(s, ri, sb_row, 100,180,255); }
+        if (ri > ci && ri < s->cols) { screen_scr_set(s, ri, sb_row, 0x25B2); screen_scr_fg(s, ri, sb_row, th->scrollbar_thumb[0], th->scrollbar_thumb[1], th->scrollbar_thumb[2]); }
     }
     if (current_root && scroll_y < current_root->height - s->rows) {
         int ri = s->cols - 2;
-        if (ri > ci && ri < s->cols) { screen_scr_set(s, ri, sb_row, 0x25BC); screen_scr_fg(s, ri, sb_row, 100,180,255); }
+        if (ri > ci && ri < s->cols) { screen_scr_set(s, ri, sb_row, 0x25BC); screen_scr_fg(s, ri, sb_row, th->scrollbar_thumb[0], th->scrollbar_thumb[1], th->scrollbar_thumb[2]); }
     }
 }
 
@@ -708,16 +710,17 @@ static void render_frame(Screen* s, LayoutNode* current_root, int scroll_x, int 
         SelectPopupRect pr = calc_select_popup_rect(sn, scroll_x, scroll_y, s,
                                                      select_popup_count, select_popup_vals, select_popup_sel);
         int px=pr.x, py=pr.y, pw=pr.w, mv=pr.max_vis, bc=100;
+        const Theme* th = theme_get();
         for (int ci=px; ci<px+pw&&ci<s->cols; ci++) for (int ri=py; ri<py+mv+2&&ri<s->rows; ri++)
-            { screen_scr_set(s,ci,ri,' '); screen_scr_bg(s,ci,ri,20,20,40); }
+            { screen_scr_set(s,ci,ri,' '); screen_scr_bg(s,ci,ri,th->select_popup_bg[0],th->select_popup_bg[1],th->select_popup_bg[2]); }
         if (py < s->rows) {
-            for (int ci=px; ci<px+pw&&ci<s->cols; ci++) { screen_scr_set(s,ci,py,0x2500); screen_scr_fg(s,ci,py,bc,bc,bc); screen_scr_bg(s,ci,py,20,20,40); }
+            for (int ci=px; ci<px+pw&&ci<s->cols; ci++) { screen_scr_set(s,ci,py,0x2500); screen_scr_fg(s,ci,py,bc,bc,bc); screen_scr_bg(s,ci,py,th->select_popup_bg[0],th->select_popup_bg[1],th->select_popup_bg[2]); }
             if (px<s->cols) { screen_scr_set(s,px,py,0x250C); screen_scr_fg(s,px,py,bc,bc,bc); }
             int r=px+pw-1; if (r<s->cols) { screen_scr_set(s,r,py,0x2510); screen_scr_fg(s,r,py,bc,bc,bc); }
         }
         int br=py+mv+1;
         if (br < s->rows) {
-            for (int ci=px; ci<px+pw&&ci<s->cols; ci++) { screen_scr_set(s,ci,br,0x2500); screen_scr_fg(s,ci,br,bc,bc,bc); screen_scr_bg(s,ci,br,20,20,40); }
+            for (int ci=px; ci<px+pw&&ci<s->cols; ci++) { screen_scr_set(s,ci,br,0x2500); screen_scr_fg(s,ci,br,bc,bc,bc); screen_scr_bg(s,ci,br,th->select_popup_bg[0],th->select_popup_bg[1],th->select_popup_bg[2]); }
             if (px<s->cols) { screen_scr_set(s,px,br,0x2514); screen_scr_fg(s,px,br,bc,bc,bc); }
             int r=px+pw-1; if (r<s->cols) { screen_scr_set(s,r,br,0x2518); screen_scr_fg(s,r,br,bc,bc,bc); }
         }
@@ -728,9 +731,9 @@ static void render_frame(Screen* s, LayoutNode* current_root, int scroll_x, int 
         for (int oi=0; oi<mv; oi++) {
             int idx=select_popup_scroll+oi; if (idx>=select_popup_count) break;
             int row=py+1+oi; if (row>=s->rows) break;
-            int bg_r=(idx==select_popup_sel)?80:(select_popup_types[idx]==1?30:20);
-            int bg_g=(idx==select_popup_sel)?80:(select_popup_types[idx]==1?40:20);
-            int bg_b=(idx==select_popup_sel)?140:(select_popup_types[idx]==1?60:40);
+            int bg_r=(idx==select_popup_sel)?th->select_popup_hl[0]:(select_popup_types[idx]==1?th->select_popup_bg[0]:th->select_popup_bg[0]);
+            int bg_g=(idx==select_popup_sel)?th->select_popup_hl[1]:(select_popup_types[idx]==1?th->select_popup_bg[1]:th->select_popup_bg[1]);
+            int bg_b=(idx==select_popup_sel)?th->select_popup_hl[2]:(select_popup_types[idx]==1?th->select_popup_bg[2]:th->select_popup_bg[2]);
             int col=px+1; const char* lb=select_popup_vals[idx];
             screen_scr_bg(s,col,row,bg_r,bg_g,bg_b);
             if (select_popup_types[idx]==1) { screen_scr_set(s,col,row,0x2503); screen_scr_fg(s,col,row,180,200,120); screen_scr_bold(s,col,row,true); }
@@ -743,8 +746,8 @@ static void render_frame(Screen* s, LayoutNode* current_root, int scroll_x, int 
             }
             while (ci<px+pw-1&&ci<s->cols) { screen_scr_set(s,ci,row,' '); screen_scr_bg(s,ci,row,bg_r,bg_g,bg_b); ci++; }
         }
-        if (select_popup_scroll>0&&py+1<s->rows) { screen_scr_set(s,px+pw-2,py+1,0x25B2); screen_scr_fg(s,px+pw-2,py+1,100,180,255); }
-        if (select_popup_scroll+mv<select_popup_count&&py+mv<s->rows) { screen_scr_set(s,px+pw-2,py+mv,0x25BC); screen_scr_fg(s,px+pw-2,py+mv,100,180,255); }
+        if (select_popup_scroll>0&&py+1<s->rows) { screen_scr_set(s,px+pw-2,py+1,0x25B2); screen_scr_fg(s,px+pw-2,py+1,th->scrollbar_thumb[0],th->scrollbar_thumb[1],th->scrollbar_thumb[2]); }
+        if (select_popup_scroll+mv<select_popup_count&&py+mv<s->rows) { screen_scr_set(s,px+pw-2,py+mv,0x25BC); screen_scr_fg(s,px+pw-2,py+mv,th->scrollbar_thumb[0],th->scrollbar_thumb[1],th->scrollbar_thumb[2]); }
     }
     screen_flush(s);
 }
@@ -1455,6 +1458,22 @@ end_mouse_left:
             /* ── User key handler (overrides defaults) ── */
             if (cb && cb->on_key && cb->on_key(&ev, cb)) {
                 continue;
+            }
+
+            /* ── R: 主题热重载 (输入框聚焦时忽略, 让 r 进入输入) ── */
+            if (ev.ch == 'R' || ev.ch == 'r') {
+                bool in_input = (focus_idx >= 0 && focus_idx < focus_count &&
+                    focus_list[focus_idx]->styled && focus_list[focus_idx]->styled->node &&
+                    focus_list[focus_idx]->styled->node->type == GUMBO_NODE_ELEMENT &&
+                    (focus_list[focus_idx]->styled->node->v.element.tag == GUMBO_TAG_INPUT ||
+                     focus_list[focus_idx]->styled->node->v.element.tag == GUMBO_TAG_TEXTAREA));
+                if (!in_input) {
+                    int rl = theme_reload_from_source();
+                    snprintf(cb->status_msg, sizeof(cb->status_msg),
+                             rl == 0 ? "🎨 theme reloaded" : "🎨 theme (default)");
+                    restyle = true;
+                    continue;
+                }
             }
 
             /* ── Input editing: when an INPUT or TEXTAREA is focused ── */

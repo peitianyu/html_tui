@@ -3,6 +3,7 @@
 
 #include "styletree.h"
 #include "uc.h"
+#include "theme.h"
 #include <stdbool.h>
 
 #ifdef __cplusplus
@@ -2243,13 +2244,16 @@ static LayoutNode* build_layout_tree_recursive(StyledNode* snode, LayoutNode* pa
         }
     }
 
-    /* <a>: default blue + underline */
+    /* <a>: default link color + underline */
     if (snode->node->type == GUMBO_NODE_ELEMENT &&
         snode->node->v.element.tag == GUMBO_TAG_A) {
         ln->font_underline = true;
         if (!ln->color.valid ||
             (ln->color.r == 255 && ln->color.g == 255 && ln->color.b == 255)) {
-            ln->color.r = 83; ln->color.g = 168; ln->color.b = 182;
+            const Theme* th = theme_get();
+            ln->color.r = th->link_color[0];
+            ln->color.g = th->link_color[1];
+            ln->color.b = th->link_color[2];
             ln->color.valid = true;
         }
     }

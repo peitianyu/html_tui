@@ -295,9 +295,13 @@ static bool mb_default_on_click(const char* btn_text, int focus_idx,
 
     /* 用户回调优先 */
     if (mb->config.on_button_click) {
+        char prev_status[256];
+        snprintf(prev_status, sizeof(prev_status), "%s", cb->status_msg);
         bool ret = mb->config.on_button_click(btn_id, btn_text, mb,
                                               mb->config.userdata);
         if (ret) return true;
+        /* 用户回调修改了状态消息 → 保留, 不再覆盖默认文本 */
+        if (strcmp(prev_status, cb->status_msg) != 0) return false;
     }
 
     /* btn-page-NN → 页面跳转 */

@@ -717,6 +717,12 @@ void screen_render_tree(Screen* s, LayoutNode* root) {
 void screen_flush(Screen* s) {
     if (!s) return;
 
+#ifdef RENDER_HEADLESS
+    /* headless: 不输出 ANSI (交互测试用) */
+    (void)s;
+    return;
+#else
+
     /* Batch all output into a single writev-friendly buffer */
     /* Max size: "\033[H" + rows * (cols * (max_ansi_seq + utf8_char + skip)) */
 #define FLUSH_BUF_SIZE 65536
@@ -770,6 +776,7 @@ void screen_flush(Screen* s) {
 #undef FLUSH_PUTS
 #undef FLUSH_PRINTF
 #undef FLUSH_BUF_SIZE
+#endif /* RENDER_HEADLESS */
 }
 
 /* Scroll helpers */
@@ -841,10 +848,30 @@ void screen_draw_hscrollbar(Screen* s, int content_w, int scroll_x) {
 #ifdef RENDER_HEADLESS
 /* ── Headless mode: skip termbox2, provide stubs ── */
 struct tb_event { unsigned int type; unsigned int ch; int key; int mod; int x; int y; int w; int h; };
+#define TB_EVENT_KEY 1
+#define TB_EVENT_MOUSE 2
+#define TB_EVENT_RESIZE 3
 #define TB_KEY_ESC 27
 #define TB_KEY_TAB 9
+#define TB_KEY_BACK_TAB (0xffff - 22)
 #define TB_KEY_ENTER 13
 #define TB_KEY_BACKSPACE 8
+#define TB_KEY_BACKSPACE2 0x7f
+#define TB_KEY_SPACE 0x20
+#define TB_KEY_DELETE (0xffff - 13)
+#define TB_KEY_HOME (0xffff - 14)
+#define TB_KEY_END (0xffff - 15)
+#define TB_KEY_PGUP (0xffff - 16)
+#define TB_KEY_PGDN (0xffff - 17)
+#define TB_KEY_ARROW_UP (0xffff - 18)
+#define TB_KEY_ARROW_DOWN (0xffff - 19)
+#define TB_KEY_ARROW_LEFT (0xffff - 20)
+#define TB_KEY_ARROW_RIGHT (0xffff - 21)
+#define TB_KEY_MOUSE_LEFT (0xffff - 23)
+#define TB_KEY_MOUSE_RIGHT (0xffff - 24)
+#define TB_KEY_MOUSE_RELEASE (0xffff - 26)
+#define TB_KEY_MOUSE_WHEEL_UP (0xffff - 27)
+#define TB_KEY_MOUSE_WHEEL_DOWN (0xffff - 28)
 #define TB_OUTPUT_TRUECOLOR 2
 #define TB_INPUT_ESC 1
 #define TB_INPUT_MOUSE 4
@@ -858,7 +885,43 @@ static int  headless_tb_init(void)           { return 0; }
 static void headless_tb_shutdown(void)       {}
 static int  headless_tb_width(void)          { return 80; }
 static int  headless_tb_height(void)         { return 60; }
-static int  headless_tb_poll_event(struct tb_event* ev) { (void)ev; return 0; }
+
+/* ── 事件注入队列 (交互测试用) ── */
+#define HEADLESS_EVQ_MAX 512
+static struct tb_event g_evq[HEADLESS_EVQ_MAX];
+static int g_evq_n = 0, g_evq_i = 0;
+
+void headless_push_key(uint32_t ch, int key) {
+    if (g_evq_n < HEADLESS_EVQ_MAX) {
+        struct tb_event* e = &g_evq[g_evq_n++];
+        memset(e, 0, sizeof(*e));
+        e->type = TB_EVENT_KEY;
+        e->ch = ch;
+        e->key = key;
+    }
+}
+
+void headless_push_mouse(int key, int x, int y, int mod) {
+    if (g_evq_n < HEADLESS_EVQ_MAX) {
+        struct tb_event* e = &g_evq[g_evq_n++];
+        memset(e, 0, sizeof(*e));
+        e->type = TB_EVENT_MOUSE;
+        e->key = key;
+        e->x = x;
+        e->y = y;
+        e->mod = mod;
+    }
+}
+
+void headless_clear_events(void) {
+    g_evq_n = 0; g_evq_i = 0;
+}
+
+static int  headless_tb_poll_event(struct tb_event* ev) {
+    if (g_evq_i >= g_evq_n) return -1; /* 队列空 → 结束循环 */
+    *ev = g_evq[g_evq_i++];
+    return 0;
+}
 static int  headless_tb_set_output_mode(int m) { (void)m; return 0; }
 static int  headless_tb_set_input_mode(int m)  { (void)m; return 0; }
 static int  headless_tb_present(void)        { return 0; }

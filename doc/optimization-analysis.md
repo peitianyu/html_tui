@@ -114,11 +114,24 @@ interact.h:750 `input_buf[256][4096]` + 各种 256 数组。在嵌入式/小栈�
 
 README 引用了不存在的 `doc/optimization-analysis.md` —— 已在本文件创建后解决。
 
-#### 12. 无自动化测试
+#### 12. 无自动化测试  ✅ 已实现 (2026-08-06)
 
-`assert/` 目录只有一张 gif。render.h 已有 `RENDER_HEADLESS` 无头模式（80×60 虚拟终端 + `screen_dump_text` 导出纯文本）—— 这是现成的测试钩子：可写脚本对 pages/*.html 做无头渲染，dump 文本后对关键行做断言（对比真实浏览器输出/截图）。再挂 CI。
+render.h 已有 `RENDER_HEADLESS` 无头模式 —— 已扩展为完整测试套件：
 
-- 收益：★★★ 成本：★★
+| 工具 | 职责 |
+|---|---|
+| `tools/headless_test.c` | 加载页面 → 渲染 → 屏幕文本 dump + 布局树 dump（tag/id/class + 绝对坐标 + 盒模型 + 计算样式 + clickable/disabled/type），`--expect` 断言 |
+| `tools/interact_test.c` | 事件注入队列驱动交互循环：Tab/Enter/鼠标点击/字符键/退格；回调日志 + 状态消息 + 元素文本 + 链接颜色断言（验证 :visited） |
+| `tools/run_tests.sh` | 31 项断言：16 页渲染/布局 + 15 项交互场景，全部无头执行 |
+
+**测试发现并修复的 3 个真实 bug：**
+1. `collect_focus_list` 栈式遍历逆序 → Tab 焦点顺序与文档序相反（interact.h 已修复）
+2. 按钮回调设置的状态消息被默认分支 `✓ %s` 覆盖 → demo 的 btn-save 收集值无法显示（mini_browser.h 已修复：回调修改状态则保留）
+3. 输入框光标初始在 0 → 输入插到开头而非末尾（interact.h 已修复：播种时光标到末尾）
+
+另外修复 `border: 1px solid #888` 标准简写不解析（layout.h 新增 `parse_border_shorthand`）。
+
+运行：`bash tools/run_tests.sh`（需 gcc + RENDER_HEADLESS）
 
 #### 13. 编译产物清理 / run.sh 权限
 

@@ -365,8 +365,8 @@ static int collect_focus_list(LayoutNode* root, LayoutNode** focus_list, int max
                 if (!n->disabled) focus_list[count++] = n;
             }
         }
-        for (size_t ci = 0; ci < n->num_children && sp < 256; ci++)
-            stack[sp++] = n->children[ci];
+        for (size_t ci = n->num_children; ci > 0 && sp < 256; ci--)
+            stack[sp++] = n->children[ci - 1];
     }
     return count;
 }
@@ -825,6 +825,10 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
         }
     }
     input_buf_count = focus_count;
+
+    /* 光标初始化到文本末尾 (聚焦后输入追加, 符合真实浏览器直觉) */
+    for (int fi = 0; fi < focus_count; fi++)
+        input_cursor[fi] = (int)strlen(input_buf[fi]);
 
     /* Patch INPUT text_content from input_buf */
     patch_input_text(focus_list, focus_count, input_buf, input_buf_count);

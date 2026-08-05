@@ -144,6 +144,10 @@ check "$IT" pages/15-clickable.html --events 'esc' \
 check "$IT" pages/15-clickable.html --events 'tab tab tab tab tab enter' \
     --expect-color='pages/15-clickable.html|155,89,182' \
     --expect='el[action=pages/15-clickable.html id=- tag=a]'
+check "$IT" pages/15-clickable.html --events 'motion:10,21' \
+    --expect-bg='card|51,68,85'
+check "$IT" pages/15-clickable.html --events 'motion:10,21 motion:50,55' \
+    --expect-bg='card|34,34,51'
 check "$IT" pages/15-clickable.html --events 'btab enter' \
     --expect='el[action=pages/15-clickable.html id=- tag=a]'
 check "$IT" pages/15-clickable.html --events 'key:R' \

@@ -59,7 +59,31 @@ static bool test_on_element_click(const char* action, const char* element_id,
     return false;
 }
 
-/* 遍历布局树找第一个 tag 匹配且 (有 href=arg) 的元素, 返回其计算前景色 */
+/* 遍历布局树找第一个 class 匹配的元素, 返回其背景色 */
+static bool find_bg_by_class(MiniBrowser* mb, const char* cls, int* r, int* g, int* b)
+{
+    LayoutNode* root = mb->cb.layout_root;
+    if (!root) return false;
+    LayoutNode* stack[4096]; int sp = 0;
+    stack[sp++] = root;
+    while (sp > 0) {
+        LayoutNode* n = stack[--sp];
+        if (n->styled && n->styled->node &&
+            n->styled->node->type == GUMBO_NODE_ELEMENT && n->bg_color.valid) {
+            GumboAttribute* ca = gumbo_get_attribute(
+                &n->styled->node->v.element.attributes, "class");
+            if (ca && ca->value && strstr(ca->value, cls)) {
+                *r = n->bg_color.r; *g = n->bg_color.g; *b = n->bg_color.b;
+                return true;
+            }
+        }
+        for (size_t ci = n->num_children; ci > 0 && sp < 4096; ci--)
+            stack[sp++] = n->children[ci - 1];
+    }
+    return false;
+}
+
+/* 遍历布局树找第一个 tag+id 匹配的元素, 返回其前景色 */
 static bool find_color(MiniBrowser* mb, const char* tag, const char* href,
                        int* r, int* g, int* b)
 {
@@ -167,6 +191,23 @@ int main(int argc, char** argv) {
         const char* got = mb_get_text(mb, buf);
         if (got && strstr(got, sep + 1)) printf("OK   : text %s contains %s\n", buf, sep + 1);
         else { printf("FAIL : text %s (got \"%s\", want contains \"%s\")\n", buf, got ? got : "", sep + 1); fail = 1; }
+    }
+    /* 元素背景色断言: --expect-bg=class|r,g,b (hover 快速路径验证) */
+    for (int i = 2; i < argc; i++) {
+        if (strncmp(argv[i], "--expect-bg=", 12) != 0) continue;
+        char buf[256]; snprintf(buf, sizeof(buf), "%s", argv[i] + 12);
+        char* sep = strchr(buf, '|');
+        if (!sep) { printf("FAIL : bad --expect-bg (need class|r,g,b)\n"); fail = 1; continue; }
+        *sep = '\0';
+        int r = 0, g = 0, b = 0;
+        if (sscanf(sep + 1, "%d,%d,%d", &r, &g, &b) != 3) { printf("FAIL : bad color\n"); fail = 1; continue; }
+        int fr = 0, fg = 0, fb = 0;
+        if (find_bg_by_class(mb, buf, &fr, &fg, &fb) && fr == r && fg == g && fb == b)
+            printf("OK   : bg %s -> %d,%d,%d\n", buf, fr, fg, fb);
+        else {
+            printf("FAIL : bg %s (got %d,%d,%d, want %d,%d,%d)\n", buf, fr, fg, fb, r, g, b);
+            fail = 1;
+        }
     }
     /* 链接颜色断言: --expect-color=href|r,g,b (href 空 = 任意链接) */
     for (int i = 2; i < argc; i++) {

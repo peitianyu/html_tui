@@ -651,6 +651,60 @@ static void sync_textarea_scroll(LayoutNode** focus_list, int focus_count, int f
 }
 
 /* ─── Helper: restyle on hover/focus/active change ── */
+/* ─── 快速路径: 只同步绘制字段 (颜色/文本样式), 不重建布局树 ─── */
+static void apply_paint_only(LayoutNode* ln) {
+    if (!ln || !ln->styled) return;
+    StyledNode* sn = ln->styled;
+    const char* col = get_style(sn, "color");
+    if (col) ln->color = parse_color(col);
+    const char* bg = get_style(sn, "background-color");
+    if (bg) {
+        ln->bg_color = (strcmp(bg, "currentColor") == 0) ? ln->color : parse_color(bg);
+    } else {
+        const char* bg2 = get_style(sn, "background");
+        if (bg2) ln->bg_color = (strcmp(bg2, "currentColor") == 0) ? ln->color : parse_color(bg2);
+    }
+    const char* bc = get_style(sn, "border-color");
+    if (bc && strcmp(bc, "currentColor") != 0) ln->border_color = parse_color(bc);
+    const char* fw = get_style(sn, "font-weight");
+    ln->font_bold = (fw && (strcmp(fw, "bold") == 0 || (fw[0] >= '0' && fw[0] <= '9' && atoi(fw) >= 600)));
+    const char* fs = get_style(sn, "font-style");
+    ln->font_italic = (fs && strcmp(fs, "italic") == 0);
+    const char* td = get_style(sn, "text-decoration");
+    ln->font_underline = 0;
+    if (td) {
+        if (strcmp(td, "underline") == 0) ln->font_underline = 1;
+        else if (strcmp(td, "overline") == 0) ln->font_underline = 2;
+        else if (strcmp(td, "line-through") == 0) ln->font_underline = 3;
+    }
+    const char* vis = get_style(sn, "visibility");
+    ln->visibility_hidden = (vis && strcmp(vis, "hidden") == 0);
+}
+
+/* 布局树中查找 styled 指针匹配的节点 */
+static LayoutNode* find_layout_by_styled(LayoutNode* n, StyledNode* sn) {
+    if (!n) return NULL;
+    if (n->styled == sn) return n;
+    for (size_t i = 0; i < n->num_children; i++) {
+        LayoutNode* r = find_layout_by_styled(n->children[i], sn);
+        if (r) return r;
+    }
+    return NULL;
+}
+
+/* 几何相关 CSS 摘要 (recompute 前后对比用) */
+static void geo_summary(StyledNode* sn, char* out, size_t cap) {
+#define GS(k) get_style(sn, (k)) ? get_style(sn, (k)) : ""
+    snprintf(out, cap, "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s",
+             GS("display"), GS("width"), GS("height"), GS("min-width"), GS("max-width"),
+             GS("min-height"), GS("max-height"), GS("padding"), GS("padding-top"),
+             GS("padding-right"), GS("padding-bottom"), GS("padding-left"),
+             GS("margin"), GS("margin-top"), GS("margin-right"), GS("margin-bottom"),
+             GS("margin-left"), GS("border"), GS("border-width"), GS("box-sizing"),
+             GS("flex-direction"), GS("flex-wrap"), GS("gap"));
+#undef GS
+}
+
 static void do_restyle(KatanaStylesheet* css, StyledNode* st_root,
                        LayoutNode** current_root, LayoutNode* original_root,
                        int w, int h,
@@ -670,7 +724,27 @@ static void do_restyle(KatanaStylesheet* css, StyledNode* st_root,
     if (p_active && *p_active && *p_active != g_hover && *p_active != g_focus && *p_active != g_active) ADD_SN(*p_active);
     #undef ADD_SN
     if (p_hover) *p_hover = NULL; if (p_active) *p_active = NULL;
+
+    /* 记录受影响节点的几何摘要 → recompute → 对比 */
+    char geo_before[8][512];
+    for (int i = 0; i < cnt; i++) geo_summary(nodes[i], geo_before[i], sizeof(geo_before[i]));
     for (int i = 0; i < cnt; i++) recompute_style_subtree(nodes[i], css, NULL);
+    bool geo_same = true;
+    for (int i = 0; i < cnt; i++) {
+        char now[512];
+        geo_summary(nodes[i], now, sizeof(now));
+        if (strcmp(now, geo_before[i]) != 0) { geo_same = false; break; }
+    }
+
+    if (geo_same && cnt > 0 && *current_root) {
+        /* 快速路径: 仅同步绘制字段, 布局树不变 → 直接重绘 (diff 只输出颜色变化) */
+        for (int i = 0; i < cnt; i++) {
+            LayoutNode* ln = find_layout_by_styled(*current_root, nodes[i]);
+            if (ln) apply_paint_only(ln);
+        }
+        return;
+    }
+
     LayoutNode* nr = build_layout_tree(st_root, w, h);
     if (nr) { if (*current_root != original_root) free_layout_tree(*current_root); *current_root = nr; }
     *focus_count = collect_focus_list(*current_root, focus_list, 256);

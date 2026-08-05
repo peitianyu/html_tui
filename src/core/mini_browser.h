@@ -186,6 +186,7 @@ void mb_show_statusbar(MiniBrowser* mb, bool show);
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <dirent.h>
 
 /* ═══════════════════════════════════════════════════════════════════ */
 /*  MiniBrowser 结构体                                                */
@@ -387,26 +388,28 @@ static bool mb_default_on_click(const char* btn_text, int focus_idx,
         if (strcmp(prev_status, cb->status_msg) != 0) return false;
     }
 
-    /* btn-page-NN → 页面跳转 */
+    /* btn-page-NN → 扫描 pages/ 目录找 NN-*.html (自动适配新增页面) */
     if (btn_id && strncmp(btn_id, "btn-page-", 9) == 0) {
         int page_num = atoi(btn_id + 9);
         if (page_num >= 1 && page_num <= 99) {
-            const char* known[] = {
-                "01-text-colors.html",       "02-box-model.html",
-                "03-inputs.html",            "04-buttons.html",
-                "05-flex-direction.html",    "06-flex-justify.html",
-                "07-flex-align-wrap.html",   "08-tables.html",
-                "09-lists-pseudo.html",      "10-details-textarea.html",
-                "11-select.html",            "12-css-effects.html",
-                "13-input-types.html",       "14-text-styles.html",
-            };
-#define KNOWN_PAGES_COUNT ((int)(sizeof(known)/sizeof(known[0])))
-            if (page_num >= 1 && page_num <= KNOWN_PAGES_COUNT) {
-                snprintf(cb->switch_page, sizeof(cb->switch_page),
-                         "pages/%s", known[page_num - 1]);
-                cb->quit_flag = true;
-                snprintf(cb->status_msg, sizeof(cb->status_msg),
-                         "→ Switching page...");
+            char prefix[8];
+            snprintf(prefix, sizeof(prefix), "%02d-", page_num);
+            DIR* d = opendir("pages");
+            if (d) {
+                struct dirent* e;
+                while ((e = readdir(d))) {
+                    if (e->d_name[0] == '.') continue;
+                    if (strncmp(e->d_name, prefix, 3) == 0 &&
+                        strstr(e->d_name, ".html")) {
+                        snprintf(cb->switch_page, sizeof(cb->switch_page),
+                                 "pages/%s", e->d_name);
+                        cb->quit_flag = true;
+                        snprintf(cb->status_msg, sizeof(cb->status_msg),
+                                 "→ Switching page...");
+                        break;
+                    }
+                }
+                closedir(d);
             }
         }
         return false;

@@ -36,7 +36,8 @@ else
            pages/04-buttons.html pages/05-flex-direction.html pages/06-flex-justify.html pages/07-flex-align-wrap.html \
            pages/08-tables.html pages/09-lists-pseudo.html pages/10-details-textarea.html pages/11-select.html \
            pages/12-css-effects.html pages/13-input-types.html pages/14-text-styles.html pages/15-clickable.html \
-           pages/16-theme.html pages/17-edge.html pages/18-media.html)
+           pages/16-theme.html pages/17-edge.html pages/18-media.html \
+           pages/19-many.html)
 fi
 for p in "${PAGES[@]}"; do
     case "$p" in
@@ -126,6 +127,11 @@ for p in "${PAGES[@]}"; do
             --expect-line='narrow-label|content=0x0'
         check "$HT" "$p" --layout --viewport=50x40 \
             --expect-line='mid-range|bg=51,47,26' ;;
+    pages/19-many.html)
+        check "$HT" "$p" --layout --viewport=80x150 \
+            --expect='B0' --expect='B299' --expect='btn-back' \
+            --expect-count=300:class=\"btn\"
+        check "$HT" "$p" --flush-ok ;;
     esac
 done
 
@@ -170,6 +176,10 @@ check "$IT" pages/13-input-types.html --events 'tab enter' \
     --expect-text='chk-a|[ ]'
 check "$IT" pages/13-input-types.html --events 'tab enter enter' \
     --expect-text='chk-a|[x]'
+check "$IT" pages/19-many.html --events 'tabx:300 enter' \
+    --expect='btn[id=btn-299 text=B299]'
+check "$IT" pages/19-many.html --events 'tabx:301' \
+    --expect='button (#300)'
 
 echo
 echo "== 结果: $TOTAL 项, $FAILS 失败 =="

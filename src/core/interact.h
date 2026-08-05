@@ -350,7 +350,9 @@ static SelectPopupRect calc_select_popup_rect(LayoutNode* sel_node, int scroll_x
  *  Returns the number collected, or 0 on empty. */
 static int collect_focus_list(LayoutNode* root, LayoutNode** focus_list, int max_count) {
     int count = 0;
-    LayoutNode* stack[256]; int sp = 0;
+    LayoutNode** stack = (LayoutNode**)calloc(1024, sizeof(LayoutNode*));
+    int sp = 0;
+    if (!stack) return 0;
     stack[sp++] = root;
     while (sp > 0 && count < max_count) {
         LayoutNode* n = stack[--sp];
@@ -365,9 +367,34 @@ static int collect_focus_list(LayoutNode* root, LayoutNode** focus_list, int max
                 if (!n->disabled) focus_list[count++] = n;
             }
         }
-        for (size_t ci = n->num_children; ci > 0 && sp < 256; ci--)
+        for (size_t ci = n->num_children; ci > 0 && sp < 1024; ci--)
             stack[sp++] = n->children[ci - 1];
     }
+    free(stack);
+    return count;
+}
+
+/* 计数可聚焦元素 (动态分配前用) */
+static int count_focusable(LayoutNode* root) {
+    int count = 0;
+    LayoutNode** stack = (LayoutNode**)calloc(1024, sizeof(LayoutNode*));
+    int sp = 0;
+    if (!stack) return 0;
+    stack[sp++] = root;
+    while (sp > 0) {
+        LayoutNode* n = stack[--sp];
+        if (n->styled && n->styled->node &&
+            n->styled->node->type == GUMBO_NODE_ELEMENT) {
+            GumboTag t = n->styled->node->v.element.tag;
+            if ((t == GUMBO_TAG_INPUT || t == GUMBO_TAG_BUTTON ||
+                 t == GUMBO_TAG_SUMMARY || t == GUMBO_TAG_TEXTAREA ||
+                 t == GUMBO_TAG_SELECT || n->clickable) && !n->disabled)
+                count++;
+        }
+        for (size_t ci = n->num_children; ci > 0 && sp < 1024; ci--)
+            stack[sp++] = n->children[ci - 1];
+    }
+    free(stack);
     return count;
 }
 
@@ -437,12 +464,12 @@ static void patch_input_text(LayoutNode** focus_list, int focus_count,
 /* ─── Find deepest element node at screen coordinates ──────── */
 static GumboNode* find_deepest_node_at(LayoutNode* root, int x, int y, int scroll_x, int scroll_y) {
     GumboNode* result = NULL;
-    LayoutNode* stack[256]; int sp = 0;
+    LayoutNode* stack[4096]; int sp = 0;
     stack[sp++] = root;
     int best_depth = -1;
     while (sp > 0) {
         LayoutNode* n = stack[--sp];
-        for (size_t ci = 0; ci < n->num_children && sp < 256; ci++)
+        for (size_t ci = 0; ci < n->num_children && sp < 4096; ci++)
             stack[sp++] = n->children[ci];
         int hx, hy, hw, hh;
         node_abs_box(n, scroll_x, scroll_y, &hx, &hy, &hw, &hh);
@@ -708,7 +735,7 @@ static void geo_summary(StyledNode* sn, char* out, size_t cap) {
 static void do_restyle(KatanaStylesheet* css, StyledNode* st_root,
                        LayoutNode** current_root, LayoutNode* original_root,
                        int w, int h,
-                       LayoutNode** focus_list, int* focus_count,
+                       LayoutNode** focus_list, int focus_cap, int* focus_count,
                        char input_buf[][4096], int input_buf_count,
                        GumboNode* g_hover, GumboNode* g_focus,
                        GumboNode* g_active, 
@@ -747,7 +774,7 @@ static void do_restyle(KatanaStylesheet* css, StyledNode* st_root,
 
     LayoutNode* nr = build_layout_tree(st_root, w, h);
     if (nr) { if (*current_root != original_root) free_layout_tree(*current_root); *current_root = nr; }
-    *focus_count = collect_focus_list(*current_root, focus_list, 256);
+    *focus_count = collect_focus_list(*current_root, focus_list, focus_cap);
     patch_input_text(focus_list, *focus_count, input_buf, input_buf_count);
     if (cb) for (int i = 0; i < cb->text_override_count; i++) {
         LayoutNode* ov = find_node_by_id(*current_root, cb->text_overrides[i].id);
@@ -839,13 +866,24 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
     bool running = true;
     struct tb_event ev;
 
-    /* Input buffers: keyed by the same order as focus_list */
-    char input_buf[256][4096] = {{0}};
-    int  input_cursor[256] = {0}; /* cursor position within each input */
-    int  textarea_target_col[256] = {0}; /* target visual column for textarea up/down nav */
-    int  textarea_scroll_y[256] = {0}; /* vertical scroll offset for textarea content */
-    int  textarea_scroll_x[256] = {0}; /* horizontal scroll offset for textarea content */
+    /* 输入缓冲区: 动态容量 (先计数, 堆分配; 避免 1MB 栈 + 256 上限) */
+    int focus_cap = count_focusable(root);
+    if (focus_cap < 64) focus_cap = 64;
+    if (focus_cap > 8192) focus_cap = 8192; /* 上限保护 */
+    char (*input_buf)[4096] = (char(*)[4096])calloc((size_t)focus_cap, 4096);
+    int* input_cursor = (int*)calloc((size_t)focus_cap, sizeof(int));
+    int* textarea_target_col = (int*)calloc((size_t)focus_cap, sizeof(int));
+    int* textarea_scroll_y = (int*)calloc((size_t)focus_cap, sizeof(int));
+    int* textarea_scroll_x = (int*)calloc((size_t)focus_cap, sizeof(int));
     int  input_buf_count = 0;
+    if (!input_buf || !input_cursor || !textarea_target_col ||
+        !textarea_scroll_y || !textarea_scroll_x) {
+        free(input_buf); free(input_cursor); free(textarea_target_col);
+        free(textarea_scroll_y); free(textarea_scroll_x);
+        screen_free(s);
+        return;
+    }
+    for (int fi = 0; fi < focus_cap; fi++) textarea_target_col[fi] = -1;
 
     /* ─── Select popup state ─── */
     int  select_popup_active = 0;       /* 0=closed, 1=open */
@@ -857,11 +895,11 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
     int  select_popup_scroll = 0;       /* vertical scroll offset in popup list */
 
     /* Collect interactive nodes (INPUT/BUTTON) for focus */
-    LayoutNode* focus_list[256];
+    LayoutNode** focus_list = (LayoutNode**)calloc((size_t)focus_cap, sizeof(LayoutNode*));
     int focus_count = 0;
     int focus_idx = -1;
 
-    focus_count = collect_focus_list(root, focus_list, 256);
+    focus_count = collect_focus_list(root, focus_list, focus_cap);
     /* Seed input buffer from DOM attribute on first run */
     for (int fi = 0; fi < focus_count; fi++) {
         LayoutNode* n = focus_list[fi];
@@ -2071,7 +2109,7 @@ skip_mouse_processing:
         if (restyle && saved_css && saved_st) {
             do_restyle(saved_css, saved_st, &current_root, root,
                        vw_cache, vh_cache,
-                       focus_list, &focus_count, input_buf, input_buf_count,
+                       focus_list, focus_cap, &focus_count, input_buf, input_buf_count,
                        g_interact_hover, g_interact_focus, g_interact_active,
                        &prev_hover, &prev_active, cb);
         }
@@ -2085,6 +2123,13 @@ skip_mouse_processing:
     /* Free the rebuilt root if it differs from original */
     if (current_root != root) free_layout_tree(current_root);
     screen_free(s);
+    /* 释放动态数组 */
+    free(input_buf);
+    free(input_cursor);
+    free(textarea_target_col);
+    free(textarea_scroll_y);
+    free(textarea_scroll_x);
+    free(focus_list);
 }
 
 #endif /* INTERACT_IMPLEMENTATION */

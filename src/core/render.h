@@ -918,7 +918,7 @@ static int  headless_tb_width(void)          { return 80; }
 static int  headless_tb_height(void)         { return 60; }
 
 /* ── 事件注入队列 (交互测试用) ── */
-#define HEADLESS_EVQ_MAX 512
+#define HEADLESS_EVQ_MAX 8192  /* 需容纳 interact_test tabx:4096 上限 + 余量 */
 static struct tb_event g_evq[HEADLESS_EVQ_MAX];
 static int g_evq_n = 0, g_evq_i = 0;
 

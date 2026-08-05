@@ -116,6 +116,10 @@ static void push_event(const char* tok) {
     else if (strcmp(tok, "enter") == 0)   headless_push_key(0, TB_KEY_ENTER);
     else if (strcmp(tok, "esc") == 0)     headless_push_key(0, TB_KEY_ESC);
     else if (strcmp(tok, "release") == 0) headless_push_mouse(TB_KEY_MOUSE_RELEASE, 0, 0, 0);
+    else if (strncmp(tok, "tabx:", 5) == 0) {
+        int n = atoi(tok + 5);
+        if (n > 0 && n <= 4096) for (int i = 0; i < n; i++) headless_push_key(0, TB_KEY_TAB);
+    }
     else if (strncmp(tok, "key:", 4) == 0)     headless_push_key((unsigned char)tok[4], 0);
     else if (strncmp(tok, "keycode:", 8) == 0) headless_push_key(0, atoi(tok + 8));
     else if (strncmp(tok, "click:", 6) == 0) {

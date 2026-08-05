@@ -39,7 +39,7 @@ else
            pages/16-theme.html pages/17-edge.html pages/18-media.html \
            pages/19-many.html pages/20-external-css.html pages/21-image.html \
            pages/22-position.html pages/23-fixed.html pages/24-sticky.html \
-           pages/25-scrollbox.html)
+           pages/25-scrollbox.html pages/26-grid.html)
 fi
 for p in "${PAGES[@]}"; do
     case "$p" in
@@ -179,6 +179,12 @@ for p in "${PAGES[@]}"; do
     pages/25-scrollbox.html)
         check "$HT" "$p" --layout \
             --expect-line='scb-1|content=78x5'
+        check "$HT" "$p" --flush-ok ;;
+    pages/26-grid.html)
+        check "$HT" "$p" --layout \
+            --expect-line='G3|abs=(52,1)|content=28x1' \
+            --expect-line='G4|abs=(0,3)|content=30x1' \
+            --expect-line='W2|abs=(40,6)|content=39x1'
         check "$HT" "$p" --flush-ok ;;
     esac
 done

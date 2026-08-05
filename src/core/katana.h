@@ -3941,6 +3941,15 @@ static const char* katana_stringify_value(KatanaParser* parser, KatanaValue* val
         case KATANA_VALUE_TURN:
             snprintf(str, sizeof(str), "%s", value->raw);
             break;
+        case KATANA_VALUE_FR:
+            /* "1fr" — fr 列语义是均分剩余, 数字不重要 (且 raw 可能悬垂), 输出 "fr" */
+            snprintf(str, sizeof(str), "fr");
+            break;
+        case KATANA_VALUE_DIMENSION:
+            /* "1fr" 等 — 单位名在 string (数字可能丢失/raw 可能悬垂, 不信任 raw) */
+            if (value->string && value->string[0]) snprintf(str, sizeof(str), "%s", value->string);
+            else str[0] = '\0';
+            break;
         case KATANA_VALUE_IDENT:
             snprintf(str, sizeof(str), "%s", value->string);
             break;
@@ -3973,7 +3982,9 @@ static const char* katana_stringify_value(KatanaParser* parser, KatanaValue* val
             snprintf(str, sizeof(str), "url(%s)", value->string);
             break;
         default:
-            katana_print("KATANA: Unknown Value unit.");
+            /* 不访问 raw/string (可能悬垂) */
+            fprintf(stderr, "KATANA: Unknown Value unit=%d\n", value->unit);
+            str[0] = '\0';
             break;
     }
 

@@ -141,6 +141,10 @@ typedef struct LayoutNode {
     int flex_shrink;
     int flex_basis;
 
+    /* grid layout: grid-template-columns (正值=固定宽, -1=1fr 均分剩余, -2=auto→fr) */
+    int grid_cols_def[16];
+    int grid_col_count;
+
     /* truncate overflow text (single-line, no wrap) */
     bool truncate_overflow;
 
@@ -1123,6 +1127,23 @@ static void apply_styles(LayoutNode* ln) {
     const char* gp = get_style(sn, "gap");
     if (gp) ln->gap = (int)strtol(gp, NULL, 10);
 
+    /* grid-template-columns: 空格分隔 (正值=固定, 1fr/auto=均分剩余) */
+    ln->grid_col_count = 0;
+    const char* gtc = get_style(sn, "grid-template-columns");
+    if (gtc) {
+        char buf[128];
+        snprintf(buf, sizeof(buf), "%s", gtc);
+        char* save = NULL;
+        for (char* tk = strtok_r(buf, " \t", &save); tk && ln->grid_col_count < 16;
+             tk = strtok_r(NULL, " \t", &save)) {
+            if (strcmp(tk, "1fr") == 0 || strcmp(tk, "auto") == 0 || strcmp(tk, "fr") == 0)
+                ln->grid_cols_def[ln->grid_col_count] = -1;
+            else
+                ln->grid_cols_def[ln->grid_col_count] = atoi(tk);
+            ln->grid_col_count++;
+        }
+    }
+
     /* flex-wrap */
     ln->flex_wrap = 0;
     ln->align_content = ALIGN_CONTENT_START;
@@ -1780,6 +1801,53 @@ static void layout_flex_children(LayoutNode* parent, int content_w, int content_
 }
 
 /** Compute child layouts based on parent's display type */
+/** Layout grid: 子元素按行填充, 支持固定列 + 1fr 均分列 + gap */
+static void layout_grid_children(LayoutNode* parent, int content_w, int content_h) {
+    (void)content_h;
+    int ncols = parent->grid_col_count;
+    if (ncols <= 0) ncols = 1; /* 无列定义 → 单列 */
+    if (ncols > 16) ncols = 16;
+
+    /* 第一遍: 固定列求和, 剩余宽度分给 fr 列 */
+    int col_w[16];
+    int fixed_sum = 0, fr_count = 0;
+    for (int i = 0; i < ncols; i++) {
+        int d = (i < parent->grid_col_count) ? parent->grid_cols_def[i] : -1;
+        if (d >= 0) { col_w[i] = d; fixed_sum += d; }
+        else { col_w[i] = 0; fr_count++; }
+    }
+    int gap = parent->gap;
+    int remaining = content_w - fixed_sum - gap * (ncols - 1);
+    if (remaining < 0) remaining = 0;
+    int fr_w = fr_count > 0 ? remaining / fr_count : 0;
+    for (int i = 0; i < ncols; i++)
+        if (col_w[i] == 0) col_w[i] = fr_w;
+    /* fr 列全 0 时 (内容无剩余) 给最小宽 */
+    for (int i = 0; i < ncols; i++) if (col_w[i] < 1) col_w[i] = 1;
+
+    /* 第二遍: 按行填充 */
+    int col = 0, y_cursor = 0, row_h = 0;
+    int x_ofs[16];
+    x_ofs[0] = 0;
+    for (int i = 1; i < ncols; i++) x_ofs[i] = x_ofs[i-1] + col_w[i-1] + gap;
+
+    for (size_t i = 0; i < parent->num_children; i++) {
+        LayoutNode* child = parent->children[i];
+        if (child->display == DISPLAY_NONE || child->position_type == 2 || child->position_type == 3)
+            continue;
+        child->x = x_ofs[col];
+        child->y = y_cursor;
+        child->width = col_w[col];
+        apply_position_offset(child);
+        compute_child_layouts(child, child->width);
+        if (child->height > row_h) row_h = child->height;
+        col++;
+        if (col >= ncols) { col = 0; y_cursor += row_h + gap; row_h = 0; }
+    }
+    if (row_h > 0) y_cursor += row_h;
+    parent->height = y_cursor > 0 ? y_cursor : parent->height;
+}
+
 /** Layout table: rows stack vertically, cells share width equally */
 static void layout_table_children(LayoutNode* parent, int content_w) {
     if (content_w < 1) content_w = 1;
@@ -2094,8 +2162,7 @@ static void compute_child_layouts(LayoutNode* parent, int content_w) {
             layout_flex_children(parent, content_w, content_h);
             break;
         case DISPLAY_GRID:
-            /* Fall back to block for now */
-            layout_block_children(parent, content_w);
+            layout_grid_children(parent, content_w, content_h);
             break;
         default:
             break;

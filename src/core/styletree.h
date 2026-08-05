@@ -814,6 +814,10 @@ static void inherit_styles(StyleMap* dest, StyledNode* parent) {
 static const char* value_get_text(KatanaValue* val) {
     /* For identifier-like values, use the string field */
     switch (val->unit) {
+        case KATANA_VALUE_FR:
+            /* fr 列: raw 可能悬垂 (katana bug), 返回常量 */
+            return "fr";
+            break;
         case KATANA_VALUE_IDENT:
         case KATANA_VALUE_STRING:
         case KATANA_VALUE_URI:

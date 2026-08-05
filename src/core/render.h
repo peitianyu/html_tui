@@ -746,6 +746,15 @@ static void screen_render_offset(Screen* s, LayoutNode* n, int px, int py, int c
     screen_render_node(s, n);
     int cpx=n->x, cpy=n->y; n->x=svx; n->y=svy;
 
+    /* overflow:auto 容器: 子节点递归时内容按 content_scroll_y 偏移 (完事恢复) */
+    bool scb_shift = false;
+    int saved_sy = 0;
+    if (n->overflow_auto && n->content_scroll_y != 0) {
+        saved_sy = s->scroll_y;
+        s->scroll_y += n->content_scroll_y;
+        scb_shift = true;
+    }
+
     /* Sort children by z-index: render higher z-index later (on top) */
     /* Only sort if there are children with z-index > 0 */
     bool has_z = false;
@@ -778,6 +787,8 @@ static void screen_render_offset(Screen* s, LayoutNode* n, int px, int py, int c
         n->styled->node->v.element.tag == GUMBO_TAG_TABLE) {
         draw_table_grid(s, n);
     }
+
+    if (scb_shift) s->scroll_y = saved_sy;
 }
 
 void screen_render_tree(Screen* s, LayoutNode* root) {

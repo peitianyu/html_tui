@@ -38,7 +38,8 @@ else
            pages/12-css-effects.html pages/13-input-types.html pages/14-text-styles.html pages/15-clickable.html \
            pages/16-theme.html pages/17-edge.html pages/18-media.html \
            pages/19-many.html pages/20-external-css.html pages/21-image.html \
-           pages/22-position.html pages/23-fixed.html pages/24-sticky.html)
+           pages/22-position.html pages/23-fixed.html pages/24-sticky.html \
+           pages/25-scrollbox.html)
 fi
 for p in "${PAGES[@]}"; do
     case "$p" in
@@ -175,6 +176,10 @@ for p in "${PAGES[@]}"; do
         check "$HT" "$p" --layout --scroll=0,20 \
             --expect-line='STICKY-BAR'
         check "$HT" "$p" --flush-ok ;;
+    pages/25-scrollbox.html)
+        check "$HT" "$p" --layout \
+            --expect-line='scb-1|content=78x5'
+        check "$HT" "$p" --flush-ok ;;
     esac
 done
 
@@ -233,6 +238,12 @@ check "$IT" pages/19-many.html --events 'tabx:300 enter' \
     --expect='btn[id=btn-299 text=B299]'
 check "$IT" pages/19-many.html --events 'tabx:301' \
     --expect='button (#300)'
+check "$IT" pages/25-scrollbox.html --events 'wheeldown:5,4 wheeldown:5,4 wheeldown:5,4' \
+    --expect-scroll='box|3'
+check "$IT" pages/25-scrollbox.html --events 'wheeldown:5,4 wheeldown:5,4 wheeldown:5,4 key:R' \
+    --expect-scroll='box|3' --expect='theme'
+check "$IT" pages/25-scrollbox.html --events 'wheeldown:40,50' \
+    --expect-scroll='box|0'
 
 echo
 echo "== 结果: $TOTAL 项, $FAILS 失败 =="

@@ -131,6 +131,14 @@ static void push_event(const char* tok) {
         int x = atoi(tok + 7);
         const char* c = strchr(tok + 7, ',');
         headless_push_mouse(TB_KEY_MOUSE_LEFT, x, c ? atoi(c + 1) : 0, TB_MOD_MOTION);
+    } else if (strncmp(tok, "wheelup:", 8) == 0) {
+        int x = atoi(tok + 8);
+        const char* c = strchr(tok + 8, ',');
+        headless_push_mouse(TB_KEY_MOUSE_WHEEL_UP, x, c ? atoi(c + 1) : 0, 0);
+    } else if (strncmp(tok, "wheeldown:", 10) == 0) {
+        int x = atoi(tok + 10);
+        const char* c = strchr(tok + 10, ',');
+        headless_push_mouse(TB_KEY_MOUSE_WHEEL_DOWN, x, c ? atoi(c + 1) : 0, 0);
     } else {
         fprintf(stderr, "WARN: unknown event '%s'\n", tok);
     }
@@ -232,6 +240,34 @@ int main(int argc, char** argv) {
                    href ? href : "*", fr, fg, fb, r, g, b);
             fail = 1;
         }
+    }
+    /* 子容器滚动断言: --expect-scroll=class|N (找 class 匹配的 overflow_auto 容器查 content_scroll_y) */
+    for (int i = 2; i < argc; i++) {
+        if (strncmp(argv[i], "--expect-scroll=", 16) != 0) continue;
+        char sbuf[256]; snprintf(sbuf, sizeof(sbuf), "%s", argv[i] + 16);
+        char* sep = strchr(sbuf, '|');
+        if (!sep) { printf("FAIL : bad --expect-scroll (need class|N)\n"); fail = 1; continue; }
+        *sep = '\0';
+        int want = atoi(sep + 1);
+        int got = -1;
+        LayoutNode* root = mb->cb.layout_root;
+        if (root) {
+            LayoutNode* stk[4096]; int sp = 0;
+            stk[sp++] = root;
+            while (sp > 0 && got < 0) {
+                LayoutNode* n = stk[--sp];
+                if (n->overflow_auto && n->styled && n->styled->node &&
+                    n->styled->node->type == GUMBO_NODE_ELEMENT) {
+                    GumboAttribute* ca = gumbo_get_attribute(
+                        &n->styled->node->v.element.attributes, "class");
+                    if (ca && ca->value && strstr(ca->value, sbuf)) got = n->content_scroll_y;
+                }
+                for (size_t j = 0; j < n->num_children && sp < 4096; j++)
+                    stk[sp++] = n->children[j];
+            }
+        }
+        if (got == want) printf("OK   : scroll %s -> %d\n", sbuf, got);
+        else { printf("FAIL : scroll %s (got %d, want %d)\n", sbuf, got, want); fail = 1; }
     }
 
     mini_browser_close(mb);

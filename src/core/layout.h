@@ -157,6 +157,8 @@ typedef struct LayoutNode {
 
     /* overflow hidden */
     bool overflow_hidden;
+    /* overflow: auto/scroll — 子容器可滚动 (内容独立于全局滚动) */
+    bool overflow_auto;
 
     /* max-width / min-width / max-height / min-height (0 = not set) */
     int max_width, min_width, max_height, min_height;
@@ -874,6 +876,7 @@ static void apply_styles(LayoutNode* ln) {
             ln->truncate_overflow = true;
         } else if (strcmp(ov, "auto") == 0 || strcmp(ov, "scroll") == 0) {
             ln->overflow_hidden = true;
+            ln->overflow_auto = true;
             ln->truncate_overflow = true;
         }
     }

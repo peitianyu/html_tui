@@ -467,6 +467,79 @@ static void patch_input_text(LayoutNode** focus_list, int focus_count,
     }
 }
 
+/* ─── overflow:auto 子容器滚动状态 (按 id 持久化, restyle 重建后恢复) ── */
+#define SCROLLBOX_MAX 16
+static struct { char id[64]; int y; } g_scrollbox[SCROLLBOX_MAX];
+static int g_scrollbox_n = 0;
+
+static const char* scrollbox_node_id(LayoutNode* n) {
+    if (n && n->styled && n->styled->node &&
+        n->styled->node->type == GUMBO_NODE_ELEMENT) {
+        GumboAttribute* a = gumbo_get_attribute(
+            &n->styled->node->v.element.attributes, "id");
+        if (a && a->value && a->value[0]) return a->value;
+    }
+    return NULL;
+}
+
+static void scrollbox_save(LayoutNode* scb) {
+    const char* id = scrollbox_node_id(scb);
+    if (!id) return;
+    for (int i = 0; i < g_scrollbox_n; i++)
+        if (strcmp(g_scrollbox[i].id, id) == 0) { g_scrollbox[i].y = scb->content_scroll_y; return; }
+    if (g_scrollbox_n < SCROLLBOX_MAX) {
+        strncpy(g_scrollbox[g_scrollbox_n].id, id, 63);
+        g_scrollbox[g_scrollbox_n].id[63] = '\0';
+        g_scrollbox[g_scrollbox_n].y = scb->content_scroll_y;
+        g_scrollbox_n++;
+    }
+}
+
+static void scrollbox_restore(LayoutNode* root) {
+    if (!root) return;
+    LayoutNode* stack[4096]; int sp = 0;
+    stack[sp++] = root;
+    while (sp > 0) {
+        LayoutNode* n = stack[--sp];
+        if (n->overflow_auto) {
+            const char* id = scrollbox_node_id(n);
+            if (id) for (int i = 0; i < g_scrollbox_n; i++)
+                if (strcmp(g_scrollbox[i].id, id) == 0) { n->content_scroll_y = g_scrollbox[i].y; break; }
+        }
+        for (size_t j = 0; j < n->num_children && sp < 4096; j++)
+            stack[sp++] = n->children[j];
+    }
+}
+
+/* 容器可滚范围: 内容底 − 容器底 (≤0 → 不可滚) */
+static int scrollbox_max_scroll(LayoutNode* scb) {
+    if (!scb) return 0;
+    int max_bottom = scb->abs_y + scb->height;
+    LayoutNode* stack[4096]; int sp = 0;
+    stack[sp++] = scb;
+    while (sp > 0) {
+        LayoutNode* n = stack[--sp];
+        if (n->position_type >= 2) continue; /* 跳过脱离文档流 */
+        int b = n->abs_y + n->height;
+        if (b > max_bottom) max_bottom = b;
+        for (size_t i = 0; i < n->num_children && sp < 4096; i++)
+            stack[sp++] = n->children[i];
+    }
+    int ms = max_bottom - (scb->abs_y + scb->height);
+    return ms > 0 ? ms : 0;
+}
+
+/* 按 DOM 节点找 LayoutNode */
+static LayoutNode* find_layout_by_gumbo(LayoutNode* root, GumboNode* gn) {
+    if (!root || !gn) return NULL;
+    if (root->styled && root->styled->node == gn) return root;
+    for (size_t i = 0; i < root->num_children; i++) {
+        LayoutNode* r = find_layout_by_gumbo(root->children[i], gn);
+        if (r) return r;
+    }
+    return NULL;
+}
+
 /* ─── Find deepest element node at screen coordinates ──────── */
 static GumboNode* find_deepest_node_at(LayoutNode* root, int x, int y, int scroll_x, int scroll_y) {
     GumboNode* result = NULL;
@@ -780,6 +853,7 @@ static void do_restyle(KatanaStylesheet* css, StyledNode* st_root,
 
     LayoutNode* nr = build_layout_tree(st_root, w, h, base_dir);
     if (nr) { if (*current_root != original_root) free_layout_tree(*current_root); *current_root = nr; }
+    scrollbox_restore(*current_root);
     *focus_count = collect_focus_list(*current_root, focus_list, focus_cap);
     patch_input_text(focus_list, *focus_count, input_buf, input_buf_count);
     if (cb) for (int i = 0; i < cb->text_override_count; i++) {
@@ -2093,8 +2167,32 @@ handle_scroll_keys:
                     /* Clear hover on wheel for textarea — element under cursor changed */
                     if (g_interact_hover) { prev_hover = g_interact_hover; g_interact_hover = NULL; restyle = true; }
                 } else {
-                    if (ev.key == TB_KEY_MOUSE_WHEEL_UP) { scroll_y -= 3; }
-                    else if (ev.key == TB_KEY_MOUSE_WHEEL_DOWN) { scroll_y += 3; }
+                    /* overflow:auto 容器 — 鼠标下最深节点的可滚动祖先 */
+                    LayoutNode* scb = NULL;
+                    {
+                        GumboNode* dn = find_deepest_node_at(current_root, ev.x, ev.y, scroll_x, scroll_y);
+                        if (dn) {
+                            LayoutNode* ln = find_layout_by_gumbo(current_root, dn);
+                            while (ln) { if (ln->overflow_auto) { scb = ln; break; } ln = ln->parent; }
+                        }
+                    }
+                    bool scb_scrolled = false;
+                    if (scb) {
+                        int ms = scrollbox_max_scroll(scb);
+                        if (ev.key == TB_KEY_MOUSE_WHEEL_UP && scb->content_scroll_y > 0) {
+                            scb->content_scroll_y--; scb_scrolled = true;
+                        } else if (ev.key == TB_KEY_MOUSE_WHEEL_DOWN && scb->content_scroll_y < ms) {
+                            scb->content_scroll_y++; scb_scrolled = true;
+                        }
+                        if (scb_scrolled) {
+                            scrollbox_save(scb);
+                            if (g_interact_hover) { prev_hover = g_interact_hover; g_interact_hover = NULL; restyle = true; }
+                        }
+                    }
+                    if (!scb_scrolled) {
+                        if (ev.key == TB_KEY_MOUSE_WHEEL_UP) { scroll_y -= 3; }
+                        else if (ev.key == TB_KEY_MOUSE_WHEEL_DOWN) { scroll_y += 3; }
+                    }
                 }
             }
             /* Track mouse position for :hover leave detection */

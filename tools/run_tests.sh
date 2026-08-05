@@ -176,6 +176,10 @@ check "$IT" pages/13-input-types.html --events 'tab enter' \
     --expect-text='chk-a|[ ]'
 check "$IT" pages/13-input-types.html --events 'tab enter enter' \
     --expect-text='chk-a|[x]'
+check "$IT" pages/04-buttons.html --events 'motion:16,10' \
+    --expect-bg='btn-primary|232,101,101'
+check "$IT" pages/04-buttons.html --events 'motion:16,10 motion:50,50' \
+    --expect-bg='btn-primary|212,69,69'
 check "$IT" pages/19-many.html --events 'tabx:300 enter' \
     --expect='btn[id=btn-299 text=B299]'
 check "$IT" pages/19-many.html --events 'tabx:301' \

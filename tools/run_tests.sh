@@ -38,7 +38,7 @@ else
            pages/12-css-effects.html pages/13-input-types.html pages/14-text-styles.html pages/15-clickable.html \
            pages/16-theme.html pages/17-edge.html pages/18-media.html \
            pages/19-many.html pages/20-external-css.html pages/21-image.html \
-           pages/22-position.html)
+           pages/22-position.html pages/23-fixed.html)
 fi
 for p in "${PAGES[@]}"; do
     case "$p" in
@@ -151,6 +151,13 @@ for p in "${PAGES[@]}"; do
             --expect-line='float-1|abs=(5,3)' \
             --expect-line='float-2|abs=(2,5)' \
             --expect-line='float-br|abs=(78,59)'
+        check "$HT" "$p" --flush-ok ;;
+    pages/23-fixed.html)
+        check "$HT" "$p" --layout \
+            --expect-line='navbar|abs=(0,0)'
+        check "$HT" "$p" --layout --scroll=0,5 \
+            --expect-line='NAVBAR-FIXED' \
+            --expect-line='Line 6'
         check "$HT" "$p" --flush-ok ;;
     esac
 done

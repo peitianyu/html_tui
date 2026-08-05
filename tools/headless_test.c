@@ -174,12 +174,18 @@ int main(int argc, char** argv) {
     if (argc < 2) { fprintf(stderr, "usage: %s <page.html> [--layout] [--viewport=WxH] [断言...]\n", argv[0]); return 2; }
     bool want_layout = false;
     int vw = 80, vh = 60;
+    int scroll_x = 0, scroll_y = 0;
     for (int i = 2; i < argc; i++) {
         if (strcmp(argv[i], "--layout") == 0) want_layout = true;
         else if (strncmp(argv[i], "--viewport=", 11) == 0) {
             vw = atoi(argv[i] + 11);
             const char* c = strchr(argv[i] + 11, 'x');
             vh = c ? atoi(c + 1) : vh;
+        }
+        else if (strncmp(argv[i], "--scroll=", 9) == 0) {
+            scroll_x = atoi(argv[i] + 9);
+            const char* c = strchr(argv[i] + 9, ',');
+            scroll_y = c ? atoi(c + 1) : scroll_y;
         }
     }
 
@@ -210,6 +216,7 @@ int main(int argc, char** argv) {
     StyledNode* st = build_style_tree(dom->root, ko->stylesheet, vw);
     LayoutNode* lt = build_layout_tree(st, vw, vh, base_dir);
     Screen* s = screen_create(vw, vh);
+    s->scroll_x = scroll_x; s->scroll_y = scroll_y;
     screen_render_tree(s, lt);
 
     const char* dump_path = "/data/data/com.termux/files/usr/tmp/mb_headless_dump.txt";

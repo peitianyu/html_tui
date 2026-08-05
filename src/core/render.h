@@ -666,6 +666,21 @@ static void draw_table_grid(Screen* s, LayoutNode* table) {
  * clip_x/y/w/h define the visible area (in screen coords after scroll).
  * clip_w <= 0 means no clipping.
  */
+static void screen_render_offset(Screen* s, LayoutNode* n, int px, int py, int clip_x, int clip_y, int clip_w, int clip_h);
+
+/* 渲染子节点: fixed 子树滚动固定 (scroll 临时置 0, 递归后恢复) */
+static void render_child_offset(Screen* s, LayoutNode* child, int px, int py,
+                                int cx, int cy, int cw, int ch) {
+    if (child->position_type == 3) {
+        int sx0 = s->scroll_x, sy0 = s->scroll_y;
+        s->scroll_x = 0; s->scroll_y = 0;
+        screen_render_offset(s, child, px, py, cx, cy, cw, ch);
+        s->scroll_x = sx0; s->scroll_y = sy0;
+    } else {
+        screen_render_offset(s, child, px, py, cx, cy, cw, ch);
+    }
+}
+
 static void screen_render_offset(Screen* s, LayoutNode* n, int px, int py, int clip_x, int clip_y, int clip_w, int clip_h) {
     if (!n || n->display == DISPLAY_NONE || n->visibility_hidden) return;
     int svx=n->x, svy=n->y; n->x+=px; n->y+=py;
@@ -721,7 +736,7 @@ static void screen_render_offset(Screen* s, LayoutNode* n, int px, int py, int c
         size_t order[256];
         if (n->num_children > 256) {
             for (size_t i = 0; i < n->num_children; i++)
-                screen_render_offset(s, n->children[i], cpx, cpy, my_clip_x, my_clip_y, my_clip_w, my_clip_h);
+                render_child_offset(s, n->children[i], cpx, cpy, my_clip_x, my_clip_y, my_clip_w, my_clip_h);
         } else {
             for (size_t i = 0; i < n->num_children; i++) order[i] = i;
             for (size_t i = 0; i < n->num_children; i++)
@@ -730,11 +745,11 @@ static void screen_render_offset(Screen* s, LayoutNode* n, int px, int py, int c
                         size_t tmp = order[i]; order[i] = order[j]; order[j] = tmp;
                     }
             for (size_t i = 0; i < n->num_children; i++)
-                screen_render_offset(s, n->children[order[i]], cpx, cpy, my_clip_x, my_clip_y, my_clip_w, my_clip_h);
+                render_child_offset(s, n->children[order[i]], cpx, cpy, my_clip_x, my_clip_y, my_clip_w, my_clip_h);
         }
     } else {
         for (size_t i = 0; i < n->num_children; i++)
-            screen_render_offset(s, n->children[i], cpx, cpy, my_clip_x, my_clip_y, my_clip_w, my_clip_h);
+            render_child_offset(s, n->children[i], cpx, cpy, my_clip_x, my_clip_y, my_clip_w, my_clip_h);
     }
 
     /* Draw table grid if this is a <table> node */

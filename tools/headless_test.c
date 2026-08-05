@@ -163,6 +163,7 @@ static void dump_layout(LayoutNode* n, FILE* out, int depth) {
     if (n->z_index) fprintf(out, " z=%d", n->z_index);
     if (n->position_type == 2) fputs(" pos=absolute", out);
     else if (n->position_type == 3) fputs(" pos=fixed", out);
+    else if (n->position_type == 4) fputs(" pos=sticky", out);
     if (n->img) fprintf(out, " img=%dx%d", n->img_cw, n->img_ch);
     if (n->text_content) fprintf(out, " text=\"%s\"", n->text_content);
     if (n->clickable) fprintf(out, " clickable action=\"%s\"", n->click_action ? n->click_action : "");

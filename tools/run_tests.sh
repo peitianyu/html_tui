@@ -38,7 +38,7 @@ else
            pages/12-css-effects.html pages/13-input-types.html pages/14-text-styles.html pages/15-clickable.html \
            pages/16-theme.html pages/17-edge.html pages/18-media.html \
            pages/19-many.html pages/20-external-css.html pages/21-image.html \
-           pages/22-position.html pages/23-fixed.html)
+           pages/22-position.html pages/23-fixed.html pages/24-sticky.html)
 fi
 for p in "${PAGES[@]}"; do
     case "$p" in
@@ -163,6 +163,17 @@ for p in "${PAGES[@]}"; do
         check "$HT" "$p" --layout --scroll=0,5 \
             --expect-line='NAVBAR-FIXED' \
             --expect-line='Line 6'
+        check "$HT" "$p" --flush-ok ;;
+    pages/24-sticky.html)
+        check "$HT" "$p" --layout \
+            --expect-line='stick|pos=sticky|abs=(0,3)'
+        check "$HT" "$p" --layout --scroll=0,2 \
+            --expect-line='STICKY-BAR'
+        check "$HT" "$p" --layout --scroll=0,5 \
+            --expect-line='STICKY-BAR' \
+            --expect-line='Post 3'
+        check "$HT" "$p" --layout --scroll=0,20 \
+            --expect-line='STICKY-BAR'
         check "$HT" "$p" --flush-ok ;;
     esac
 done

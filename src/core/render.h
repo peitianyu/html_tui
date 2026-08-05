@@ -668,7 +668,7 @@ static void draw_table_grid(Screen* s, LayoutNode* table) {
  */
 static void screen_render_offset(Screen* s, LayoutNode* n, int px, int py, int clip_x, int clip_y, int clip_w, int clip_h);
 
-/* 渲染子节点: fixed 子树滚动固定 (scroll 临时置 0, 递归后恢复) */
+/* 渲染子节点: fixed 子树滚动固定 (scroll 临时置 0); sticky 粘性偏移 (top/bottom 阈值) */
 static void render_child_offset(Screen* s, LayoutNode* child, int px, int py,
                                 int cx, int cy, int cw, int ch) {
     if (child->position_type == 3) {
@@ -676,6 +676,27 @@ static void render_child_offset(Screen* s, LayoutNode* child, int px, int py,
         s->scroll_x = 0; s->scroll_y = 0;
         screen_render_offset(s, child, px, py, cx, cy, cw, ch);
         s->scroll_x = sx0; s->scroll_y = sy0;
+    } else if (child->position_type == 4) {
+        /* sticky: 视口位置越过阈值后粘住 (不随内容继续滚动) */
+        int off = 0;
+        if (child->pos_top_set) {
+            int vp_y = child->abs_y - s->scroll_y;
+            if (vp_y < child->position_top) off = child->position_top - vp_y;
+        } else if (child->pos_bottom_set) {
+            int vp_bottom = child->abs_y + child->height - s->scroll_y;
+            if (vp_bottom > s->rows - child->position_bottom) {
+                off = (s->rows - child->position_bottom) - vp_bottom;
+                if (off > 0) off = 0; /* 只在向下滚出时粘底 (上移为负则不动) */
+            }
+        }
+        if (off != 0) {
+            int save_y = child->y;
+            child->y += off;
+            screen_render_offset(s, child, px, py, cx, cy, cw, ch);
+            child->y = save_y;
+        } else {
+            screen_render_offset(s, child, px, py, cx, cy, cw, ch);
+        }
     } else {
         screen_render_offset(s, child, px, py, cx, cy, cw, ch);
     }

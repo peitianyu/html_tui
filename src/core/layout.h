@@ -179,7 +179,7 @@ typedef struct LayoutNode {
     /* flex-wrap: 0=nowrap, 1=wrap */
     int flex_wrap;
 
-    /* position: 0=static, 1=relative, 2=absolute, 3=fixed */
+    /* position: 0=static, 1=relative, 2=absolute, 3=fixed, 4=sticky */
     int position_type;
     int position_top, position_right, position_bottom, position_left;
     bool pos_left_set, pos_top_set, pos_right_set, pos_bottom_set;  /* 显式设置标记 (区分 right:0 与未设置) */
@@ -1143,6 +1143,7 @@ static void apply_styles(LayoutNode* ln) {
     if (ppos && strcmp(ppos, "relative") == 0) ln->position_type = 1;
     else if (ppos && strcmp(ppos, "absolute") == 0) ln->position_type = 2;
     else if (ppos && strcmp(ppos, "fixed") == 0) ln->position_type = 3;
+    else if (ppos && strcmp(ppos, "sticky") == 0) ln->position_type = 4;
     const char* ptop = get_style(sn, "top"); if (ptop) { ln->position_top = (int)strtol(ptop, NULL, 10); ln->pos_top_set = true; }
     const char* pleft = get_style(sn, "left"); if (pleft) { ln->position_left = (int)strtol(pleft, NULL, 10); ln->pos_left_set = true; }
     const char* pright = get_style(sn, "right"); if (pright) { ln->position_right = (int)strtol(pright, NULL, 10); ln->pos_right_set = true; }
@@ -1266,7 +1267,7 @@ static void layout_block_children(LayoutNode* parent, int content_w) {
         LayoutNode* child = parent->children[i];
         if (child->display == DISPLAY_NONE) continue;
 
-        if (child->position_type >= 2) {
+        if (child->position_type == 2 || child->position_type == 3) {
             /* absolute/fixed: 布局自身内容, 不占流内位置 (x/y 由 position_absolute_pass 定位) */
             if (child->width < 0) child->width = 0;
             if (child->height < 1) child->height = 1;
@@ -1439,7 +1440,7 @@ static void layout_flex_children(LayoutNode* parent, int content_w, int content_
     /* absolute 子元素: 布局自身内容但不参与 flex 分配 (x/y 由 position_absolute_pass 定位) */
     for (size_t i = 0; i < parent->num_children; i++) {
         LayoutNode* ac = parent->children[i];
-        if (ac->position_type >= 2) {
+        if (ac->position_type == 2 || ac->position_type == 3) {
             if (ac->width < 0) ac->width = 0;
             if (ac->height < 1) ac->height = 1;
             compute_child_layouts(ac, ac->width);
@@ -1448,7 +1449,7 @@ static void layout_flex_children(LayoutNode* parent, int content_w, int content_
 
     for (size_t i = 0; i < parent->num_children; i++) {
         LayoutNode* child = parent->children[i];
-        if (child->display == DISPLAY_NONE || child->position_type >= 2) continue;
+        if (child->display == DISPLAY_NONE || child->position_type == 2 || child->position_type == 3) continue;
 
         /* natural main size */
         int natural;
@@ -1502,7 +1503,7 @@ static void layout_flex_children(LayoutNode* parent, int content_w, int content_
         int total_shrink_weight = 0;
         for (size_t i = 0; i < parent->num_children; i++) {
             LayoutNode* child = parent->children[i];
-            if (child->display == DISPLAY_NONE || child->position_type >= 2) continue;
+            if (child->display == DISPLAY_NONE || child->position_type == 2 || child->position_type == 3) continue;
             /* Use natural_main as weight (larger items shrink more) */
             int weight = child->flex_shrink > 0 ? child->flex_shrink * natural_mains[i] : natural_mains[i];
             if (weight < 0) weight = 1;
@@ -1513,7 +1514,7 @@ static void layout_flex_children(LayoutNode* parent, int content_w, int content_
             int remaining_shrink = shrink_total;
             for (size_t i = 0; i < parent->num_children; i++) {
                 LayoutNode* child = parent->children[i];
-                if (child->display == DISPLAY_NONE || child->position_type >= 2) continue;
+                if (child->display == DISPLAY_NONE || child->position_type == 2 || child->position_type == 3) continue;
                 int weight = child->flex_shrink > 0 ? child->flex_shrink * natural_mains[i] : natural_mains[i];
                 if (weight < 0) weight = 1;
                 int shrink = (shrink_total * weight) / total_shrink_weight;
@@ -1579,7 +1580,7 @@ static void layout_flex_children(LayoutNode* parent, int content_w, int content_
 
     for (size_t i = 0; i < parent->num_children; i++) {
         LayoutNode* child = parent->children[i];
-        if (child->display == DISPLAY_NONE || child->position_type >= 2) continue;
+        if (child->display == DISPLAY_NONE || child->position_type == 2 || child->position_type == 3) continue;
 
         int child_main = natural_mains[i];
 
@@ -1731,7 +1732,7 @@ static void layout_flex_children(LayoutNode* parent, int content_w, int content_
             int line_y = target_line_pos[0];
             for (size_t i = 0; i < parent->num_children; i++) {
                 LayoutNode* child = parent->children[i];
-                if (child->display == DISPLAY_NONE || child->position_type >= 2) continue;
+                if (child->display == DISPLAY_NONE || child->position_type == 2 || child->position_type == 3) continue;
                 /* Detect line transition (by checking if Y changed) */
                 if (is_row && child->y > line_y + line_heights[li] + parent->gap) {
                     li++;
@@ -1758,7 +1759,7 @@ static void layout_flex_children(LayoutNode* parent, int content_w, int content_
         int max_right = 0;
         for (size_t i = 0; i < parent->num_children; i++) {
             LayoutNode* child = parent->children[i];
-            if (child->display == DISPLAY_NONE || child->position_type >= 2) continue;
+            if (child->display == DISPLAY_NONE || child->position_type == 2 || child->position_type == 3) continue;
             int bottom = child->y + child->height + child->padding_bottom +
                          child->border_bottom + child->margin_bottom;
             int right = child->x + child->width + child->padding_right +
@@ -2828,7 +2829,7 @@ static void set_abs_and_children(LayoutNode* n, int ax, int ay) {
 /* position: absolute 无显式 width → shrink-to-fit (内容宽) */
 static void shrink_absolute(LayoutNode* n) {
     if (!n) return;
-    if (n->position_type >= 2) {
+    if (n->position_type == 2 || n->position_type == 3) {
         const char* w_str = get_style(n->styled, "width");
         bool has_css_w = w_str && atoi(w_str) > 0;
         if (!has_css_w) {
@@ -2855,7 +2856,7 @@ static void position_absolute_pass(LayoutNode* root) {
     stack[sp++] = root;
     while (sp > 0) {
         LayoutNode* n = stack[--sp];
-        if (n != root && n->position_type >= 2) {
+        if (n != root && (n->position_type == 2 || n->position_type == 3)) {
             /* containing block: fixed → 视口; absolute → 最近 positioned 祖先, 无则视口 */
             LayoutNode* cb;
             if (n->position_type == 3) cb = root;

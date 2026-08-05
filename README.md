@@ -81,7 +81,7 @@ pages/
 
 ### 页面跳转
 
-- 按钮 `id` 为 `btn-page-NN` 时，自动跳转到 `pages/NN-*.html`（当前支持 01~23）
+- 按钮 `id` 为 `btn-page-NN` 时，自动跳转到 `pages/NN-*.html`（当前支持 01~24）
 - 按钮 `id` 为 `btn-back` 或 `btn-back-N` 时，返回菜单 `00-menu.html`
 - `<a href>` 链接可聚焦，点击触发 `on_element_click` 回调（demo 中 `.html` 链接自动跳页并记入历史），访问过的链接以 `:visited` 颜色标记
 - `b` 键返回上一页（历史栈：链接导航 push，`btn-back` 不 push）
@@ -118,7 +118,7 @@ bash tools/run_tests.sh pages/15-clickable.html   # 指定页面
 
 - `tools/headless_test.c`：无头渲染 → 屏幕文本 dump + 布局树 dump（几何/盒模型/计算样式），断言支持 `--expect` / `--expect-line` / `--expect-count` / `--viewport`（测 @media） / `--flush-ok`（flush diff）
 - `tools/interact_test.c`：事件注入驱动交互循环（Tab/Enter/鼠标点击/输入编辑/批量 Tab），断言回调日志、状态消息、元素文本、链接颜色（:visited）与背景色（hover）
-- 61 项断言覆盖 23 个测试页 + 交互场景；无头模式无需真实终端
+- 67 项断言覆盖 24 个测试页 + 交互场景；无头模式无需真实终端
 
 ---
 

@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+  .float-1 { position: absolute; top: 3; left: 5; background-color: #ff0000; color: #ffffff; z-index: 5; }
+  .wrap    { position: relative; top: 2; }
+  .float-2 { position: absolute; top: 1; left: 2; background-color: #00ff00; color: #000000; }
+  .float-br { position: absolute; right: 0; bottom: 0; background-color: #0000ff; color: #ffffff; }
+</style></head><body>
+  <h3>22-position — position: absolute</h3>
+  <p>视口定位 (top:3 left:5):</p>
+  <div class="float-1">Float1</div>
+  <div class="wrap">
+    <p>relative 容器 (top:2)</p>
+    <div class="float-2">Float2</div>
+  </div>
+  <p>右下角 (right:0 bottom:0):</p>
+  <div class="float-br">BR</div>
+  <p><button id="btn-back">Back</button></p>
+</body></html>

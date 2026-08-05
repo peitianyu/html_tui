@@ -37,7 +37,8 @@ else
            pages/08-tables.html pages/09-lists-pseudo.html pages/10-details-textarea.html pages/11-select.html \
            pages/12-css-effects.html pages/13-input-types.html pages/14-text-styles.html pages/15-clickable.html \
            pages/16-theme.html pages/17-edge.html pages/18-media.html \
-           pages/19-many.html pages/20-external-css.html pages/21-image.html)
+           pages/19-many.html pages/20-external-css.html pages/21-image.html \
+           pages/22-position.html)
 fi
 for p in "${PAGES[@]}"; do
     case "$p" in
@@ -144,6 +145,12 @@ for p in "${PAGES[@]}"; do
             --expect-cell='1,2=fg:255,0,0;bg:0,255,0' \
             --expect-cell='5,4=fg:0,0,255;bg:255,255,255' \
             --expect-cell='1,7=fg:0,0,0;bg:255,255,255'
+        check "$HT" "$p" --flush-ok ;;
+    pages/22-position.html)
+        check "$HT" "$p" --layout \
+            --expect-line='float-1|abs=(5,3)' \
+            --expect-line='float-2|abs=(2,5)' \
+            --expect-line='float-br|abs=(78,59)'
         check "$HT" "$p" --flush-ok ;;
     esac
 done

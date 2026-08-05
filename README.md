@@ -49,17 +49,22 @@ pages/
 ├── 11-select.html            # 下拉选择（select, option 循环, optgroup, menu bar）
 ├── 12-css-effects.html       # CSS 效果（::before/::after, position, z-index, @media, outline）
 ├── 13-input-types.html       # 输入类型（checkbox, radio, range, color, number）
-└── 14-text-styles.html       # 文本样式（inline-block, del/s/ins, code/kbd/samp, rgb(), currentColor）
+├── 14-text-styles.html       # 文本样式（inline-block, del/s/ins, code/kbd/samp, rgb(), currentColor）
+├── 15-clickable.html         # 可点击元素（data-action / cursor:pointer / <a> 链接 / disabled / :visited）
+├── 16-theme.html             # 主题与样式增强（border-radius 降级, :placeholder-shown, 链接色）
+├── 17-edge.html              # 边界情况（长文本截断, 负 margin, margin auto, box-sizing, overflow, 嵌套 flex）
+└── 18-media.html             # @media 查询（min/max-width, 组合查询, 视口联动）
 ```
 
 ### 键盘操作
 
 | 按键 | 功能 |
 |:--|:--|
-| `Tab` | 下一个可聚焦元素（按钮 / 输入框 / select / textarea / summary） |
+| `Tab` | 下一个可聚焦元素（按钮 / 输入框 / select / textarea / summary / 可点击元素） |
 | `Shift+Tab` | 上一个可聚焦元素 |
-| `Enter` | 点击当前聚焦的按钮 / 切换 `<summary>` 折叠 / 循环 `<select>` 选项 |
+| `Enter` | 点击当前聚焦的按钮 / 可点击元素 (div/a) / 切换 `<summary>` 折叠 / 打开 `<select>` 弹窗 |
 | `Enter`（textarea） | 输入框中换行 |
+| `R` | 重新加载主题配置（热重载） |
 | `Esc` | 退出 |
 | 任意字符键 | 在输入框中输入文本 |
 | `←` / `→` | 输入框中光标左/右移动 |
@@ -70,8 +75,43 @@ pages/
 
 ### 页面跳转
 
-- 按钮 `id` 为 `btn-page-NN` 时，自动跳转到 `pages/NN-*.html`（当前支持 01~14）
+- 按钮 `id` 为 `btn-page-NN` 时，自动跳转到 `pages/NN-*.html`（当前支持 01~18）
 - 按钮 `id` 为 `btn-back` 或 `btn-back-N` 时，返回菜单 `00-menu.html`
+- `<a href>` 链接可聚焦，点击触发 `on_element_click` 回调（demo 中 `.html` 链接自动跳页），访问过的链接以 `:visited` 颜色标记
+
+### 主题配置
+
+启动时按优先级加载主题：`--theme <path>` 参数 > 项目目录 `theme.ini` > `~/.config/mini_browser/theme.ini` > 内置默认。运行中按 `R` 热重载。
+
+```ini
+# theme.ini 示例
+scrollbar_thumb = #78B4FF   # 滚动条滑块
+scrollbar_track = #325078   # 滚动条轨道
+focus_border    = #FFD700   # 焦点指示器
+statusbar_bg    = #1A1A3A   # 状态栏背景
+statusbar_fg    = #D0D0D0   # 状态栏前景
+select_popup_bg = #141428   # select 弹窗背景
+select_popup_hl = #50508C   # select 选中高亮
+link_color      = #4A9EFF   # 链接色
+link_visited    = #9B59B6   # 已访问链接色
+text_cursor     = #FFFFFF   # 文本光标
+textarea_sb     = #78B4FF   # textarea 滚动条
+border_default  = #666666   # 默认边框
+disabled_fg     = #555555   # 禁用控件前景
+```
+
+主题只控制浏览器 chrome（滚动条/焦点/状态栏/弹窗/链接色），页面内容色仍由页面 CSS 决定。
+
+### 自动化测试
+
+```bash
+bash tools/run_tests.sh          # 全套 (渲染/布局/互动断言)
+bash tools/run_tests.sh pages/15-clickable.html   # 指定页面
+```
+
+- `tools/headless_test.c`：无头渲染 → 屏幕文本 dump + 布局树 dump（几何/盒模型/计算样式），断言支持 `--expect` / `--expect-line` / `--expect-count` / `--viewport`（测 @media）
+- `tools/interact_test.c`：事件注入驱动交互循环（Tab/Enter/鼠标点击/输入编辑），断言回调日志、状态消息、元素文本与链接颜色（:visited）
+- 40 项断言覆盖 18 个测试页 + 交互场景；无头模式无需真实终端
 
 ---
 
@@ -264,6 +304,19 @@ mb_quit(mb);                     // 退出
 | 鼠标交互 | 点击、悬停（`:hover`）、滚轮滚动、滚动条拖拽、右键查看元素信息 |
 | `<dialog>` 模态框 | 深色遮罩 + 内容居中，`open` 属性控制显隐 |
 
+### 交互增强（2026-08-06）
+
+| 功能 | 说明 |
+|:--|:--|
+| 可点击元素 | `data-action` 属性 / `cursor: pointer` / `<a href>` 三种声明，统一进焦点链，`on_element_click` 回调触发，悬停状态栏提示 |
+| 链接导航 | `<a href>` 可聚焦，Enter/点击触发回调；点击自动记录 visited，`:visited` 变主题色 |
+| `disabled` 属性 | input/button/select/textarea 灰显 + 不可聚焦不可交互 |
+| `border-radius` | 降级为 rounded 框线（`╭╮╰╯`） |
+| `:placeholder-shown` | 空输入框 placeholder 灰色斜体 |
+| `margin`/`padding` 独立属性 | `margin-top` 等四向独立属性 + `margin: auto` 居中 + 负 margin |
+| `@media` | `min-width`/`max-width` 按终端视口求值（`screen`/`all`/无前缀），与布局联动 |
+| 主题系统 | `theme.ini` 收拢全部引擎级颜色（滚动条/焦点/状态栏/弹窗/链接色），`--theme` 参数 + `R` 热重载 |
+
 ---
 
 ## ❌ 不支持的功能
@@ -272,7 +325,7 @@ mb_quit(mb);                     // 退出
 
 | 功能/属性 | 原因 |
 |:--|:--|
-| `opacity`, `box-shadow`, `border-radius` | 终端无法渲染透明、阴影、圆角 |
+| `opacity`, `box-shadow` | 终端无法渲染透明、阴影 |
 | `transform`, `transition`, `animation` | 终端无动画/变换能力 |
 | `font-family`, `font-size` | 终端固定字体，无法更改 |
 | `@font-face`, `@keyframes` | 在终端无实际意义 |
@@ -294,8 +347,9 @@ mb_quit(mb);                     // 退出
 
 ```
 ├── run.sh                        # 运行脚本
+├── theme.ini                     # 示例主题配置
 ├── pages/                        # 测试页面（HTML + 内联 CSS）
-│   ├── 00-menu.html              # 主菜单（默认页面，14 个测试入口）
+│   ├── 00-menu.html              # 主菜单（默认页面，18 个测试入口）
 │   ├── 01-text-colors.html       # 文本 & 颜色
 │   ├── 02-box-model.html         # 盒模型
 │   ├── 03-inputs.html            # 输入框
@@ -309,7 +363,11 @@ mb_quit(mb);                     // 退出
 │   ├── 11-select.html            # 下拉选择
 │   ├── 12-css-effects.html       # CSS 效果
 │   ├── 13-input-types.html       # 输入类型
-│   └── 14-text-styles.html       # 文本样式
+│   ├── 14-text-styles.html       # 文本样式
+│   ├── 15-clickable.html         # 可点击元素
+│   ├── 16-theme.html             # 主题/样式增强
+│   ├── 17-edge.html              # 边界情况
+│   └── 18-media.html             # @media 查询
 ├── src/
 │   ├── demo.c                    # 入口：组装模块 + 按钮回调配置
 │   └── core/
@@ -320,8 +378,13 @@ mb_quit(mb);                     // 退出
 │       ├── layout.h              # 布局引擎
 │       ├── render.h              # 渲染引擎
 │       ├── styletree.h           # 样式引擎
+│       ├── theme.h               # 主题系统
 │       ├── termbox2.h            # 终端 I/O
 │       └── uc.h                  # Unicode 工具
+├── tools/
+│   ├── headless_test.c           # 无头渲染/布局测试工具
+│   ├── interact_test.c           # 无头交互测试工具
+│   └── run_tests.sh              # 测试套件入口
 ├── doc/
 │   └── optimization-analysis.md  # 性能优化分析
 └── README.md

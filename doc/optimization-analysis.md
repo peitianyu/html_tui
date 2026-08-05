@@ -86,11 +86,12 @@ interact.h:750 `input_buf[256][4096]` + 各种 256 数组。在嵌入式/小栈�
 
 ### 🟡 P1 — 浏览器行为缺口
 
-#### 7. `<a href>` 导航 + 历史栈
+#### 7. `<a href>` 导航 + 历史栈  🟡 部分完成 (2026-08-06)
 
 链接是网页最基本的交互。现在 `<a>` 只是蓝色下划线文本，点了没反应。加：可聚焦 + Enter 跳转 + back/forward 栈（b 返回）+ 状态栏显示 URL。
 
-- 收益：★★★★ 成本：★★
+- ✅ 已实现：`<a href>` 可聚焦 + Enter/点击触发 `on_element_click` 回调 + 访问记录（:visited 变色）+ demo 中 .html 链接自动跳页
+- ⬜ 未实现：back/forward 历史栈（b 返回上一页）
 
 #### 8. 外部 CSS 加载（`<link rel=stylesheet>`）
 
@@ -129,7 +130,10 @@ render.h 已有 `RENDER_HEADLESS` 无头模式 —— 已扩展为完整测试�
 2. 按钮回调设置的状态消息被默认分支 `✓ %s` 覆盖 → demo 的 btn-save 收集值无法显示（mini_browser.h 已修复：回调修改状态则保留）
 3. 输入框光标初始在 0 → 输入插到开头而非末尾（interact.h 已修复：播种时光标到末尾）
 
-另外修复 `border: 1px solid #888` 标准简写不解析（layout.h 新增 `parse_border_shorthand`）。
+**后续测试轮次发现并修复：**
+4. `border: 1px solid #888` 标准简写不解析（layout.h 新增 `parse_border_shorthand`）
+5. `margin-top/left` 等四向独立属性未解析 + `margin: auto` 单边不生效（layout.h apply_styles 补齐独立属性与 auto 检测，含负 margin）
+6. `@media` 无类型前缀 (`@media (min-width: N)`) 因 `mq->type` 为空被 early-return 永不匹配；且 collect_matching_rules 曾无条件提取 media 内规则（styletree.h 修复，build_style_tree 新增视口参数供测试）
 
 运行：`bash tools/run_tests.sh`（需 gcc + RENDER_HEADLESS）
 

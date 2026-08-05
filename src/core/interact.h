@@ -92,6 +92,9 @@ struct InteractCallbacks {
     /** 页面文件所在目录 (供 <img src> 相对路径解析; 由宿主设置) */
     const char* base_dir;
 
+    /** 当前 Screen (interact_run 每帧更新; 供测试工具读 cell) */
+    struct Screen* screen;
+
     /**
      * Set to a file path to switch to a new page.
      * The main loop will read this file, parse HTML/CSS, and rebuild everything.
@@ -606,8 +609,14 @@ static void draw_focus_indicator(Screen* s, LayoutNode* f, int scroll_x, int scr
             bo++;
         }
         int visual_col = uc_str_width_len(txt + line_start_bo, cursor_pos - line_start_bo);
-        cu += visual_col - textarea_scroll_x[focus_idx];
-        cursor_row += line_idx - textarea_scroll_y[focus_idx];
+        /* 软换行映射: 显示行 = 硬行 + 软换行偏移, 显示列 = 列宽 % textarea 宽 */
+        int disp_row = line_idx, disp_col = visual_col;
+        if (f->width > 0 && visual_col >= f->width) {
+            disp_row += visual_col / f->width;
+            disp_col = visual_col % f->width;
+        }
+        cu += disp_col - textarea_scroll_x[focus_idx];
+        cursor_row += disp_row - textarea_scroll_y[focus_idx];
     } else {
         if (cursor_pos > 0) cu += uc_str_width_len(input_buf[focus_idx], cursor_pos);
     }
@@ -1055,6 +1064,7 @@ void interact_run(LayoutNode* root, KatanaStylesheet* css,
 
         /* ── Sync runtime info to callbacks ── */
         if (cb) cb->layout_root = current_root;
+        if (cb) cb->screen = s;
         /* 编辑态: 焦点在 INPUT/TEXTAREA 时为 true (供 on_key 区分编辑键) */
         if (cb) {
             bool ea = (focus_idx >= 0 && focus_idx < focus_count &&
@@ -2245,6 +2255,7 @@ skip_mouse_processing:
 
     /* Free the rebuilt root if it differs from original */
     if (current_root != root) free_layout_tree(current_root);
+    if (cb) cb->screen = NULL;  /* screen 即将释放, 防悬垂 */
     screen_free(s);
     /* 释放动态数组 */
     free(input_buf);

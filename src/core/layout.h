@@ -797,16 +797,28 @@ static void apply_styles(LayoutNode* ln) {
     const char* disp = get_style(sn, "display");
     ln->display = disp ? parse_display(disp) : DISPLAY_BLOCK;
 
-    /* padding */
+    /* padding: 简写 + 独立属性 (独立属性优先覆盖) */
     const char* pad = get_style(sn, "padding");
     if (pad) parse_box_shorthand(pad, &ln->padding_top, &ln->padding_right,
                                   &ln->padding_bottom, &ln->padding_left);
+    {
+        const char* pt = get_style(sn, "padding-top");    if (pt) ln->padding_top = (int)strtol(pt, NULL, 10);
+        const char* pr = get_style(sn, "padding-right");  if (pr) ln->padding_right = (int)strtol(pr, NULL, 10);
+        const char* pb = get_style(sn, "padding-bottom"); if (pb) ln->padding_bottom = (int)strtol(pb, NULL, 10);
+        const char* pl = get_style(sn, "padding-left");   if (pl) ln->padding_left = (int)strtol(pl, NULL, 10);
+    }
 
-    /* margin */
+    /* margin: 简写 + 独立属性 */
     const char* mar = get_style(sn, "margin");
     if (mar) parse_box_shorthand(mar, &ln->margin_top, &ln->margin_right,
                                   &ln->margin_bottom, &ln->margin_left);
-    /* Detect auto margins */
+    {
+        const char* mt = get_style(sn, "margin-top");    if (mt) ln->margin_top = (int)strtol(mt, NULL, 10);
+        const char* mr = get_style(sn, "margin-right");  if (mr) ln->margin_right = (int)strtol(mr, NULL, 10);
+        const char* mb = get_style(sn, "margin-bottom"); if (mb) ln->margin_bottom = (int)strtol(mb, NULL, 10);
+        const char* ml = get_style(sn, "margin-left");   if (ml) ln->margin_left = (int)strtol(ml, NULL, 10);
+    }
+    /* Detect auto margins (简写 + margin-left/right: auto 独立属性) */
     ln->margin_left_auto = ln->margin_right_auto = false;
     if (mar) {
         const char* mp = mar; while (*mp == ' '||*mp=='\t') mp++;
@@ -826,6 +838,13 @@ static void apply_styles(LayoutNode* ln) {
                 cnt++;
             }
         }
+    }
+    /* margin-left/right: auto 独立属性 */
+    {
+        const char* ml = get_style(sn, "margin-left");
+        if (ml && strcmp(ml, "auto") == 0) ln->margin_left_auto = true;
+        const char* mr = get_style(sn, "margin-right");
+        if (mr && strcmp(mr, "auto") == 0) ln->margin_right_auto = true;
     }
 
     /* overflow */

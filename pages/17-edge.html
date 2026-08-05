@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+  body { font-family: sans-serif; padding: 1; }
+  h3 { margin-bottom: 4px; }
+  .trunc { width: 30px; overflow: hidden; border: 1px solid #888; margin-bottom: 1px; }
+  .negmargin { border: 1px solid #f00; margin-left: -3px; margin-top: 2px; }
+  .autocenter { border: 1px solid #0a0; width: 40px; margin-left: auto; margin-right: auto; }
+  .vis-hidden { visibility: hidden; border: 1px solid #888; }
+  .border-box { box-sizing: border-box; width: 50px; padding: 2px; border: 2px solid #4A9EFF; }
+  .content-box { box-sizing: content-box; width: 50px; padding: 2px; border: 2px solid #d44545; }
+  .clip { overflow: hidden; width: 20px; height: 3px; border: 1px solid #888; }
+  .nested { display: flex; flex-direction: column; border: 1px solid #888; padding: 1px; }
+  .nested .row { display: flex; flex-direction: row; }
+  .rel { position: relative; top: 2px; left: 3px; border: 1px solid #4A9EFF; }
+  .wide-min { min-width: 60px; border: 1px solid #888; }
+  .narrow-max { max-width: 20px; border: 1px solid #888; }
+</style></head><body>
+  <h3>17-edge — 边界情况</h3>
+  <div class="trunc">This is a very long text that should be truncated with ellipsis</div>
+  <div class="negmargin">negative margin-left</div>
+  <div class="autocenter">auto centered</div>
+  <div class="vis-hidden">hidden but occupies space</div>
+  <div class="border-box">border-box 50</div>
+  <div class="content-box">content-box 50</div>
+  <div class="clip">clipped overflow content here</div>
+  <div class="nested">
+    <div class="row"><div>A1</div><div>A2</div></div>
+    <div class="row"><div>B1</div></div>
+  </div>
+  <div class="rel">relative offset</div>
+  <div class="wide-min">min-width 60</div>
+  <div class="narrow-max">max-width 20</div>
+  <p><button id="btn-back">Back to Menu</button></p>
+</body></html>

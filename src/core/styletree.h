@@ -746,6 +746,7 @@ static void collect_matching_rules(GumboNode* node, KatanaStylesheet* ss,
                     }
                 }
             }
+            if (!mq_matches) continue;
             /* Extract rules from inside @media */
             if (mr->rules) {
                 for (unsigned int ri = 0; ri < mr->rules->length; ri++) {

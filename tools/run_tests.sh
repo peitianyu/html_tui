@@ -36,7 +36,7 @@ else
            pages/04-buttons.html pages/05-flex-direction.html pages/06-flex-justify.html pages/07-flex-align-wrap.html \
            pages/08-tables.html pages/09-lists-pseudo.html pages/10-details-textarea.html pages/11-select.html \
            pages/12-css-effects.html pages/13-input-types.html pages/14-text-styles.html pages/15-clickable.html \
-           pages/16-theme.html)
+           pages/16-theme.html pages/17-edge.html pages/18-media.html)
 fi
 for p in "${PAGES[@]}"; do
     case "$p" in
@@ -105,6 +105,26 @@ for p in "${PAGES[@]}"; do
         check "$HT" "$p" --layout \
             --expect='16-theme' --expect='placeholder' \
             --expect='border=1,1,1,1' ;;
+    pages/17-edge.html)
+        check "$HT" "$p" --layout \
+            --expect-line='negmargin|margin=2,0,0,-3' \
+            --expect-line='autocenter|margin=0,18,0,18|abs=(20,' \
+            --expect-line='border-box|content=46x1' \
+            --expect-line='content-box|content=50x1' \
+            --expect-line='clip|content=20x3' \
+            --expect-line='nested|flex-dir=1' \
+            --expect-line='rel|abs=(5,50)' \
+            --expect-line='narrow-max|content=20x1' \
+            --expect-line='trunc|content=30x1' ;;
+    pages/18-media.html)
+        check "$HT" "$p" --layout --viewport=30x40 \
+            --expect-line='narrow-label|color=212,69,69|bold' \
+            --expect-line='wide-label|content=0x0'
+        check "$HT" "$p" --layout --viewport=80x40 \
+            --expect-line='wide-label|color=74,158,255|bold' \
+            --expect-line='narrow-label|content=0x0'
+        check "$HT" "$p" --layout --viewport=50x40 \
+            --expect-line='mid-range|bg=51,47,26' ;;
     esac
 done
 
@@ -114,7 +134,7 @@ check "$IT" pages/15-clickable.html --events 'tab enter' \
     --expect='el[action=open-card-1 id=card-1 tag=div]'
 check "$IT" pages/15-clickable.html --events 'tab tab tab enter' \
     --expect='el[action=card-3 id=card-3 tag=div]'
-check "$IT" pages/15-clickable.html --events 'click:20,25' \
+check "$IT" pages/15-clickable.html --events 'click:20,33' \
     --expect='el[action=toggle-card-2 id=card-2 tag=div]'
 check "$IT" pages/15-clickable.html --events 'tab tab tab tab enter' \
     --expect='el[action=pages/01-text-colors.html id=- tag=a]'
@@ -123,8 +143,14 @@ check "$IT" pages/15-clickable.html --events 'esc' \
 check "$IT" pages/15-clickable.html --events 'tab tab tab tab tab enter' \
     --expect-color='pages/15-clickable.html|155,89,182' \
     --expect='el[action=pages/15-clickable.html id=- tag=a]'
+check "$IT" pages/15-clickable.html --events 'btab enter' \
+    --expect='el[action=pages/15-clickable.html id=- tag=a]'
+check "$IT" pages/15-clickable.html --events 'key:R' \
+    --expect='theme'
 check "$IT" pages/03-inputs.html --events 'tab key:X key:Y key:Z' \
     --expect-text='inp-first|JohnXYZ'
+check "$IT" pages/03-inputs.html --events 'tab tab tab tab tab key:X key:Y' \
+    --expect-text='inp-pass|secret123XY'
 check "$IT" pages/03-inputs.html --events 'tab key:X keycode:8' \
     --expect-text='inp-first|John'
 check "$IT" pages/03-inputs.html --events 'tab key:X key:Y tab tab tab tab tab tab tab enter' \

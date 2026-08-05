@@ -256,11 +256,18 @@ int main(int argc, char** argv) {
             stk[sp++] = root;
             while (sp > 0 && got < 0) {
                 LayoutNode* n = stk[--sp];
-                if (n->overflow_auto && n->styled && n->styled->node &&
+                if (n->styled && n->styled->node &&
                     n->styled->node->type == GUMBO_NODE_ELEMENT) {
-                    GumboAttribute* ca = gumbo_get_attribute(
-                        &n->styled->node->v.element.attributes, "class");
-                    if (ca && ca->value && strstr(ca->value, sbuf)) got = n->content_scroll_y;
+                    /* 匹配 class 或 id (容器/textarea 通用) */
+                    GumboElement* el = &n->styled->node->v.element;
+                    bool match = false;
+                    GumboAttribute* ca = gumbo_get_attribute(&el->attributes, "class");
+                    if (ca && ca->value && strstr(ca->value, sbuf)) match = true;
+                    if (!match) {
+                        GumboAttribute* ia = gumbo_get_attribute(&el->attributes, "id");
+                        if (ia && ia->value && strcmp(ia->value, sbuf) == 0) match = true;
+                    }
+                    if (match) got = n->content_scroll_y;
                 }
                 for (size_t j = 0; j < n->num_children && sp < 4096; j++)
                     stk[sp++] = n->children[j];

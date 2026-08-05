@@ -189,11 +189,13 @@ static void render_preserved_ws(Screen* s, LayoutNode* n, const char* p,
     }
     int scroll_skip = n->content_scroll_y;
     int scroll_left = n->content_scroll_x;
+    int disp_row = 0;  /* 当前显示行 (硬+软换行累计, 滚动按它跳过) */
 
     while (*p && *cy < s->rows) {
         if (*p == '\n') {
             if (is_textarea) {
-                if (scroll_skip > 0) { scroll_skip--; p++; cx = lnx; continue; }
+                disp_row++;
+                if (disp_row < scroll_skip) { p++; cx = lnx; continue; }
                 if ((*cy - (scr_y + n->border_top + n->padding_top)) / lh >= scroll_h) break;
             }
             *cy += lh; cx = lnx; p++; continue;
@@ -202,21 +204,50 @@ static void render_preserved_ws(Screen* s, LayoutNode* n, const char* p,
         uint32_t cp = uc_dec(&p);
         if (cp == 0 || cp == 0xFFFD) continue;
         int w = uc_wid((int)cp);
-        if (is_textarea && scroll_skip > 0) { cx += w + n->letter_spacing; continue; }
-        int render_cx = cx - scroll_left;
-        if (is_textarea && render_cx >= n->width) { cx += w + n->letter_spacing; continue; }
-        if (is_textarea && render_cx + w <= 0) { cx += w + n->letter_spacing; continue; }
-        if (render_cx >= 0 && render_cx < s->cols) {
-            scr_set(s, render_cx, *cy, cp);
-            scr_fg(s, render_cx, *cy, n->color.r, n->color.g, n->color.b);
-            if (n->font_bold) scr_bold(s, render_cx, *cy, true);
-            if (n->font_italic) scr_italic(s, render_cx, *cy, true);
-            if (n->font_underline == 1) scr_uline(s, render_cx, *cy, true);
-            else if (n->font_underline == 2) scr_oline(s, render_cx, *cy, true);
-            else if (n->font_underline == 3) scr_strike(s, render_cx, *cy, true);
-            if (w == 2 && render_cx + 1 < s->cols) scr_set(s, render_cx + 1, *cy, 0);
+        if (is_textarea) {
+            int render_cx;
+            /* 软换行循环: 字符超宽 → 换行重试当前字符 (不丢弃); 跳过区也跟踪换行 */
+            for (;;) {
+                render_cx = cx - scroll_left;
+                if (disp_row < scroll_skip) {
+                    if (render_cx >= n->width) { disp_row++; cx = lnx; continue; }
+                    cx += w + n->letter_spacing;
+                    goto char_skip;
+                }
+                if (render_cx + w <= 0) { cx += w + n->letter_spacing; goto char_skip; }
+                if (render_cx >= n->width) {
+                    disp_row++;
+                    cx = lnx; *cy += lh;
+                    continue; /* 重试当前字符在新行 */
+                }
+                break;
+            }
+            if (render_cx >= 0 && render_cx < s->cols) {
+                scr_set(s, render_cx, *cy, cp);
+                scr_fg(s, render_cx, *cy, n->color.r, n->color.g, n->color.b);
+                if (n->font_bold) scr_bold(s, render_cx, *cy, true);
+                if (n->font_italic) scr_italic(s, render_cx, *cy, true);
+                if (n->font_underline == 1) scr_uline(s, render_cx, *cy, true);
+                else if (n->font_underline == 2) scr_oline(s, render_cx, *cy, true);
+                else if (n->font_underline == 3) scr_strike(s, render_cx, *cy, true);
+                if (w == 2 && render_cx + 1 < s->cols) scr_set(s, render_cx + 1, *cy, 0);
+            }
+            cx += w + n->letter_spacing;
+            char_skip: ;
+        } else {
+            int render_cx = cx - scroll_left;
+            if (render_cx >= 0 && render_cx < s->cols) {
+                scr_set(s, render_cx, *cy, cp);
+                scr_fg(s, render_cx, *cy, n->color.r, n->color.g, n->color.b);
+                if (n->font_bold) scr_bold(s, render_cx, *cy, true);
+                if (n->font_italic) scr_italic(s, render_cx, *cy, true);
+                if (n->font_underline == 1) scr_uline(s, render_cx, *cy, true);
+                else if (n->font_underline == 2) scr_oline(s, render_cx, *cy, true);
+                else if (n->font_underline == 3) scr_strike(s, render_cx, *cy, true);
+                if (w == 2 && render_cx + 1 < s->cols) scr_set(s, render_cx + 1, *cy, 0);
+            }
+            cx += w + n->letter_spacing;
         }
-        cx += w + n->letter_spacing;
     }
     /* Draw textarea scrollbar */
     if (is_textarea) {

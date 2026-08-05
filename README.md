@@ -61,7 +61,8 @@ pages/
 ├── 23-fixed.html             # position:fixed（滚动时固定在视口的导航条）
 ├── 24-sticky.html            # position:sticky（滚动到阈值后吸顶）
 ├── 25-scrollbox.html         # overflow:auto 子容器滚动（固定高容器内独立滚动）
-└── 26-grid.html              # CSS Grid（grid-template-columns 固定列 + 1fr 均分 + gap）
+├── 26-grid.html              # CSS Grid（grid-template-columns 固定列 + 1fr 均分 + gap）
+└── 27-textarea-wrap.html     # textarea 自动换行（长行软换行显示 + 滚动）
 ```
 
 ### 键盘操作
@@ -84,7 +85,7 @@ pages/
 
 ### 页面跳转
 
-- 按钮 `id` 为 `btn-page-NN` 时，自动跳转到 `pages/NN-*.html`（当前支持 01~26）
+- 按钮 `id` 为 `btn-page-NN` 时，自动跳转到 `pages/NN-*.html`（当前支持 01~27）
 - 按钮 `id` 为 `btn-back` 或 `btn-back-N` 时，返回菜单 `00-menu.html`
 - `<a href>` 链接可聚焦，点击触发 `on_element_click` 回调（demo 中 `.html` 链接自动跳页并记入历史），访问过的链接以 `:visited` 颜色标记
 - `b` 键返回上一页（历史栈：链接导航 push，`btn-back` 不 push）
@@ -121,7 +122,7 @@ bash tools/run_tests.sh pages/15-clickable.html   # 指定页面
 
 - `tools/headless_test.c`：无头渲染 → 屏幕文本 dump + 布局树 dump（几何/盒模型/计算样式），断言支持 `--expect` / `--expect-line` / `--expect-count` / `--viewport`（测 @media） / `--flush-ok`（flush diff）
 - `tools/interact_test.c`：事件注入驱动交互循环（Tab/Enter/鼠标点击/输入编辑/批量 Tab），断言回调日志、状态消息、元素文本、链接颜色（:visited）与背景色（hover）
-- 74 项断言覆盖 26 个测试页 + 交互场景；无头模式无需真实终端
+- 77 项断言覆盖 27 个测试页 + 交互场景；无头模式无需真实终端
 
 ---
 
@@ -385,7 +386,8 @@ mb_quit(mb);                     // 退出
 │   ├── 23-fixed.html            # position:fixed (滚动固定)
 │   ├── 24-sticky.html           # position:sticky (吸顶)
 │   ├── 25-scrollbox.html        # overflow:auto 子容器滚动
-│   └── 26-grid.html             # CSS Grid (固定列 + 1fr + gap)
+│   ├── 26-grid.html             # CSS Grid (固定列 + 1fr + gap)
+│   └── 27-textarea-wrap.html    # textarea 自动换行
 ├── src/
 │   ├── demo.c                    # 入口：组装模块 + 按钮回调配置
 │   └── core/

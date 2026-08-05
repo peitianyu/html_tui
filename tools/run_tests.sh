@@ -39,7 +39,7 @@ else
            pages/16-theme.html pages/17-edge.html pages/18-media.html \
            pages/19-many.html pages/20-external-css.html pages/21-image.html \
            pages/22-position.html pages/23-fixed.html pages/24-sticky.html \
-           pages/25-scrollbox.html pages/26-grid.html)
+           pages/25-scrollbox.html pages/26-grid.html pages/27-textarea-wrap.html)
 fi
 for p in "${PAGES[@]}"; do
     case "$p" in
@@ -186,6 +186,11 @@ for p in "${PAGES[@]}"; do
             --expect-line='G4|abs=(0,3)|content=30x1' \
             --expect-line='W2|abs=(40,6)|content=39x1'
         check "$HT" "$p" --flush-ok ;;
+    pages/27-textarea-wrap.html)
+        check "$HT" "$p" --layout \
+            --expect='ABCDEFGHIJKL' \
+            --expect-line='MNOPQRSTUVWX'
+        check "$HT" "$p" --flush-ok ;;
     esac
 done
 
@@ -250,6 +255,8 @@ check "$IT" pages/25-scrollbox.html --events 'wheeldown:5,4 wheeldown:5,4 wheeld
     --expect-scroll='box|3' --expect='theme'
 check "$IT" pages/25-scrollbox.html --events 'wheeldown:40,50' \
     --expect-scroll='box|0'
+check "$IT" pages/27-textarea-wrap.html --events 'tab wheeldown:5,2 wheeldown:5,2' \
+    --expect-scroll='ta-wrap|1'
 
 echo
 echo "== 结果: $TOTAL 项, $FAILS 失败 =="

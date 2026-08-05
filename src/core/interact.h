@@ -2152,9 +2152,18 @@ handle_scroll_keys:
                     }
                 }
                 if (ta_idx >= 0) {
+                    /* 显示行数 (含软换行): 每硬行段额外行 = 段文本宽 / textarea 宽 */
                     int total_lines = 1;
                     const char* _lp = input_buf[ta_idx];
-                    while (*_lp) { if (*_lp == '\n') total_lines++; _lp++; }
+                    int ta_w = focus_list[ta_idx]->width > 0 ? focus_list[ta_idx]->width : 1;
+                    while (*_lp) {
+                        if (*_lp == '\n') { total_lines++; _lp++; continue; }
+                        const char* _eol = strchr(_lp, '\n');
+                        size_t _seg = _eol ? (size_t)(_eol - _lp) : strlen(_lp);
+                        int _sw = uc_str_width_len(_lp, (int)_seg);
+                        if (_sw > ta_w) total_lines += _sw / ta_w;
+                        _lp += _seg;
+                    }
                     int ta_h = focus_list[ta_idx]->height > 0 ? focus_list[ta_idx]->height : 5;
                     int max_scroll = total_lines - ta_h;
                     if (max_scroll < 0) max_scroll = 0;

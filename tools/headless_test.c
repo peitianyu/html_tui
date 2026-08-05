@@ -161,6 +161,10 @@ static void dump_layout(LayoutNode* n, FILE* out, int depth) {
     if (n->text_align) fprintf(out, " align=%d", n->text_align);
     if (n->list_marker) fprintf(out, " list=%d", n->list_marker);
     if (n->z_index) fprintf(out, " z=%d", n->z_index);
+    if (n->position_type == 2) fputs(" pos=absolute", out);
+    else if (n->position_type == 3) fputs(" pos=fixed", out);
+    if (n->img) fprintf(out, " img=%dx%d", n->img_cw, n->img_ch);
+    if (n->text_content) fprintf(out, " text=\"%s\"", n->text_content);
     if (n->clickable) fprintf(out, " clickable action=\"%s\"", n->click_action ? n->click_action : "");
     if (n->disabled) fputs(" disabled", out);
     if (n->display == DISPLAY_FLEX) fprintf(out, " flex-dir=%d justify=%d align=%d gap=%d", n->flex_direction, n->justify_content, n->align_items, n->gap);
@@ -370,6 +374,35 @@ int main(int argc, char** argv) {
                 printf("FAIL : cell(%d,%d) got fg=%d,%d,%d bg=%d,%d,%d want fg=%d,%d,%d bg=%d,%d,%d\n",
                        cx,cy,cl->fg_r,cl->fg_g,cl->fg_b,cl->bg_r,cl->bg_g,cl->bg_b,fr,fgv,fbb,brr,bgv,bbb);
                 fail = 1;
+            }
+        } else if (strncmp(arg, "--expect-any=", 13) == 0) {
+            /* --expect-any=A|B|C: 任一子串命中即过 (两 dump 合计) */
+            char abuf[512]; snprintf(abuf, sizeof(abuf), "%s", arg + 13);
+            bool hit = false;
+            char* save = NULL;
+            for (char* tk = strtok_r(abuf, "|", &save); tk && !hit; tk = strtok_r(NULL, "|", &save)) {
+                if (strstr(text_dump, tk) || (want_layout && strstr(lay_dump, tk))) hit = true;
+            }
+            if (hit) printf("OK   : any[%s]\n", arg + 13);
+            else { printf("FAIL : any[%s] (none matched)\n", arg + 13); fail = 1; }
+        } else if (strncmp(arg, "--dump-cells=", 13) == 0) {
+            /* --dump-cells=WxH@X,Y: 输出区域 cell 矩阵 (ch + fg/bg 色) 到 stderr, 调试用 */
+            char dbuf[256]; snprintf(dbuf, sizeof(dbuf), "%s", arg + 13);
+            int dw = 0, dh = 0, dx = 0, dy = 0;
+            char* at = strchr(dbuf, '@');
+            if (at) { *at = '\0'; sscanf(at + 1, "%d,%d", &dx, &dy); }
+            char* xch = strchr(dbuf, 'x');
+            if (xch) { *xch = '\0'; dw = atoi(dbuf); dh = atoi(xch + 1); }
+            if (dw <= 0) dw = 1; if (dh <= 0) dh = 1;
+            fprintf(stderr, "--- cells %dx%d @(%d,%d) ---\n", dw, dh, dx, dy);
+            for (int r = dy; r < dy + dh && r < s->rows; r++) {
+                for (int c = dx; c < dx + dw && c < s->cols; c++) {
+                    Cell* cl = &s->cells[r * s->cols + c];
+                    char ch = (cl->ch >= 32 && cl->ch < 127) ? (char)cl->ch : '?';
+                    fprintf(stderr, "[%c f=%d,%d,%d b=%d,%d,%d]", ch,
+                            cl->fg_r, cl->fg_g, cl->fg_b, cl->bg_r, cl->bg_g, cl->bg_b);
+                }
+                fprintf(stderr, "\n");
             }
         }
     }

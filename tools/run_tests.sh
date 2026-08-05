@@ -132,6 +132,9 @@ for p in "${PAGES[@]}"; do
         check "$HT" "$p" --layout --viewport=80x150 \
             --expect='B0' --expect='B299' --expect='btn-back' \
             --expect-count=300:class=\"btn\"
+        check "$HT" "$p" --layout \
+            --expect='text="B299"' --expect='text="B0"' \
+            --expect='text="Back"'
         check "$HT" "$p" --flush-ok ;;
     pages/20-external-css.html)
         check "$HT" "$p" --layout \
@@ -142,19 +145,21 @@ for p in "${PAGES[@]}"; do
     pages/21-image.html)
         check "$HT" "$p" --layout \
             --expect='[fallback-text]' \
+            --expect-line='img=8x4' \
+            --expect-line='img=4x2' \
             --expect-cell='1,2=fg:255,0,0;bg:0,255,0' \
             --expect-cell='5,4=fg:0,0,255;bg:255,255,255' \
             --expect-cell='1,7=fg:0,0,0;bg:255,255,255'
         check "$HT" "$p" --flush-ok ;;
     pages/22-position.html)
         check "$HT" "$p" --layout \
-            --expect-line='float-1|abs=(5,3)' \
-            --expect-line='float-2|abs=(2,5)' \
-            --expect-line='float-br|abs=(78,59)'
+            --expect-line='float-1|pos=absolute|abs=(5,3)' \
+            --expect-line='float-2|pos=absolute|abs=(2,5)' \
+            --expect-line='float-br|pos=absolute|abs=(78,59)'
         check "$HT" "$p" --flush-ok ;;
     pages/23-fixed.html)
         check "$HT" "$p" --layout \
-            --expect-line='navbar|abs=(0,0)'
+            --expect-line='navbar|pos=fixed|abs=(0,0)'
         check "$HT" "$p" --layout --scroll=0,5 \
             --expect-line='NAVBAR-FIXED' \
             --expect-line='Line 6'
